@@ -116,6 +116,11 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> stopListening() async {
+    await _protocol?.sendStopListening();
+  }
+
+  @override
   Future<Result<bool>> sendMessage(String text) async {
     if (!_isConnected) {
       if (_lastConfig == null) {

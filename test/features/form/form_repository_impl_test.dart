@@ -46,6 +46,7 @@ void main() {
           publishTopic: 'pub',
           subscribeTopic: 'sub',
         ),
+        websocket: null,
         activation: null,
         serverTime: null,
         firmware: null,

@@ -13,6 +13,7 @@ abstract class ChatRepository {
   Future<Result<bool>> connect(ChatConfig config);
   Future<void> disconnect();
   Future<void> startListening();
+  Future<void> stopListening();
   Future<Result<bool>> sendMessage(String text);
   Future<void> sendAudio(List<int> data);
 }
