@@ -1,6 +1,7 @@
 # Changelog - main
 
 ## 2026-01-29
+- Latest commit summary: added PR template, branch-name/build workflows, and docs updates (AGENTS.md, CONTRIBUTING.md, README.md).
 - Added branch naming convention section to AGENTS.md.
 - Added CONTRIBUTING.md with branch naming rules.
 - Added PR template for selecting change type and checklist.

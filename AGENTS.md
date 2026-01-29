@@ -24,6 +24,7 @@
 ### 2.1 Branch Naming Convention
 
 Danh sách type:
+
 - feat/ thêm tính năng
 - fix/ sửa bug
 - chore/ dọn dẹp, đổi config, tooling
@@ -34,6 +35,19 @@ Danh sách type:
 - ci/ pipeline CI/CD
 - build/ build system, build config
 - hotfix/ vá gấp trên production
+
+### 2.2 Skill Usage Examples
+
+- Changelog theo nhánh:
+  - "Ghi changelog cho branch hiện tại giúp tôi."
+  - "Tóm tắt thay đổi mới nhất và ghi vào changelog/<branch>/README.md."
+  - "Tạo ghi chú lịch sử cho nhánh `feat/chat-audio`."
+- Git/GitHub:
+  - "Stage các file vừa đổi và commit với message `fix: update build workflow`."
+  - "Commit và push lên GitHub cho tôi."
+  - "Commit và push: chỉ gồm `AGENTS.md` và `changelog/main/README.md`, message `docs: update skill usage examples`."
+  - "Tự viết commit message theo branch hiện tại và push giúp tôi."
+  - "Xóa nhánh local và remote `feat/old-experiment`."
 
 ### 3️⃣ Feature-by-Feature Status (What Is DONE)
 
