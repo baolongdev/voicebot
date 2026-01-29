@@ -8,7 +8,7 @@
 
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <flutter_sound/flutter_sound_plugin_c_api.h>
-#include <opus_flutter_windows/none.h>
+#include <opus_flutter_windows/opus_flutter_windows_plugin.h>
 #include <permission_handler_windows/permission_handler_windows_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
@@ -16,8 +16,8 @@ void RegisterPlugins(flutter::PluginRegistry* registry) {
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   FlutterSoundPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSoundPluginCApi"));
-  noneRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("none"));
+  OpusFlutterWindowsPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("OpusFlutterWindowsPlugin"));
   PermissionHandlerWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("PermissionHandlerWindowsPlugin"));
 }

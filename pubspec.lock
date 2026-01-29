@@ -243,10 +243,9 @@ packages:
   flutter_sound:
     dependency: "direct main"
     description:
-      name: flutter_sound
-      sha256: "77f0252a2f08449d621f68b8fd617c3b391e7f862eaa94bb32f53cc2dc3bbe85"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/flutter_sound"
+      relative: true
+    source: path
     version: "9.30.0"
   flutter_sound_platform_interface:
     dependency: transitive
@@ -581,12 +580,11 @@ packages:
     source: hosted
     version: "3.0.3"
   opus_flutter_windows:
-    dependency: transitive
+    dependency: "direct overridden"
     description:
-      name: opus_flutter_windows
-      sha256: "6a26862dd331c9c4b5e4c805efe3dd4e4a049e4a18bee230d994c25d72928a3b"
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/opus_flutter_windows"
+      relative: true
+    source: path
     version: "3.0.0"
   package_config:
     dependency: transitive

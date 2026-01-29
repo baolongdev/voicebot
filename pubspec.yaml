@@ -37,5 +37,11 @@ dev_dependencies:
     sdk: flutter
   test: ^1.25.2
 
+dependency_overrides:
+  flutter_sound:
+    path: third_party/flutter_sound
+  opus_flutter_windows:
+    path: third_party/opus_flutter_windows
+
 flutter:
   uses-material-design: true
