@@ -38,8 +38,9 @@ class FormRepositoryImpl implements FormRepository {
       _lastResult = XiaoZhiResult(_ota.otaResult);
       _controller.add(_lastResult);
       _settingsRepository.mqttConfig = _ota.otaResult?.mqttConfig;
-      if (_ota.otaResult?.websocket?.url?.isNotEmpty ?? false) {
-        _settingsRepository.webSocketUrl = _ota.otaResult?.websocket?.url;
+      final otaWebSocketUrl = _ota.otaResult?.websocket?.url;
+      if (otaWebSocketUrl != null && otaWebSocketUrl.isNotEmpty) {
+        _settingsRepository.webSocketUrl = otaWebSocketUrl;
       }
       _settingsRepository.webSocketToken = _ota.otaResult?.websocket?.token;
     } else {
@@ -47,7 +48,6 @@ class FormRepositoryImpl implements FormRepository {
       _settingsRepository.webSocketUrl = formData.selfHostConfig.webSocketUrl;
       _lastResult = const SelfHostResult();
       _controller.add(_lastResult);
-      // TODO
     }
     // Print device info for parity with Android implementation.
     // ignore: avoid_print

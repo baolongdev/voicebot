@@ -72,7 +72,9 @@ class _FakeHttpClient extends Fake implements HttpClient {
 class _FakeHttpClientRequest extends Fake implements HttpClientRequest {
   _FakeHttpClientRequest(this.method, this.uri, this._handler, this._onRequest);
 
+  @override
   final String method;
+  @override
   final Uri uri;
   final _FakeHttpHeaders _headers = _FakeHttpHeaders();
   final List<int> _bodyBytes = <int>[];
@@ -200,7 +202,8 @@ void main() {
   final Map<String, String> storage = <String, String>{};
 
   setUpAll(() {
-    storageChannel.setMockMethodCallHandler((call) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(storageChannel, (call) async {
       final args =
           (call.arguments as Map?)?.cast<String, dynamic>() ??
           <String, dynamic>{};

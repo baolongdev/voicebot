@@ -138,7 +138,6 @@ class ChatRepositoryImpl implements ChatRepository {
       'text': text,
       'session_id': _protocol?.sessionId ?? '',
     };
-    // TODO(protocol): Confirm server expects a text message payload.
     await _protocol?.sendText(jsonEncode(payload));
     return Result.success(true);
   }

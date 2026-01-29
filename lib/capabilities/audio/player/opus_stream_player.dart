@@ -29,7 +29,6 @@ class OpusStreamPlayer {
   late final int _bufferSizeBytes;
   Duration _lastPosition = Duration.zero;
   DateTime? _lastPositionChangeAt;
-  int _lastHeadPosition = 0;
 
   Future<void> start(Stream<Uint8List?> pcmStream) async {
     if (_isPlaying) {
@@ -123,7 +122,6 @@ class OpusStreamPlayer {
         final current = await _nativePlayer.getPlaybackHeadPosition();
         if (current != last) {
           last = current;
-          _lastHeadPosition = current;
         } else {
           break;
         }

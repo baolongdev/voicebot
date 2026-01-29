@@ -23,7 +23,6 @@ class AudioRecorder {
   final BytesBuilder _buffer = BytesBuilder(copy: false);
   StreamSubscription? _rawSubscription;
 
-  // TODO: AEC/NS are platform features; no direct Flutter API here.
   Stream<Uint8List> startRecording() {
     _pcmController ??= StreamController<Uint8List>.broadcast();
     _rawController ??= StreamController<Uint8List>();

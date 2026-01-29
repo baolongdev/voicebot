@@ -11,11 +11,11 @@ class OtaNoopPlatform implements OtaPlatform {
 
   @override
   Future<void> installFirmware(File file) async {
-    // TODO: Platform install is not supported here yet.
+    // No-op on unsupported platforms.
   }
 
   @override
   Future<void> restartApp() async {
-    // TODO: Platform restart is not supported here yet.
+    // No-op on unsupported platforms.
   }
 }

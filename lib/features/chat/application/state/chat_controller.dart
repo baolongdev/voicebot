@@ -84,7 +84,6 @@ class ChatController extends ChangeNotifier {
   int _playbackMinBytes = 0;
   Timer? _retryTimer;
   int _speakingEpoch = 0;
-  int _retryCount = 0;
 
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   bool get isSending => _isSending;
@@ -114,8 +113,9 @@ class ChatController extends ChangeNotifier {
         ),
       );
       _logMessage(response.isUser ? '>> ${response.text}' : '<< ${response.text}');
-      if (response.audioBytes != null && response.audioBytes!.isNotEmpty) {
-        // TODO(audio): Play response audio bytes using audio player.
+      final audioBytes = response.audioBytes;
+      if (audioBytes != null && audioBytes.isNotEmpty) {
+        _handleIncomingAudio(audioBytes);
       }
       notifyListeners();
     });
@@ -331,7 +331,6 @@ class ChatController extends ChangeNotifier {
     if (_retryTimer != null) {
       return;
     }
-    _retryCount += 1;
     const retryDelay = Duration(seconds: 2);
     _retryTimer = Timer(retryDelay, () {
       _retryTimer = null;
