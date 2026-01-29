@@ -45,7 +45,6 @@ Danh sách type:
 - Git/GitHub:
   - "Stage các file vừa đổi và commit với message `fix: update build workflow`."
   - "Commit và push lên GitHub cho tôi."
-  - "Commit và push: chỉ gồm `AGENTS.md` và `changelog/main/README.md`, message `docs: update skill usage examples`."
   - "Tự viết commit message theo branch hiện tại và push giúp tôi."
   - "Xóa nhánh local và remote `feat/old-experiment`."
 
