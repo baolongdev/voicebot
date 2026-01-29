@@ -1,0 +1,20 @@
+name: Enforce branch naming
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          echo "Branch: ${BRANCH_NAME}"
+          if [[ ! "${BRANCH_NAME}" =~ ^(feat|fix|chore|refactor|perf|test|docs|ci|build|hotfix)/[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "Invalid branch name. Expected: type/short-title"
+            echo "Allowed types: feat, fix, chore, refactor, perf, test, docs, ci, build, hotfix"
+            exit 1
+          fi

@@ -21,6 +21,20 @@
   - **system**: OTA implementation, permissions cubit/view, platform wrappers.
 - Clean Architecture chosen to isolate protocols/audio from UI, enable swapping WebSocket ↔ MQTT/UDP and plugging platform services (OTA, permissions) without touching widgets.
 
+### 2.1 Branch Naming Convention
+
+Danh sách type:
+- feat/ thêm tính năng
+- fix/ sửa bug
+- chore/ dọn dẹp, đổi config, tooling
+- refactor/ thay đổi cấu trúc, không đổi hành vi
+- perf/ tối ưu hiệu năng
+- test/ thêm/sửa test
+- docs/ tài liệu
+- ci/ pipeline CI/CD
+- build/ build system, build config
+- hotfix/ vá gấp trên production
+
 ### 3️⃣ Feature-by-Feature Status (What Is DONE)
 
 #### 3.1 Permissions

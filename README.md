@@ -2,6 +2,10 @@
 
 A new Flutter project.
 
+## Contributing
+
+Please read `CONTRIBUTING.md` for branch naming rules and contribution guidelines.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
