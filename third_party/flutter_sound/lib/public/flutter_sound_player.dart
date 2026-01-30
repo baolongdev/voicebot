@@ -2089,7 +2089,7 @@ class FlutterSoundPlayer implements FlutterSoundPlayerCallback {
     _logger.d('FS:<--- setVolume ');
   }
 
-  /// FIXME : documentation of this verb
+  /// Set volume and stereo pan for playback.
   Future<void> setVolumePan(double volume, double pan) async {
     await _lock.synchronized(() async {
       await _setVolumePan(volume, pan);

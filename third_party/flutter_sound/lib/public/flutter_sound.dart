@@ -179,7 +179,7 @@ class FlutterSound {
   /// The FlutterSound Logger setter
   //set logger(Logger aLogger) {
   //  _logger = aLogger;
-  //  // TODO
+  //  // Note:
   // Here we must call flutter_sound_core if necessary
   //}
 
@@ -201,10 +201,8 @@ class FlutterSound {
   /// The Apps can use this instance without having to create a [FlutterSoundPlayer] themselves.
   FlutterSoundPlayer thePlayer = FlutterSoundPlayer();
 
-  /// TODO
-  void internalOpenSessionForRecording() {
-    //todo
-  }
+  /// Reserved for internal session setup; currently a no-op.
+  void internalOpenSessionForRecording() {}
 
   // ----------------------------------------------------------------------------------------------------------------------
 }

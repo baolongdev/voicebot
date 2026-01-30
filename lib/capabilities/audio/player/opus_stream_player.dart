@@ -364,39 +364,6 @@ class OpusStreamPlayer {
   }
 }
 
-Uint8List _buildWavHeader({
-  required int sampleRate,
-  required int channels,
-  required int bitsPerSample,
-}) {
-  const int headerSize = 44;
-  const int unknownDataSize = 0xFFFFFFFF;
-  final int byteRate = sampleRate * channels * (bitsPerSample ~/ 8);
-  final int blockAlign = channels * (bitsPerSample ~/ 8);
-  final int riffChunkSize = 36 + unknownDataSize;
-
-  final buffer = Uint8List(headerSize);
-  final bytes = ByteData.view(buffer.buffer);
-
-  buffer.setAll(0, 'RIFF'.codeUnits);
-  bytes.setUint32(4, riffChunkSize, Endian.little);
-  buffer.setAll(8, 'WAVE'.codeUnits);
-
-  buffer.setAll(12, 'fmt '.codeUnits);
-  bytes.setUint32(16, 16, Endian.little);
-  bytes.setUint16(20, 1, Endian.little);
-  bytes.setUint16(22, channels, Endian.little);
-  bytes.setUint32(24, sampleRate, Endian.little);
-  bytes.setUint32(28, byteRate, Endian.little);
-  bytes.setUint16(32, blockAlign, Endian.little);
-  bytes.setUint16(34, bitsPerSample, Endian.little);
-
-  buffer.setAll(36, 'data'.codeUnits);
-  bytes.setUint32(40, unknownDataSize, Endian.little);
-
-  return buffer;
-}
-
 Uint8List _buildWavHeaderWithLength({
   required int sampleRate,
   required int channels,
@@ -430,18 +397,3 @@ Uint8List _buildWavHeaderWithLength({
   return buffer;
 }
 
-int _pcm16Peak(Uint8List data) {
-  if (data.length < 2) {
-    return 0;
-  }
-  var peak = 0;
-  for (var i = 0; i + 1 < data.length; i += 2) {
-    final sample = (data[i] | (data[i + 1] << 8));
-    final signed = sample >= 0x8000 ? sample - 0x10000 : sample;
-    final abs = signed.abs();
-    if (abs > peak) {
-      peak = abs;
-    }
-  }
-  return peak;
-}

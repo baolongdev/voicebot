@@ -432,7 +432,8 @@ class FlutterSoundRecorder implements FlutterSoundRecorderCallback {
   /// ```
   ///
   /// ## Parameters
-  /// - FIXME : document `isBGService` parameter
+  /// - **isBGService:** if true, configures the recorder to run under the
+  ///   background service (Android), enabling background audio capture.
   ///
   /// ## Return
   ///
