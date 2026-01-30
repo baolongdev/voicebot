@@ -2,6 +2,7 @@
 
 ## 2026-01-30
 - Updated CI build workflow to publish only Android/Windows/Linux and create Releases on tags.
+- Adjusted build workflow trigger to run only on version tags (v*).
 - Added Linux build dependencies and GCC/G++ toolchain settings in CI.
 - Removed macOS, iOS, and Web build jobs from CI workflow.
 - Added Opus loader abstraction to avoid DynamicLibrary type mismatch across platforms.
