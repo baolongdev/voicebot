@@ -17,9 +17,7 @@ import '../../features/auth/presentation/state/auth_state_listenable.dart';
 import '../../features/chat/application/state/chat_controller.dart';
 import '../../features/chat/application/usecases/connect_chat_usecase.dart';
 import '../../features/chat/application/usecases/disconnect_chat_usecase.dart';
-import '../../features/chat/application/usecases/get_server_sample_rate_usecase.dart';
 import '../../features/chat/application/usecases/load_chat_config_usecase.dart';
-import '../../features/chat/application/usecases/observe_chat_audio_usecase.dart';
 import '../../features/chat/application/usecases/observe_chat_errors_usecase.dart';
 import '../../features/chat/application/usecases/observe_chat_responses_usecase.dart';
 import '../../features/chat/application/usecases/observe_chat_speaking_usecase.dart';
@@ -31,6 +29,9 @@ import '../../features/chat/domain/repositories/chat_repository.dart';
 import '../../features/chat/infrastructure/repositories/chat_config_provider_impl.dart';
 import '../../features/chat/infrastructure/repositories/chat_repository_impl.dart';
 import '../../features/form/infrastructure/repositories/settings_repository.dart';
+import '../../capabilities/voice/default_session_coordinator.dart';
+import '../../capabilities/voice/session_coordinator.dart';
+import '../../capabilities/voice/voice_platform_factory.dart';
 
 void registerAuthFeature(GetIt getIt) {
   if (!getIt.isRegistered<http.Client>()) {
@@ -109,7 +110,20 @@ void registerAuthFeature(GetIt getIt) {
 
 void registerChatFeature(GetIt getIt) {
   if (!getIt.isRegistered<ChatRepository>()) {
-    getIt.registerLazySingleton<ChatRepository>(ChatRepositoryImpl.new);
+    getIt.registerLazySingleton<ChatRepository>(
+      () => ChatRepositoryImpl(
+        sessionCoordinator: getIt<SessionCoordinator>(),
+      ),
+    );
+  }
+
+  if (!getIt.isRegistered<SessionCoordinator>()) {
+    getIt.registerLazySingleton<SessionCoordinator>(
+      () => DefaultSessionCoordinator(
+        audioInput: VoicePlatformFactory.createAudioInput(),
+        audioOutput: VoicePlatformFactory.createAudioOutput(),
+      ),
+    );
   }
 
   if (!getIt.isRegistered<ChatConfigProvider>()) {
@@ -139,12 +153,6 @@ void registerChatFeature(GetIt getIt) {
     );
   }
 
-  if (!getIt.isRegistered<GetServerSampleRateUseCase>()) {
-    getIt.registerFactory<GetServerSampleRateUseCase>(
-      () => GetServerSampleRateUseCase(getIt<ChatRepository>()),
-    );
-  }
-
   if (!getIt.isRegistered<SendChatMessageUseCase>()) {
     getIt.registerFactory<SendChatMessageUseCase>(
       () => SendChatMessageUseCase(getIt<ChatRepository>()),
@@ -169,12 +177,6 @@ void registerChatFeature(GetIt getIt) {
     );
   }
 
-  if (!getIt.isRegistered<ObserveChatAudioUseCase>()) {
-    getIt.registerFactory<ObserveChatAudioUseCase>(
-      () => ObserveChatAudioUseCase(getIt<ChatRepository>()),
-    );
-  }
-
   if (!getIt.isRegistered<ObserveChatErrorsUseCase>()) {
     getIt.registerFactory<ObserveChatErrorsUseCase>(
       () => ObserveChatErrorsUseCase(getIt<ChatRepository>()),
@@ -193,12 +195,9 @@ void registerChatFeature(GetIt getIt) {
         loadConfig: getIt<LoadChatConfigUseCase>(),
         connect: getIt<ConnectChatUseCase>(),
         disconnect: getIt<DisconnectChatUseCase>(),
-        getServerSampleRate: getIt<GetServerSampleRateUseCase>(),
         sendMessage: getIt<SendChatMessageUseCase>(),
-        sendAudioFrame: getIt<SendAudioFrameUseCase>(),
         startListening: getIt<StartListeningUseCase>(),
         observeResponses: getIt<ObserveChatResponsesUseCase>(),
-        observeAudio: getIt<ObserveChatAudioUseCase>(),
         observeErrors: getIt<ObserveChatErrorsUseCase>(),
         observeSpeaking: getIt<ObserveChatSpeakingUseCase>(),
       ),

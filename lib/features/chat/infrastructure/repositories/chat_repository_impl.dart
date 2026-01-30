@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
-
-import '../../../../capabilities/protocol/websocket_protocol.dart';
-import '../../../../capabilities/protocol/protocol.dart';
+import '../../../../capabilities/voice/session_coordinator.dart';
+import '../../../../capabilities/voice/transport_client.dart';
+import '../../../../capabilities/voice/websocket_transport_client.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/result/result.dart';
 import '../../domain/entities/chat_config.dart';
@@ -12,22 +12,26 @@ import '../../domain/repositories/chat_repository.dart';
 import '../../../../core/logging/app_logger.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
-  ChatRepositoryImpl()
-      : _responsesController = StreamController<ChatResponse>.broadcast(),
+  ChatRepositoryImpl({
+    required SessionCoordinator sessionCoordinator,
+  })  : _sessionCoordinator = sessionCoordinator,
+        _responsesController = StreamController<ChatResponse>.broadcast(),
         _audioController = StreamController<List<int>>.broadcast(),
         _errorController = StreamController<Failure>.broadcast(),
         _speakingController = StreamController<bool>.broadcast();
 
+  final SessionCoordinator _sessionCoordinator;
   final StreamController<ChatResponse> _responsesController;
   final StreamController<List<int>> _audioController;
   final StreamController<Failure> _errorController;
   final StreamController<bool> _speakingController;
 
-  WebsocketProtocol? _protocol;
   StreamSubscription<Map<String, dynamic>>? _jsonSubscription;
-  StreamSubscription<List<int>>? _audioSubscription;
+  StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<String>? _errorSubscription;
+  StreamSubscription<bool>? _speakingSubscription;
   ChatConfig? _lastConfig;
+  TransportClient? _transport;
   bool _isConnected = false;
   bool _isSpeaking = false;
 
@@ -44,7 +48,7 @@ class ChatRepositoryImpl implements ChatRepository {
   Stream<bool> get speakingStream => _speakingController.stream;
 
   @override
-  int get serverSampleRate => _protocol?.serverSampleRate ?? -1;
+  int get serverSampleRate => _sessionCoordinator.serverSampleRate;
 
   @override
   Future<Result<bool>> connect(ChatConfig config) async {
@@ -59,13 +63,13 @@ class ChatRepositoryImpl implements ChatRepository {
     _lastConfig = config;
     _logMessage('connect started');
 
-    _protocol = WebsocketProtocol(
+    _transport = WebsocketTransportClient(
       deviceInfo: config.deviceInfo,
       url: config.url,
       accessToken: config.accessToken,
     );
 
-    final opened = await _protocol!.openAudioChannel();
+    final opened = await _sessionCoordinator.connect(_transport!);
     if (!opened) {
       _logMessage('connect failed: openAudioChannel returned false');
       return Result.failure(
@@ -74,24 +78,26 @@ class ChatRepositoryImpl implements ChatRepository {
     }
     _isConnected = true;
 
-    _jsonSubscription = _protocol!.incomingJsonStream.stream.listen(
+    _jsonSubscription = _sessionCoordinator.incomingJson.listen(
       _handleIncomingJson,
       onError: (_) {
         _errorController.add(const Failure(message: 'Lỗi nhận dữ liệu'));
       },
     );
-    _audioSubscription = _protocol!.incomingAudioStream.stream.listen(
+    _audioSubscription = _sessionCoordinator.incomingAudio.listen(
       (data) => _audioController.add(data),
       onError: (_) {
         _errorController.add(const Failure(message: 'Lỗi nhận âm thanh'));
       },
     );
-    _errorSubscription = _protocol!.networkErrorStream.stream.listen(
+    _errorSubscription = _sessionCoordinator.errors.listen(
       (error) {
         _logMessage('network error: $error');
+        _isConnected = false;
         _errorController.add(Failure(message: error));
       },
     );
+    _speakingSubscription = _sessionCoordinator.speaking.listen(_setSpeaking);
 
     return Result.success(true);
   }
@@ -99,25 +105,26 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
-    _setSpeaking(false);
     await _jsonSubscription?.cancel();
     await _audioSubscription?.cancel();
     await _errorSubscription?.cancel();
+    await _speakingSubscription?.cancel();
     _jsonSubscription = null;
     _audioSubscription = null;
     _errorSubscription = null;
-    _protocol?.dispose();
-    _protocol = null;
+    _speakingSubscription = null;
+    await _sessionCoordinator.disconnect();
+    _transport = null;
   }
 
   @override
   Future<void> startListening() async {
-    await _protocol?.sendStartListening(ListeningMode.autoStop);
+    await _sessionCoordinator.startListening();
   }
 
   @override
   Future<void> stopListening() async {
-    await _protocol?.sendStopListening();
+    await _sessionCoordinator.stopListening();
   }
 
   @override
@@ -136,31 +143,21 @@ class ChatRepositoryImpl implements ChatRepository {
     final payload = <String, dynamic>{
       'type': 'text',
       'text': text,
-      'session_id': _protocol?.sessionId ?? '',
+      'session_id': _transport?.sessionId ?? '',
     };
-    await _protocol?.sendText(jsonEncode(payload));
+    await _sessionCoordinator.sendText(jsonEncode(payload));
     return Result.success(true);
   }
 
   @override
   Future<void> sendAudio(List<int> data) async {
-    if (data.isEmpty) {
-      return;
-    }
-    await _protocol?.sendAudio(Uint8List.fromList(data));
+    await _sessionCoordinator.sendAudio(data);
   }
 
   void _handleIncomingJson(Map<String, dynamic> json) {
     final type = json['type'] as String? ?? '';
     if (type == 'tts') {
       final state = json['state'] as String? ?? '';
-      if (state == 'start' || state == 'sentence_start') {
-        _setSpeaking(true);
-      }
-      if (state == 'stop') {
-        _setSpeaking(false);
-        return;
-      }
       if (state == 'sentence_start') {
         final text = json['text'] as String? ?? '';
         if (text.isNotEmpty) {
@@ -175,6 +172,9 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     if (type == 'stt') {
+      if (_isSpeaking) {
+        return;
+      }
       final text = json['text'] as String? ?? '';
       if (text.isNotEmpty) {
         _responsesController.add(ChatResponse(text: text, isUser: true));
@@ -197,9 +197,6 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   void _setSpeaking(bool speaking) {
-    if (_isSpeaking == speaking) {
-      return;
-    }
     _isSpeaking = speaking;
     _speakingController.add(speaking);
   }

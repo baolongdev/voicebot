@@ -137,6 +137,7 @@ class WebsocketProtocol extends Protocol {
         _logMessage(
           'socket closed code=${code ?? '-'} reason=${reason ?? '-'}',
         );
+        networkErrorStream.add('Socket closed');
         audioChannelStateStream.add(AudioState.closed);
         _websocket = null;
       },
