@@ -34,6 +34,8 @@ class ChatRepositoryImpl implements ChatRepository {
   TransportClient? _transport;
   bool _isConnected = false;
   bool _isSpeaking = false;
+  final List<_RecentText> _recentBotTexts = <_RecentText>[];
+  static const Duration _recentTextWindow = Duration(seconds: 10);
 
   @override
   Stream<ChatResponse> get responses => _responsesController.stream;
@@ -161,6 +163,7 @@ class ChatRepositoryImpl implements ChatRepository {
       if (state == 'sentence_start') {
         final text = json['text'] as String? ?? '';
         if (text.isNotEmpty) {
+          _rememberBotText(text);
           _responsesController.add(ChatResponse(text: text, isUser: false));
         }
       }
@@ -172,11 +175,11 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     if (type == 'stt') {
-      if (_isSpeaking) {
-        return;
-      }
       final text = json['text'] as String? ?? '';
       if (text.isNotEmpty) {
+        if (_isSpeaking && _isLikelyEcho(text)) {
+          return;
+        }
         _responsesController.add(ChatResponse(text: text, isUser: true));
       }
       return;
@@ -201,7 +204,44 @@ class ChatRepositoryImpl implements ChatRepository {
     _speakingController.add(speaking);
   }
 
+  void _rememberBotText(String text) {
+    _recentBotTexts.add(_RecentText(text: _normalize(text), at: DateTime.now()));
+    _pruneRecentTexts();
+  }
+
+  bool _isLikelyEcho(String text) {
+    _pruneRecentTexts();
+    final normalized = _normalize(text);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    for (final recent in _recentBotTexts) {
+      if (recent.text == normalized) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _pruneRecentTexts() {
+    final cutoff = DateTime.now().subtract(_recentTextWindow);
+    _recentBotTexts.removeWhere((item) => item.at.isBefore(cutoff));
+  }
+
+  String _normalize(String text) {
+    final lower = text.toLowerCase();
+    final cleaned = lower.replaceAll(RegExp(r'[^a-z0-9\u00C0-\u024F]+'), ' ');
+    return cleaned.trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
   void _logMessage(String message) {
     AppLogger.log('ChatRepository', message);
   }
+}
+
+class _RecentText {
+  _RecentText({required this.text, required this.at});
+
+  final String text;
+  final DateTime at;
 }

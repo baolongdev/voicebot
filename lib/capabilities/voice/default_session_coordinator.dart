@@ -184,22 +184,27 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _decodeSubscription = null;
     _opusInputController?.close();
     _opusInputController = StreamController<Uint8List>();
-    _decodeSubscription = _opusInputController!.stream
-        .cast<Uint8List?>()
-        .transform(
-          opus_dart.StreamOpusDecoder.bytes(
-            floatOutput: false,
-            sampleRate: _playbackSampleRate,
-            channels: AudioConfig.channels,
-            copyOutput: true,
-            forwardErrorCorrection: false,
-          ),
-        )
-        .listen((pcm) {
-          if (pcm is Uint8List && pcm.isNotEmpty) {
-            _enqueuePcmForPlayback(pcm);
-          }
-        });
+    try {
+      _decodeSubscription = _opusInputController!.stream
+          .cast<Uint8List?>()
+          .transform(
+            opus_dart.StreamOpusDecoder.bytes(
+              floatOutput: false,
+              sampleRate: _playbackSampleRate,
+              channels: AudioConfig.channels,
+              copyOutput: true,
+              forwardErrorCorrection: false,
+            ),
+          )
+          .listen((pcm) {
+            if (pcm is Uint8List && pcm.isNotEmpty) {
+              _enqueuePcmForPlayback(pcm);
+            }
+          });
+    } catch (e) {
+      AppLogger.log('SessionCoordinator', 'opus decoder init failed: $e');
+      _decodeSubscription = null;
+    }
   }
 
   void _startEncodingIfNeeded() {
@@ -207,24 +212,29 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
     final pcmStream = _audioInput.start();
-    _encodeSubscription = pcmStream
-        .cast<List<int>>()
-        .transform(
-          opus_dart.StreamOpusEncoder<int>.bytes(
-            floatInput: false,
-            frameTime: opus_dart.FrameTime.ms60,
-            sampleRate: _audioInput.sampleRate,
-            channels: _audioInput.channels,
-            application: opus_dart.Application.audio,
-            copyOutput: true,
-            fillUpLastFrame: true,
-          ),
-        )
-        .listen((encoded) async {
-          if (encoded.isNotEmpty && _canSendAudio) {
-            await _transport?.sendAudio(Uint8List.fromList(encoded));
-          }
-        });
+    try {
+      _encodeSubscription = pcmStream
+          .cast<List<int>>()
+          .transform(
+            opus_dart.StreamOpusEncoder<int>.bytes(
+              floatInput: false,
+              frameTime: opus_dart.FrameTime.ms60,
+              sampleRate: _audioInput.sampleRate,
+              channels: _audioInput.channels,
+              application: opus_dart.Application.audio,
+              copyOutput: true,
+              fillUpLastFrame: true,
+            ),
+          )
+          .listen((encoded) async {
+            if (encoded.isNotEmpty && _canSendAudio) {
+              await _transport?.sendAudio(Uint8List.fromList(encoded));
+            }
+          });
+    } catch (e) {
+      AppLogger.log('SessionCoordinator', 'opus encoder init failed: $e');
+      _encodeSubscription = null;
+    }
   }
 
   void _handleIncomingJson(Map<String, dynamic> json) {
