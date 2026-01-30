@@ -47,6 +47,8 @@ Danh sách type:
   - "Commit và push lên GitHub cho tôi."
   - "Tự viết commit message theo branch hiện tại và push giúp tôi."
   - "Xóa nhánh local và remote `feat/old-experiment`."
+- Mix:
+  - Tóm tắt thay đổi mới nhất và ghi vào changelog/<branch>/README.md. VÀ Tự viết commit message theo branch hiện tại và push giúp tôi.
 
 ### 3️⃣ Feature-by-Feature Status (What Is DONE)
 
