@@ -1,5 +1,10 @@
 # Changelog - main
 
+## 2026-01-30
+- Updated CI build workflow to publish only Android/Windows/Linux and create Releases on tags.
+- Added Linux build dependencies and GCC/G++ toolchain settings in CI.
+- Removed macOS, iOS, and Web build jobs from CI workflow.
+
 ## 2026-01-29
 - Latest commit summary: added PR template, branch-name/build workflows, and docs updates (AGENTS.md, CONTRIBUTING.md, README.md).
 - Added branch naming convention section to AGENTS.md.
