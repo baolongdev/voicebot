@@ -9,4 +9,7 @@ class AppConfig {
 
   // Permission flow toggle for development; set to true to enable checks/requests.
   static const bool permissionsEnabled = true;
+
+  // Feature flag for new v2 flow entry.
+  static const bool useNewFlow = true;
 }

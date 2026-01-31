@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:voicebot/core/permissions/permission_status.dart';
 import 'package:voicebot/core/permissions/permission_type.dart';
 
@@ -10,9 +12,8 @@ enum PermissionFlowStatus {
 }
 
 class PermissionState {
-  static const List<PermissionType> requiredPermissions = <PermissionType>[
-    PermissionType.microphone,
-  ];
+  static final List<PermissionType> requiredPermissions =
+      _buildRequiredPermissions();
 
   const PermissionState({
     required this.status,
@@ -46,5 +47,23 @@ class PermissionState {
       status: status ?? this.status,
       statuses: statuses ?? this.statuses,
     );
+  }
+
+  static List<PermissionType> _buildRequiredPermissions() {
+    final permissions = <PermissionType>[
+      PermissionType.microphone,
+      PermissionType.camera,
+      PermissionType.photos,
+      PermissionType.notifications,
+      PermissionType.wifi,
+    ];
+    if (Platform.isAndroid) {
+      permissions.addAll(<PermissionType>[
+        PermissionType.bluetooth,
+        PermissionType.bluetoothScan,
+        PermissionType.bluetoothConnect,
+      ]);
+    }
+    return permissions;
   }
 }

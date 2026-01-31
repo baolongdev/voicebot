@@ -4,8 +4,11 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
+  battery_plus
+  connectivity_plus
   flutter_secure_storage_windows
   flutter_sound
+  flutter_volume_controller
   opus_flutter_windows
   permission_handler_windows
   record_windows

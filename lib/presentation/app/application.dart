@@ -51,10 +51,16 @@ class _ApplicationState extends State<Application> {
         builder: (context, child) {
           final brightness = MediaQuery.platformBrightnessOf(context);
           final theme = AppForuiTheme.themeForBrightness(brightness);
+          final topInset = MediaQuery.paddingOf(context).top;
 
           return FAnimatedTheme(
             data: theme,
-            child: child ?? const SizedBox.shrink(),
+            child: FToaster(
+              style: (style) => style.copyWith(
+                padding: EdgeInsets.fromLTRB(16, topInset + 24, 16, 16),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
       ),

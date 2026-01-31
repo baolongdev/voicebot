@@ -8,7 +8,7 @@ import '../../core/permissions/permission_type.dart';
 class PermissionServiceImpl implements PermissionService {
   @override
   Future<PermissionResult> check(PermissionType type) async {
-    if (type == PermissionType.audio || type == PermissionType.wifi) {
+    if (type == PermissionType.audio) {
       return PermissionResult(
         type: type,
         status: PermissionStatus.granted,
@@ -21,7 +21,7 @@ class PermissionServiceImpl implements PermissionService {
 
   @override
   Future<PermissionResult> request(PermissionType type) async {
-    if (type == PermissionType.audio || type == PermissionType.wifi) {
+    if (type == PermissionType.audio) {
       return PermissionResult(
         type: type,
         status: PermissionStatus.granted,
@@ -51,10 +51,20 @@ class PermissionServiceImpl implements PermissionService {
         return handler.Permission.microphone;
       case PermissionType.bluetooth:
         return handler.Permission.bluetooth;
+      case PermissionType.bluetoothScan:
+        return handler.Permission.bluetoothScan;
+      case PermissionType.bluetoothConnect:
+        return handler.Permission.bluetoothConnect;
       case PermissionType.wifi:
         return handler.Permission.locationWhenInUse;
       case PermissionType.file:
         return handler.Permission.storage;
+      case PermissionType.camera:
+        return handler.Permission.camera;
+      case PermissionType.photos:
+        return handler.Permission.photos;
+      case PermissionType.notifications:
+        return handler.Permission.notification;
     }
   }
 
