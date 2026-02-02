@@ -11,6 +11,13 @@ class ThemeTokens {
   static const double radiusMd = 10.0;
   static const double radiusLg = 14.0;
 
+  static const double buttonHeight = 48.0;
+  static const double buttonPaddingHorizontal = spaceMd;
+  static const double buttonPaddingVertical = spaceSm;
+  static const double badgePaddingHorizontal = spaceLg;
+  static const double badgePaddingVertical = spaceSm;
+  static const double footerButtonWidth = 160.0;
+
   // Layout sizing tokens to avoid scattered magic numbers.
   static const double formWidthTablet = 480.0;
   static const double formWidthDesktop = 560.0;

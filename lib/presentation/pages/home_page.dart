@@ -20,6 +20,7 @@ import '../../features/chat/domain/entities/chat_message.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../features/home/application/state/home_state.dart';
 import '../../features/home/domain/entities/home_wifi_network.dart';
+import '../app/theme_mode_cubit.dart';
 import '../../theme/brand_colors.dart';
 import '../../theme/theme_extensions.dart';
 import '../../system/permissions/permission_notifier.dart';
@@ -847,13 +848,16 @@ class _HomeHeader extends StatelessWidget {
                                   description: const Text(
                                     'Bật Wi‑Fi để xem danh sách.',
                                   ),
-                                  suffixBuilder: (context, entry) => FButton(
-                                    mainAxisSize: MainAxisSize.min,
-                                    onPress: () {
-                                      entry.dismiss();
-                                      onWifiSettings?.call();
-                                    },
-                                    child: const Text('Mở cài đặt'),
+                                  suffixBuilder: (context, entry) => SizedBox(
+                                    height: ThemeTokens.buttonHeight,
+                                    child: FButton(
+                                      mainAxisSize: MainAxisSize.min,
+                                      onPress: () {
+                                        entry.dismiss();
+                                        onWifiSettings?.call();
+                                      },
+                                      child: const Text('Mở cài đặt'),
+                                    ),
                                   ),
                                 );
                                 return;
@@ -1162,9 +1166,13 @@ class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
     return FBadgeStyle(
       decoration: decoration,
       contentStyle: FBadgeContentStyle(
-        labelTextStyle: typography.sm.copyWith(
+        labelTextStyle: typography.base.copyWith(
           color: foreground,
           fontWeight: FontWeight.w700,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: ThemeTokens.badgePaddingHorizontal,
+          vertical: ThemeTokens.badgePaddingVertical,
         ),
       ),
     );
@@ -1498,64 +1506,67 @@ class _HomeFooter extends StatelessWidget {
             },
           ),
           const SizedBox(height: ThemeTokens.spaceSm),
-          Row(
-            children: [
+            Row(
+              children: [
+              const _ThemeModeActions(),
               const Spacer(),
-              Row(
-                children: [
-                  FButton(
-                    onPress: isConnected ? onDisconnect : null,
-                    style: FButtonStyle.secondary(
-                      (style) => style.copyWith(
-                        contentStyle: (content) => content.copyWith(
-                          textStyle: content.textStyle.map(
-                            (style) =>
-                                style.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 10,
-                          ),
-                        ),
-                      ),
-                    ),
-                    mainAxisSize: MainAxisSize.min,
-                    child: const Text('Ngắt kết nối'),
-                  ),
-                  const SizedBox(width: ThemeTokens.spaceSm),
-                  FButton(
-                    onPress: isConnected || isConnecting ? null : onConnect,
-                    style: FButtonStyle.primary(
-                      (style) =>
-                          FButtonStyle.inherit(
-                            colors: context.theme.colors,
-                            typography: context.theme.typography,
-                            style: context.theme.style,
-                            color: headerBackground,
-                            foregroundColor: headerForeground,
-                          ).copyWith(
+              SizedBox(
+                width: ThemeTokens.footerButtonWidth,
+                height: ThemeTokens.buttonHeight,
+                child: FButton(
+                  onPress: isConnected
+                      ? onDisconnect
+                      : isConnecting
+                      ? null
+                      : onConnect,
+                  style: isConnected
+                      ? FButtonStyle.secondary(
+                          (style) => style.copyWith(
                             contentStyle: (content) => content.copyWith(
                               textStyle: content.textStyle.map(
                                 (style) =>
                                     style.copyWith(fontWeight: FontWeight.w700),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 10,
+                                horizontal:
+                                    ThemeTokens.buttonPaddingHorizontal,
+                                vertical: ThemeTokens.buttonPaddingVertical,
                               ),
                             ),
                           ),
-                    ),
-                    mainAxisSize: MainAxisSize.min,
-                    child: Text(
-                      isConnected
-                          ? 'Đã kết nối'
-                          : isConnecting
-                          ? 'Đang kết nối'
-                          : 'Kết nối',
-                    ),
+                        )
+                      : FButtonStyle.primary(
+                          (style) =>
+                              FButtonStyle.inherit(
+                                colors: context.theme.colors,
+                                typography: context.theme.typography,
+                                style: context.theme.style,
+                                color: headerBackground,
+                                foregroundColor: headerForeground,
+                              ).copyWith(
+                                contentStyle: (content) => content.copyWith(
+                                  textStyle: content.textStyle.map(
+                                    (style) => style.copyWith(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal:
+                                        ThemeTokens.buttonPaddingHorizontal,
+                                    vertical: ThemeTokens.buttonPaddingVertical,
+                                  ),
+                                ),
+                              ),
+                        ),
+                  mainAxisSize: MainAxisSize.min,
+                  child: Text(
+                    isConnected
+                        ? 'Ngắt kết nối'
+                        : isConnecting
+                        ? 'Đang kết nối'
+                        : 'Kết nối',
                   ),
-                ],
+                ),
               ),
             ],
           ),
@@ -1574,6 +1585,48 @@ class _HomeFooter extends StatelessWidget {
       return 0;
     }
     return index;
+  }
+}
+
+class _ThemeModeActions extends StatelessWidget {
+  const _ThemeModeActions();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ThemeModeCubit, ThemeMode>(
+      builder: (context, mode) {
+        final systemBrightness = MediaQuery.platformBrightnessOf(context);
+        final effectiveBrightness = mode == ThemeMode.system
+            ? systemBrightness
+            : (mode == ThemeMode.dark ? Brightness.dark : Brightness.light);
+        final isCurrentlyDark = effectiveBrightness == Brightness.dark;
+        final label = isCurrentlyDark ? 'Sáng' : 'Tối';
+        final icon = isCurrentlyDark ? Icons.light_mode : Icons.dark_mode;
+        return SizedBox(
+          width: ThemeTokens.footerButtonWidth,
+          height: ThemeTokens.buttonHeight,
+          child: FButton(
+            onPress: () {
+              if (isCurrentlyDark) {
+                context.read<ThemeModeCubit>().setLight();
+              } else {
+                context.read<ThemeModeCubit>().setDark();
+              }
+            },
+            style: FButtonStyle.secondary(),
+            mainAxisSize: MainAxisSize.min,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 16),
+                const SizedBox(width: ThemeTokens.spaceXs),
+                Text(label),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -2049,14 +2102,17 @@ class _WifiPopoverContentState extends State<_WifiPopoverContent> {
         ),
         _DetailRow(label: 'Bảo mật', value: network.securityLabel),
         const Spacer(),
-        FButton(
-          onPress: () {
-            setState(() {
-              _selected = null;
-            });
-          },
-          style: FButtonStyle.ghost(),
-          child: const Text('Quay lại danh sách'),
+        SizedBox(
+          height: ThemeTokens.buttonHeight,
+          child: FButton(
+            onPress: () {
+              setState(() {
+                _selected = null;
+              });
+            },
+            style: FButtonStyle.ghost(),
+            child: const Text('Quay lại danh sách'),
+          ),
         ),
       ],
     );
@@ -2303,21 +2359,27 @@ class _WifiPasswordSheet extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: FButton(
-                          onPress: onCancel,
-                          style: FButtonStyle.ghost(),
-                          child: const Text('Từ chối'),
+                        child: SizedBox(
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: onCancel,
+                            style: FButtonStyle.ghost(),
+                            child: const Text('Từ chối'),
+                          ),
                         ),
                       ),
                       const SizedBox(width: ThemeTokens.spaceSm),
                       Expanded(
-                        child: FButton(
-                          onPress: needsPassword && password.isEmpty
-                              ? null
-                              : onConnect,
-                          child: isConnecting
-                              ? const FCircularProgress()
-                              : const Text('Kết nối'),
+                        child: SizedBox(
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: needsPassword && password.isEmpty
+                                ? null
+                                : onConnect,
+                            child: isConnecting
+                                ? const FCircularProgress()
+                                : const Text('Kết nối'),
+                          ),
                         ),
                       ),
                     ],
@@ -2349,7 +2411,7 @@ class _EmotionPicker extends StatefulWidget {
 
 class _EmotionPickerState extends State<_EmotionPicker> {
   final ScrollController _scrollController = ScrollController();
-  static const double _itemSpacing = 12.0;
+  static const double _itemSpacing = ThemeTokens.spaceSm;
   double _itemExtent = 120.0;
   double _viewportWidth = 0;
   int _loopIndex = 0;
@@ -2391,16 +2453,16 @@ class _EmotionPickerState extends State<_EmotionPicker> {
       return const SizedBox.shrink();
     }
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(ThemeTokens.spaceXs),
       decoration: BoxDecoration(
         color: palette.controlBackground(context),
         borderRadius: BorderRadius.circular(999),
       ),
       child: SizedBox(
-        height: 44,
+        height: ThemeTokens.buttonHeight - ThemeTokens.spaceXs,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final nextExtent = _resolveItemExtent(constraints.maxWidth);
+            final nextExtent = _resolveItemExtent(context, constraints.maxWidth);
             final extentChanged = (nextExtent - _itemExtent).abs() > 0.5;
             final widthChanged =
                 (constraints.maxWidth - _viewportWidth).abs() > 0.5;
@@ -2427,7 +2489,7 @@ class _EmotionPickerState extends State<_EmotionPicker> {
                   itemBuilder: (context, index) {
                     final normalized = _normalizeIndex(index);
                     final isSelected = index == _loopIndex;
-                    final scale = isSelected ? 1.0 : 0.92;
+                    final scale = isSelected ? 1.0 : 0.96;
                     final opacity = isSelected ? 1.0 : 0.72;
                     return SizedBox(
                       width: _itemExtent,
@@ -2443,8 +2505,8 @@ class _EmotionPickerState extends State<_EmotionPicker> {
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOutCubic,
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 10,
+                              horizontal: ThemeTokens.spaceSm,
+                              vertical: ThemeTokens.spaceXs,
                             ),
                             decoration: BoxDecoration(
                               color: isSelected
@@ -2492,6 +2554,9 @@ class _EmotionPickerState extends State<_EmotionPicker> {
                     child: Container(
                       width: 20,
                       decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(999),
+                        ),
                         gradient: LinearGradient(
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
@@ -2512,6 +2577,9 @@ class _EmotionPickerState extends State<_EmotionPicker> {
                     child: Container(
                       width: 20,
                       decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(999),
+                        ),
                         gradient: LinearGradient(
                           begin: Alignment.centerRight,
                           end: Alignment.centerLeft,
@@ -2532,11 +2600,11 @@ class _EmotionPickerState extends State<_EmotionPicker> {
     );
   }
 
-  double _resolveItemExtent(double maxWidth) {
-    const visibleCount = 5;
+  double _resolveItemExtent(BuildContext context, double maxWidth) {
+    const visibleCount = 6;
     final totalSpacing = _itemSpacing * (visibleCount - 1);
     final raw = (maxWidth - totalSpacing) / visibleCount;
-    return raw.clamp(90.0, 200.0);
+    return raw.clamp(52.0, 180.0);
   }
 
   int _normalizeIndex(int index) {

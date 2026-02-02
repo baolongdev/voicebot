@@ -73,6 +73,7 @@ class _HomeShell extends StatelessWidget {
                 const Spacer(),
                 SizedBox(
                   width: double.infinity,
+                  height: ThemeTokens.buttonHeight,
                   child: FButton(
                     onPress: () => context.go(Routes.form),
                     child: const Text('Configure Server'),

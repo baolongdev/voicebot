@@ -6,6 +6,9 @@
 - Introduced an MQTT transport client and refined WebSocket/MQTT protocol + session coordination for voice sessions.
 - Added settings storage abstractions (secure/in-memory) and expanded settings repository, DI, config, theme, and logging wiring.
 - Updated form/OTA/permission tests and added chat/home test scaffolding.
+- Added theme mode toggle wiring (ThemeModeCubit + app theme mode control) and a footer toggle button.
+- Standardized button sizing tokens and applied consistent heights/widths across footer, chat input, form, and permissions.
+- Refined emotion UI (6-item picker sizing, edge fades) and refreshed pastel emotion tones including neutral.
 
 ## 2026-01-31
 - Added v2 home UI with status header, pastel content, animated audio wave, and footer actions.

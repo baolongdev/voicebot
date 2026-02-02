@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:forui/forui.dart';
 
+import '../../../../core/theme/forui/theme_tokens.dart';
+
 class ChatInput extends StatelessWidget {
   const ChatInput({
     super.key,
@@ -45,7 +47,7 @@ class ChatInput extends StatelessWidget {
             ),
             const SizedBox(width: 8.0),
             SizedBox(
-              height: 48.0,
+              height: ThemeTokens.buttonHeight,
               child: FButton(
                 onPress: isSending ? null : onSend,
                 child: isSending

@@ -30,7 +30,10 @@ class HomeSection extends StatelessWidget {
             Semantics(
               button: true,
               label: title,
-              child: FButton(onPress: onPressed, child: const Text('Open')),
+              child: SizedBox(
+                height: ThemeTokens.buttonHeight,
+                child: FButton(onPress: onPressed, child: const Text('Open')),
+              ),
             ),
           ],
         ),

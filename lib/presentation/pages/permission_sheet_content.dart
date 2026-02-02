@@ -148,32 +148,41 @@ class _PermissionSheetContentState extends State<PermissionSheetContent> {
                         ),
                       ],
                       const SizedBox(height: ThemeTokens.spaceLg),
-                      FButton(
-                        onPress: state.isChecking
-                            ? null
-                            : () => widget.onAllow(currentPermission),
-                        child: state.isChecking
-                            ? const FCircularProgress()
-                            : Text('Cho phép ${currentMeta.label}'),
+                      SizedBox(
+                        height: ThemeTokens.buttonHeight,
+                        child: FButton(
+                          onPress: state.isChecking
+                              ? null
+                              : () => widget.onAllow(currentPermission),
+                          child: state.isChecking
+                              ? const FCircularProgress()
+                              : Text('Cho phép ${currentMeta.label}'),
+                        ),
                       ),
                       if (permanentlyDenied) ...[
                         const SizedBox(height: ThemeTokens.spaceSm),
-                        FButton(
-                          onPress: handler.openAppSettings,
-                          style: FButtonStyle.ghost(),
-                          child: const Text('Mở cài đặt'),
+                        SizedBox(
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: handler.openAppSettings,
+                            style: FButtonStyle.ghost(),
+                            child: const Text('Mở cài đặt'),
+                          ),
                         ),
                       ],
                       const SizedBox(height: ThemeTokens.spaceSm),
-                      FButton(
-                        onPress: () {
-                          setState(() {
-                            _declined = true;
-                          });
-                          widget.onNotNow();
-                        },
-                        style: FButtonStyle.ghost(),
-                        child: const Text('Để sau'),
+                      SizedBox(
+                        height: ThemeTokens.buttonHeight,
+                        child: FButton(
+                          onPress: () {
+                            setState(() {
+                              _declined = true;
+                            });
+                            widget.onNotNow();
+                          },
+                          style: FButtonStyle.ghost(),
+                          child: const Text('Để sau'),
+                        ),
                       ),
                       if (showLaterHint) ...[
                         const SizedBox(height: ThemeTokens.spaceSm),

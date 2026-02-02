@@ -150,6 +150,7 @@ class _ServerFormViewState extends State<_ServerFormView> {
                   order: const NumericFocusOrder(4.0),
                   child: SizedBox(
                     width: double.infinity,
+                    height: ThemeTokens.buttonHeight,
                     child: FButton(
                       onPress: state.isLoading
                           ? null

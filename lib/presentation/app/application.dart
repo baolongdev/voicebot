@@ -8,6 +8,7 @@ import '../../core/theme/forui/forui_theme.dart';
 import '../../di/locator.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/home/application/state/home_cubit.dart';
+import '../../presentation/app/theme_mode_cubit.dart';
 import '../../system/permissions/permission_notifier.dart';
 
 class Application extends StatefulWidget {
@@ -35,33 +36,49 @@ class _ApplicationState extends State<Application> {
 
     return MultiBlocProvider(
       providers: [
+        BlocProvider<ThemeModeCubit>.value(value: getIt<ThemeModeCubit>()),
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),
         BlocProvider<HomeCubit>.value(value: getIt<HomeCubit>()),
       ],
-      child: MaterialApp.router(
-        routerConfig: router,
-        theme: lightTheme.toApproximateMaterialTheme(),
-        darkTheme: darkTheme.toApproximateMaterialTheme(),
-        themeMode: ThemeMode.system,
-        localizationsDelegates: FLocalizations.localizationsDelegates,
-        supportedLocales: FLocalizations.supportedLocales,
-        builder: (context, child) {
-          final brightness = MediaQuery.platformBrightnessOf(context);
-          final theme = AppForuiTheme.themeForBrightness(brightness);
-          final topInset = MediaQuery.paddingOf(context).top;
+      child: BlocBuilder<ThemeModeCubit, ThemeMode>(
+        builder: (context, themeMode) {
+          return MaterialApp.router(
+            routerConfig: router,
+            theme: lightTheme.toApproximateMaterialTheme(),
+            darkTheme: darkTheme.toApproximateMaterialTheme(),
+            themeMode: themeMode,
+            localizationsDelegates: FLocalizations.localizationsDelegates,
+            supportedLocales: FLocalizations.supportedLocales,
+            builder: (context, child) {
+              final brightness = _resolveBrightness(context, themeMode);
+              final theme = AppForuiTheme.themeForBrightness(brightness);
+              final topInset = MediaQuery.paddingOf(context).top;
 
-          return FAnimatedTheme(
-            data: theme,
-            child: FToaster(
-              style: (style) => style.copyWith(
-                padding: EdgeInsets.fromLTRB(16, topInset + 24, 16, 16),
-              ),
-              child: child ?? const SizedBox.shrink(),
-            ),
+              return FAnimatedTheme(
+                data: theme,
+                child: FToaster(
+                  style: (style) => style.copyWith(
+                    padding: EdgeInsets.fromLTRB(16, topInset + 24, 16, 16),
+                  ),
+                  child: child ?? const SizedBox.shrink(),
+                ),
+              );
+            },
           );
         },
       ),
     );
+  }
+
+  Brightness _resolveBrightness(BuildContext context, ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.dark:
+        return Brightness.dark;
+      case ThemeMode.light:
+        return Brightness.light;
+      case ThemeMode.system:
+        return MediaQuery.platformBrightnessOf(context);
+    }
   }
 }
