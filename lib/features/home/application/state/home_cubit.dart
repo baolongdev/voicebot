@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -44,6 +45,7 @@ class HomeCubit extends Cubit<HomeState> {
   bool _connectInFlight = false;
   bool _disposed = false;
   bool _systemInitialized = false;
+  bool _batteryRefreshInFlight = false;
 
   static const Duration _activationPollInterval = Duration(seconds: 10);
   static const Duration _activationProgressStep = Duration(milliseconds: 200);
@@ -60,6 +62,7 @@ class HomeCubit extends Cubit<HomeState> {
         return;
       }
       emit(state.copyWith(now: DateTime.now()));
+      unawaited(_refreshBatteryLevel());
     });
 
     final batteryLevel = await _systemService.fetchBatteryLevel();
@@ -82,7 +85,7 @@ class HomeCubit extends Cubit<HomeState> {
 
     _batteryStateSub =
         _systemService.batteryStateStream.listen((batteryState) {
-      emit(state.copyWith(batteryState: batteryState));
+      unawaited(_refreshBatteryLevel(batteryState: batteryState));
     });
     _connectivitySub =
         _systemService.connectivityStream.listen((results) async {
@@ -366,6 +369,30 @@ class HomeCubit extends Cubit<HomeState> {
     final connected = chatState.isConnected;
     if (state.isConnected != connected) {
       emit(state.copyWith(isConnected: connected));
+    }
+  }
+
+  Future<void> _refreshBatteryLevel({BatteryState? batteryState}) async {
+    if (_batteryRefreshInFlight) {
+      if (batteryState != null) {
+        emit(state.copyWith(batteryState: batteryState));
+      }
+      return;
+    }
+    _batteryRefreshInFlight = true;
+    try {
+      final level = await _systemService.fetchBatteryLevel();
+      if (_disposed || isClosed) {
+        return;
+      }
+      emit(
+        state.copyWith(
+          batteryState: batteryState ?? state.batteryState,
+          batteryLevel: level ?? state.batteryLevel,
+        ),
+      );
+    } finally {
+      _batteryRefreshInFlight = false;
     }
   }
 

@@ -5,10 +5,10 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 import 'package:audio_router/audio_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/permissions/permission_type.dart';
@@ -35,7 +35,6 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late final ChatCubit _chatCubit;
   final AudioPlayer _chimePlayer = AudioPlayer();
   late final Uint8List _chimeBytes = _buildChimeWavBytes();
   DateTime _lastChimeAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -48,7 +47,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _chatCubit = context.read<ChatCubit>();
     context.read<HomeCubit>().initialize();
     if (AppConfig.permissionsEnabled) {
       _schedulePermissionPrompt();
@@ -411,8 +409,8 @@ class _HomePageState extends State<HomePage> {
     if (_headerHeight <= 0) {
       return ThemeTokens.spaceSm;
     }
-    final spacing = _headerHeight * 0.15;
-    return spacing.clamp(8.0, 24.0);
+    final spacing = _headerHeight * 0.1;
+    return spacing.clamp(ThemeTokens.spaceSm, ThemeTokens.spaceMd);
   }
 
   Future<void> _refreshWifiNetworks() async {
@@ -521,181 +519,6 @@ class _HomePageState extends State<HomePage> {
     }
     return spans;
   }
-}
-
-class _AnimatedAgentTranscript extends StatefulWidget {
-  const _AnimatedAgentTranscript({
-    required this.text,
-    required this.readStyle,
-    required this.unreadStyle,
-    required this.numberReadStyle,
-    required this.numberUnreadStyle,
-    this.durationHintMs,
-  });
-
-  final String text;
-  final TextStyle readStyle;
-  final TextStyle unreadStyle;
-  final TextStyle numberReadStyle;
-  final TextStyle numberUnreadStyle;
-  final int? durationHintMs;
-
-  @override
-  State<_AnimatedAgentTranscript> createState() =>
-      _AnimatedAgentTranscriptState();
-}
-
-class _AnimatedAgentTranscriptState extends State<_AnimatedAgentTranscript>
-    with SingleTickerProviderStateMixin {
-  AnimationController? _controller;
-  List<_TranscriptToken> _tokens = const [];
-  int _wordCount = 0;
-  int _readWords = 0;
-  Duration _perWordDuration = Duration.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _resetAnimation();
-  }
-
-  @override
-  void didUpdateWidget(_AnimatedAgentTranscript oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text ||
-        oldWidget.durationHintMs != widget.durationHintMs) {
-      _resetAnimation();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_tokens.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final spans = _buildWordSpans(_tokens, _readWords);
-    return Text.rich(TextSpan(children: spans), textAlign: TextAlign.left);
-  }
-
-  void _resetAnimation() {
-    _controller?.dispose();
-    _tokens = _tokenize(widget.text);
-    _wordCount = _tokens.where((token) => token.isWord).length;
-    _readWords = 0;
-    _perWordDuration = _computePerWordDuration();
-
-    if (_wordCount == 0) {
-      setState(() {});
-      return;
-    }
-
-    _controller = AnimationController(vsync: this, duration: _perWordDuration)
-      ..addStatusListener((status) {
-        if (status != AnimationStatus.completed) {
-          return;
-        }
-        if (!mounted) {
-          return;
-        }
-        if (_readWords >= _wordCount) {
-          return;
-        }
-        setState(() {
-          _readWords += 1;
-        });
-        if (_readWords < _wordCount) {
-          _controller?.forward(from: 0);
-        }
-      });
-    _controller?.forward();
-    setState(() {});
-  }
-
-  Duration _computePerWordDuration() {
-    if (_wordCount <= 0) {
-      return Duration.zero;
-    }
-    return const Duration(milliseconds: 20);
-  }
-
-  List<TextSpan> _buildWordSpans(List<_TranscriptToken> tokens, int readWords) {
-    final spans = <TextSpan>[];
-    var wordIndex = 0;
-    for (final token in tokens) {
-      if (!token.isWord) {
-        final isRead = wordIndex <= readWords;
-        spans.add(
-          TextSpan(
-            text: token.text,
-            style: isRead ? widget.readStyle : widget.unreadStyle,
-          ),
-        );
-        continue;
-      }
-      final isRead = wordIndex < readWords;
-      wordIndex += 1;
-      spans.addAll(_highlightNumbersForToken(token.text, isRead));
-    }
-    return spans;
-  }
-
-  List<TextSpan> _highlightNumbersForToken(String text, bool read) {
-    final baseStyle = read ? widget.readStyle : widget.unreadStyle;
-    final numberStyle = read
-        ? widget.numberReadStyle
-        : widget.numberUnreadStyle;
-    final spans = <TextSpan>[];
-    final regex = RegExp(r'\d+');
-    var start = 0;
-    for (final match in regex.allMatches(text)) {
-      if (match.start > start) {
-        spans.add(
-          TextSpan(text: text.substring(start, match.start), style: baseStyle),
-        );
-      }
-      spans.add(
-        TextSpan(
-          text: text.substring(match.start, match.end),
-          style: numberStyle,
-        ),
-      );
-      start = match.end;
-    }
-    if (start < text.length) {
-      spans.add(TextSpan(text: text.substring(start), style: baseStyle));
-    }
-    return spans;
-  }
-
-  List<_TranscriptToken> _tokenize(String text) {
-    if (text.isEmpty) {
-      return const [];
-    }
-    final tokens = <_TranscriptToken>[];
-    final regex = RegExp(r'\s+|\S+');
-    for (final match in regex.allMatches(text)) {
-      final token = match.group(0);
-      if (token == null || token.isEmpty) {
-        continue;
-      }
-      final isWord = token.trim().isNotEmpty;
-      tokens.add(_TranscriptToken(token, isWord));
-    }
-    return tokens;
-  }
-}
-
-class _TranscriptToken {
-  const _TranscriptToken(this.text, this.isWord);
-
-  final String text;
-  final bool isWord;
 }
 
 class _HomeHeader extends StatelessWidget {
@@ -1065,16 +888,14 @@ class _EmotionPalette {
   static _EmotionTone _toneFor(String? emotion, BrandColors brand) {
     final tone = brand.emotionTones[emotion];
     if (tone != null) {
-      return _EmotionTone(tone.background.value, tone.foreground.value);
+      return _EmotionTone(tone.background, tone.foreground);
     }
-    return _EmotionTone(brand.homeAccent.value, brand.accentForeground.value);
+    return _EmotionTone(brand.homeAccent, brand.accentForeground);
   }
 }
 
 class _EmotionTone {
-  _EmotionTone(int background, int foreground)
-    : background = Color(background),
-      foreground = Color(foreground);
+  _EmotionTone(this.background, this.foreground);
 
   final Color background;
   final Color foreground;
@@ -1270,7 +1091,7 @@ class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
                   context,
                   background: colors.primary,
                   foreground: colors.primaryForeground,
-                ),
+                ).call,
                 child: const Text('Mạng yếu'),
               )
             : null;
@@ -1279,7 +1100,7 @@ class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              FBadge(style: badgeStyle, child: Text(label)),
+              FBadge(style: badgeStyle.call, child: Text(label)),
               if (warningBadge != null) ...[
                 const SizedBox(height: 6),
                 warningBadge,
@@ -1418,23 +1239,10 @@ class _HomeFooter extends StatelessWidget {
                 final prefixStyle = readStyle.copyWith(
                   fontWeight: FontWeight.w700,
                 );
-                final unreadStyle = context.theme.typography.xl.copyWith(
-                  color: context.theme.colors.mutedForeground,
-                  fontWeight: FontWeight.w600,
-                );
                 final numberReadStyle = TextStyle(
                   color: context.theme.colors.destructive,
                   fontWeight: FontWeight.w700,
                 );
-                final numberUnreadStyle = TextStyle(
-                  color: context.theme.colors.destructive.withAlpha(140),
-                  fontWeight: FontWeight.w700,
-                );
-                final durationHintMs =
-                    !lastMessage.isUser &&
-                        snapshot.ttsText?.trim() == rawText.trim()
-                    ? snapshot.ttsDurationMs
-                    : null;
                 return ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 84),
                   child: Align(
@@ -1453,22 +1261,18 @@ class _HomeFooter extends StatelessWidget {
                             ),
                             textAlign: TextAlign.left,
                           )
-                        : Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Text(prefix, style: prefixStyle),
-                              Expanded(
-                                child: _AnimatedAgentTranscript(
-                                  text: text,
-                                  readStyle: readStyle,
-                                  unreadStyle: unreadStyle,
-                                  numberReadStyle: numberReadStyle,
-                                  numberUnreadStyle: numberUnreadStyle,
-                                  durationHintMs: durationHintMs,
+                        : Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(text: prefix, style: prefixStyle),
+                                ..._HomePageState._highlightNumbers(
+                                  text,
+                                  readStyle,
+                                  numberReadStyle,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
+                            textAlign: TextAlign.left,
                           ),
                   ),
                 );
@@ -1506,8 +1310,8 @@ class _HomeFooter extends StatelessWidget {
             },
           ),
           const SizedBox(height: ThemeTokens.spaceSm),
-            Row(
-              children: [
+          Row(
+            children: [
               const _ThemeModeActions(),
               const Spacer(),
               SizedBox(
@@ -1528,8 +1332,7 @@ class _HomeFooter extends StatelessWidget {
                                     style.copyWith(fontWeight: FontWeight.w700),
                               ),
                               padding: const EdgeInsets.symmetric(
-                                horizontal:
-                                    ThemeTokens.buttonPaddingHorizontal,
+                                horizontal: ThemeTokens.buttonPaddingHorizontal,
                                 vertical: ThemeTokens.buttonPaddingVertical,
                               ),
                             ),
@@ -1570,6 +1373,8 @@ class _HomeFooter extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: ThemeTokens.spaceXs),
+          const Align(alignment: Alignment.center, child: _AuthorLink()),
         ],
       ),
     );
@@ -1626,6 +1431,36 @@ class _ThemeModeActions extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _AuthorLink extends StatelessWidget {
+  const _AuthorLink();
+
+  static final Uri _authorUri = Uri.parse('https://github.com/baolongdev');
+
+  @override
+  Widget build(BuildContext context) {
+    final style = context.theme.typography.sm.copyWith(
+      color: const Color(0xFF2F6BFF),
+      fontWeight: FontWeight.w900,
+      decoration: TextDecoration.underline,
+    );
+    return Semantics(
+      link: true,
+      button: true,
+      label: 'baolongdev',
+      child: GestureDetector(
+        onTap: () {
+          launchUrl(_authorUri, mode: LaunchMode.externalApplication);
+        },
+        child: Text(
+          'Author: baolongdev + ACLAB',
+          style: style,
+          textAlign: TextAlign.center,
+        ),
+      ),
     );
   }
 }
@@ -1914,8 +1749,8 @@ class _AudioPopoverContent extends StatelessWidget {
                     360.0,
                   );
                   return FSlider(
-                    control: FSliderControl.managedContinuous(
-                      initial: FSliderValue(max: value),
+                    control: FSliderControl.liftedContinuous(
+                      value: FSliderValue(max: value),
                       onChange: (next) => onChanged?.call(next.max),
                     ),
                     layout: FLayout.ltr,
@@ -2411,7 +2246,7 @@ class _EmotionPicker extends StatefulWidget {
 
 class _EmotionPickerState extends State<_EmotionPicker> {
   final ScrollController _scrollController = ScrollController();
-  static const double _itemSpacing = ThemeTokens.spaceSm;
+  static const double _itemSpacing = ThemeTokens.spaceXs;
   double _itemExtent = 120.0;
   double _viewportWidth = 0;
   int _loopIndex = 0;
@@ -2462,7 +2297,10 @@ class _EmotionPickerState extends State<_EmotionPicker> {
         height: ThemeTokens.buttonHeight - ThemeTokens.spaceXs,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final nextExtent = _resolveItemExtent(context, constraints.maxWidth);
+            final nextExtent = _resolveItemExtent(
+              context,
+              constraints.maxWidth,
+            );
             final extentChanged = (nextExtent - _itemExtent).abs() > 0.5;
             final widthChanged =
                 (constraints.maxWidth - _viewportWidth).abs() > 0.5;
@@ -2477,14 +2315,12 @@ class _EmotionPickerState extends State<_EmotionPicker> {
               });
             }
             final itemCount = widget.options.length * 3;
-            return Stack(
-              children: [
-                ListView.separated(
+            return ListView.separated(
                   controller: _scrollController,
                   scrollDirection: Axis.horizontal,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: itemCount,
-                  separatorBuilder: (_, __) =>
+                  separatorBuilder: (_, _) =>
                       const SizedBox(width: _itemSpacing),
                   itemBuilder: (context, index) {
                     final normalized = _normalizeIndex(index);
@@ -2545,55 +2381,7 @@ class _EmotionPickerState extends State<_EmotionPicker> {
                       ),
                     );
                   },
-                ),
-                Positioned(
-                  left: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 20,
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(999),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                          colors: [
-                            palette.controlBackground(context),
-                            palette.controlBackground(context).withAlpha(0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  bottom: 0,
-                  child: IgnorePointer(
-                    child: Container(
-                      width: 20,
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.horizontal(
-                          right: Radius.circular(999),
-                        ),
-                        gradient: LinearGradient(
-                          begin: Alignment.centerRight,
-                          end: Alignment.centerLeft,
-                          colors: [
-                            palette.controlBackground(context),
-                            palette.controlBackground(context).withAlpha(0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
+                );
           },
         ),
       ),
@@ -2601,10 +2389,10 @@ class _EmotionPickerState extends State<_EmotionPicker> {
   }
 
   double _resolveItemExtent(BuildContext context, double maxWidth) {
-    const visibleCount = 6;
+    const visibleCount = 5;
     final totalSpacing = _itemSpacing * (visibleCount - 1);
     final raw = (maxWidth - totalSpacing) / visibleCount;
-    return raw.clamp(52.0, 180.0);
+    return raw < 52.0 ? 52.0 : raw;
   }
 
   int _normalizeIndex(int index) {

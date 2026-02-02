@@ -1,6 +1,10 @@
 # Changelog - feat/ui-ux-flow
 
 ## 2026-02-02
+- Simplified transcript rendering to static text and tightened emotion picker to 5 equal-width items without edge fades.
+- Synced system status updates: battery level refreshes on state changes/clock tick and volume slider follows hardware volume stream.
+- Added author footer link and locked footer button widths to avoid layout shifts when toggling theme.
+- Added url_launcher wiring (pubspec + registrants) and cleaned test fakes/lints touched by the UI refresh.
 - Rebuilt the primary home UI flow and consolidated v2 screens into `home_page`, removing legacy v2 pages, activation, and auth surfaces.
 - Added a new chat session state manager (Cubit + session/state models) with speaking/level tracking and updated chat config/response handling.
 - Introduced an MQTT transport client and refined WebSocket/MQTT protocol + session coordination for voice sessions.

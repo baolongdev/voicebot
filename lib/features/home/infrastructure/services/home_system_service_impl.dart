@@ -25,7 +25,17 @@ class HomeSystemServiceImpl implements HomeSystemService {
         _connectivity = connectivity ?? Connectivity(),
         _networkInfo = networkInfo ?? NetworkInfo(),
         _audioRouter = audioRouter ?? AudioRouter() {
-    FlutterVolumeController.addListener(_handleVolumeChanged);
+    FlutterVolumeController.addListener(
+      _handleVolumeChanged,
+      stream: AudioStream.music,
+    );
+    if (Platform.isAndroid) {
+      unawaited(
+        FlutterVolumeController.setAndroidAudioStream(
+          stream: AudioStream.music,
+        ),
+      );
+    }
   }
 
   final Battery _battery;
@@ -87,7 +97,9 @@ class HomeSystemServiceImpl implements HomeSystemService {
   @override
   Future<double?> fetchVolume() async {
     try {
-      return await FlutterVolumeController.getVolume();
+      return await FlutterVolumeController.getVolume(
+        stream: AudioStream.music,
+      );
     } catch (_) {
       return null;
     }
@@ -100,7 +112,10 @@ class HomeSystemServiceImpl implements HomeSystemService {
   Future<void> setVolume(double volume) async {
     final clamped = volume.clamp(0.0, 1.0);
     try {
-      await FlutterVolumeController.setVolume(clamped);
+      await FlutterVolumeController.setVolume(
+        clamped,
+        stream: AudioStream.music,
+      );
     } catch (_) {}
     _handleVolumeChanged(clamped);
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 
-import '../di/locator.dart';
 import '../presentation/pages/home_page.dart';
 import '../features/form/presentation/pages/server_form_page.dart';
 import '../features/chat/presentation/pages/chat_page.dart';

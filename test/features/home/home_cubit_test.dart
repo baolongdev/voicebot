@@ -79,6 +79,12 @@ class _FakeHomeSystemService implements HomeSystemService {
       connectResult;
 
   @override
+  Future<void> setVolume(double value) async {
+    volume = value;
+    _volumeController.add(value);
+  }
+
+  @override
   Future<void> openWifiSettings() async {}
 
   @override
@@ -179,6 +185,9 @@ class _FakeChatSession implements ChatSession {
 
   @override
   Future<void> connect() async {}
+
+  @override
+  Future<void> disconnect({bool userInitiated = true}) async {}
 
   void emit(ChatState state) {
     _state = state;

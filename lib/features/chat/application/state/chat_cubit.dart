@@ -67,7 +67,6 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   Completer<void>? _connectCompleter;
 
   bool _streamsAttached = false;
-  bool _isListening = false;
   bool _connectInFlight = false;
   bool _disposed = false;
   int _connectGeneration = 0;
@@ -115,7 +114,6 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   @override
   Future<void> disconnect({bool userInitiated = true}) async {
     _connectGeneration += 1;
-    _isListening = false;
     if (!_disposed && !isClosed) {
       emit(
         state.copyWith(
@@ -246,7 +244,6 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
         'code': failure.code,
       },
     );
-    _isListening = false;
     final isSocketClosed = failure.message == 'Socket closed';
     if (state.isSpeaking) {
       emit(state.copyWith(isSpeaking: false));
@@ -346,6 +343,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           configResult = await _loadConfig()
               .timeout(const Duration(seconds: 3));
         } on TimeoutException {
+          // Ignore; will handle via fallback error below.
         }
         if (_disposed || isClosed || generation != _connectGeneration) {
           return;
@@ -370,13 +368,15 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
         }
       }
 
-      var result = await _connect(config!)
+      final configValue = config;
+      var result = await _connect(configValue)
           .timeout(const Duration(seconds: 8));
       if (!result.isSuccess && usedCached) {
         try {
           configResult = await _loadConfig()
               .timeout(const Duration(seconds: 3));
         } on TimeoutException {
+          // Ignore; retry will fall back to cached state.
         }
         if (_disposed || isClosed || generation != _connectGeneration) {
           return;
@@ -421,7 +421,6 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       }
       await _startListening()
           .timeout(const Duration(seconds: 4));
-      _isListening = true;
     } on TimeoutException {
       if (_disposed || isClosed || generation != _connectGeneration) {
         return;
@@ -437,14 +436,6 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       _connectCompleter?.complete();
       _connectCompleter = null;
     }
-  }
-
-  Future<void> _startListeningIfNeeded() async {
-    if (_isListening) {
-      return;
-    }
-    await _startListening();
-    _isListening = true;
   }
 
   Future<void> _awaitDisconnecting() async {

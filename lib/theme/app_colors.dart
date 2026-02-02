@@ -1,6 +1,3 @@
-import 'dart:math' as math;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 @immutable
@@ -212,7 +209,9 @@ class AppSemanticColors {
         isDark ? titleHsl.toColor() : AppHslTokens.bodyColor.toColor();
     final onBackground = titleHsl.toColor();
     final onSurface = titleHsl.toColor();
-    final outline = textLightHsl.toColor().withOpacity(AppAlphas.a32);
+    final outline = textLightHsl.toColor().withValues(
+      alpha: AppAlphas.a32,
+    );
 
     final error = AppHslTokens.dangerColor.toColor();
     final onError = AppHslTokens.dangerOnColor.toColor();
@@ -232,8 +231,8 @@ class AppSemanticColors {
       error: error,
       onError: onError,
       outline: outline,
-      shadow: Colors.black.withOpacity(AppAlphas.shadow),
-      scrim: Colors.black.withOpacity(AppAlphas.scrim),
+      shadow: Colors.black.withValues(alpha: AppAlphas.shadow),
+      scrim: Colors.black.withValues(alpha: AppAlphas.scrim),
       stateHover: AppHslTokens.firstColor.toColor(alpha: AppAlphas.hover),
       statePressed: AppHslTokens.firstColor.toColor(alpha: AppAlphas.pressed),
       stateFocus: AppHslTokens.firstColor.toColor(alpha: AppAlphas.focus),
@@ -256,11 +255,9 @@ class AppSemanticColors {
       onTertiary: onPrimary,
       tertiaryContainer: primaryAlt,
       onTertiaryContainer: onPrimary,
-      background: background,
-      onBackground: onBackground,
       surface: surface,
       onSurface: onSurface,
-      surfaceVariant: container,
+      surfaceContainerHighest: container,
       onSurfaceVariant: text,
       error: error,
       onError: onError,
