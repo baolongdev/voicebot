@@ -275,6 +275,15 @@ class Ota {
   Future<_DeviceIdentity> _loadOrCreateIdentity() async {
     const macKey = 'ota_device_mac';
     const uuidKey = 'ota_device_uuid';
+    final deviceId = await _platform.getDeviceId();
+    if (deviceId != null && deviceId.isNotEmpty) {
+      final identity = _DeviceIdentity(
+        macAddress: _macFromDeviceId(deviceId),
+        uuid: _uuidFromDeviceId(deviceId),
+      );
+      _syncDeviceInfo(identity);
+      return identity;
+    }
     final storedMac = await _storage.read(key: macKey);
     final storedUuid = await _storage.read(key: uuidKey);
     if (storedMac != null && storedUuid != null) {
@@ -306,6 +315,57 @@ class Ota {
       bytes.sublist(6, 8).map(byteToHex).join(),
       bytes.sublist(8, 10).map(byteToHex).join(),
       bytes.sublist(10, 16).map(byteToHex).join(),
+    ];
+    return parts.join('-');
+  }
+
+  String _macFromDeviceId(String deviceId) {
+    final bytes = _fnv1a64(deviceId);
+    final macBytes = List<int>.filled(6, 0);
+    for (var i = 0; i < 6; i++) {
+      macBytes[i] = (bytes >> (i * 8)) & 0xff;
+    }
+    // Locally administered, unicast.
+    macBytes[0] = (macBytes[0] & 0xfe) | 0x02;
+    final buffer = StringBuffer();
+    for (var i = 0; i < macBytes.length; i++) {
+      if (i > 0) {
+        buffer.write(':');
+      }
+      buffer.write(macBytes[i].toRadixString(16).padLeft(2, '0'));
+    }
+    return buffer.toString();
+  }
+
+  int _fnv1a64(String input) {
+    const int fnvOffset = 0xcbf29ce484222325;
+    const int fnvPrime = 0x100000001b3;
+    var hash = fnvOffset;
+    for (final codeUnit in input.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * fnvPrime) & 0xFFFFFFFFFFFFFFFF;
+    }
+    return hash;
+  }
+
+  String _uuidFromDeviceId(String deviceId) {
+    final hashA = _fnv1a64(deviceId);
+    final hashB = _fnv1a64('$deviceId:voicebot');
+    final bytes = Uint8List(16);
+    for (var i = 0; i < 8; i++) {
+      bytes[i] = (hashA >> (i * 8)) & 0xff;
+      bytes[8 + i] = (hashB >> (i * 8)) & 0xff;
+    }
+    // Set UUID v4 variant/version bits.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    String toHex(int value) => value.toRadixString(16).padLeft(2, '0');
+    final parts = <String>[
+      bytes.sublist(0, 4).map(toHex).join(),
+      bytes.sublist(4, 6).map(toHex).join(),
+      bytes.sublist(6, 8).map(toHex).join(),
+      bytes.sublist(8, 10).map(toHex).join(),
+      bytes.sublist(10, 16).map(toHex).join(),
     ];
     return parts.join('-');
   }

@@ -39,6 +39,10 @@ class PermissionState {
         (type) => statuses[type] == PermissionStatus.granted,
       );
 
+  bool get hasPermanentlyDenied => statuses.values.any(
+        (status) => status == PermissionStatus.permanentlyDenied,
+      );
+
   PermissionState copyWith({
     PermissionFlowStatus? status,
     Map<PermissionType, PermissionStatus>? statuses,
@@ -52,17 +56,10 @@ class PermissionState {
   static List<PermissionType> _buildRequiredPermissions() {
     final permissions = <PermissionType>[
       PermissionType.microphone,
-      PermissionType.camera,
-      PermissionType.photos,
-      PermissionType.notifications,
       PermissionType.wifi,
     ];
-    if (Platform.isAndroid) {
-      permissions.addAll(<PermissionType>[
-        PermissionType.bluetooth,
-        PermissionType.bluetoothScan,
-        PermissionType.bluetoothConnect,
-      ]);
+    if (!Platform.isAndroid) {
+      permissions.remove(PermissionType.wifi);
     }
     return permissions;
   }

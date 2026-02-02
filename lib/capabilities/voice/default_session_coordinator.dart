@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:opus_dart/opus_dart.dart' as opus_dart;
 
 import '../../core/audio/audio_config.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/utils/throttle.dart';
 import '../protocol/protocol.dart';
 import 'audio_input.dart';
 import 'audio_output.dart';
@@ -26,6 +28,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<Uint8List> _audioController =
       StreamController<Uint8List>.broadcast();
+  final StreamController<double> _incomingLevelController =
+      StreamController<double>.broadcast();
+  final StreamController<double> _outgoingLevelController =
+      StreamController<double>.broadcast();
   final StreamController<String> _errorController =
       StreamController<String>.broadcast();
   final StreamController<bool> _speakingController =
@@ -48,12 +54,24 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   bool _canSendAudio = false;
   bool _isSpeaking = false;
   int _speakingEpoch = 0;
+  int _sentAudioFrames = 0;
+  int _receivedAudioFrames = 0;
+  final Throttler _sendLogThrottle = Throttler(25000);
+  final Throttler _recvLogThrottle = Throttler(25000);
+  int _lastIncomingLevelMs = 0;
+  int _lastOutgoingLevelMs = 0;
 
   @override
   Stream<Map<String, dynamic>> get incomingJson => _jsonController.stream;
 
   @override
   Stream<Uint8List> get incomingAudio => _audioController.stream;
+
+  @override
+  Stream<double> get incomingLevel => _incomingLevelController.stream;
+
+  @override
+  Stream<double> get outgoingLevel => _outgoingLevelController.stream;
 
   @override
   Stream<String> get errors => _errorController.stream;
@@ -66,12 +84,27 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
   @override
   Future<bool> connect(TransportClient transport) async {
-    await disconnect();
+    try {
+      await disconnect().timeout(const Duration(milliseconds: 500));
+    } catch (_) {}
     _transport = transport;
+    AppLogger.event(
+      'SessionCoordinator',
+      'connect_start',
+    );
     final connected = await _transport!.connect();
     if (!connected) {
+      AppLogger.event(
+        'SessionCoordinator',
+        'connect_failed',
+      );
+      _transport = null;
       return false;
     }
+    AppLogger.event(
+      'SessionCoordinator',
+      'connect_success',
+    );
 
     await _setupPlayback();
     _setupDecoder();
@@ -90,25 +123,58 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _speakingEpoch += 1;
     _playbackBuffer.clear();
     _playbackStarted = false;
+    _sentAudioFrames = 0;
+    _receivedAudioFrames = 0;
+    _emitIncomingLevel(0);
+    _emitOutgoingLevel(0);
+    _lastIncomingLevelMs = 0;
+    _lastOutgoingLevelMs = 0;
 
-    await _encodeSubscription?.cancel();
-    await _decodeSubscription?.cancel();
+    await _cancelSubscription(_encodeSubscription);
+    await _cancelSubscription(_decodeSubscription);
     _encodeSubscription = null;
     _decodeSubscription = null;
-    await _audioInput.stop();
+    await _stopAudioInput();
     _audioOutput.dispose();
     _opusInputController?.close();
     _opusInputController = null;
 
-    await _jsonSubscription?.cancel();
-    await _audioSubscription?.cancel();
-    await _errorSubscription?.cancel();
+    await _cancelSubscription(_jsonSubscription);
+    await _cancelSubscription(_audioSubscription);
+    await _cancelSubscription(_errorSubscription);
     _jsonSubscription = null;
     _audioSubscription = null;
     _errorSubscription = null;
 
-    await _transport?.disconnect();
+    await _disconnectTransport();
     _transport = null;
+  }
+
+  Future<void> _cancelSubscription(StreamSubscription? subscription) async {
+    if (subscription == null) {
+      return;
+    }
+    try {
+      await subscription.cancel().timeout(const Duration(milliseconds: 200));
+    } catch (_) {
+      // Ignore cancel errors/timeouts to keep teardown moving.
+    }
+  }
+
+  Future<void> _stopAudioInput() async {
+    try {
+      await _audioInput.stop().timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      // Ignore stop errors/timeouts to keep teardown moving.
+    }
+  }
+
+  Future<void> _disconnectTransport() async {
+    try {
+      await _transport?.disconnect().timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      // Ignore transport disconnect errors/timeouts to keep teardown moving.
+    }
   }
 
   @override
@@ -124,6 +190,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _startEncodingIfNeeded();
     _isListening = true;
     _canSendAudio = true;
+    AppLogger.event('SessionCoordinator', 'listen_start');
   }
 
   @override
@@ -140,6 +207,21 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _encodeSubscription = null;
     await _audioInput.stop();
     _isListening = false;
+    AppLogger.event('SessionCoordinator', 'listen_stop');
+  }
+
+  Future<void> _pauseListeningLocal() async {
+    if (_transport == null) {
+      return;
+    }
+    _canSendAudio = false;
+    if (_encodeSubscription != null) {
+      await _encodeSubscription?.cancel();
+      _encodeSubscription = null;
+    }
+    await _audioInput.stop();
+    _isListening = false;
+    AppLogger.event('SessionCoordinator', 'listen_pause');
   }
 
   @override
@@ -211,7 +293,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (_encodeSubscription != null) {
       return;
     }
-    final pcmStream = _audioInput.start();
+    final pcmStream = _audioInput.start().map((pcm) {
+      _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm));
+      return pcm;
+    });
     try {
       _encodeSubscription = pcmStream
           .cast<List<int>>()
@@ -228,6 +313,18 @@ class DefaultSessionCoordinator implements SessionCoordinator {
           )
           .listen((encoded) async {
             if (encoded.isNotEmpty && _canSendAudio) {
+              _sentAudioFrames += 1;
+              if (_sentAudioFrames % 50 == 0 && _sendLogThrottle.shouldRun()) {
+                AppLogger.event(
+                  'SessionCoordinator',
+                  'audio_send',
+                  fields: <String, Object?>{
+                    'frames': _sentAudioFrames,
+                    'bytes': encoded.length,
+                  },
+                  level: 'D',
+                );
+              }
               await _transport?.sendAudio(Uint8List.fromList(encoded));
             }
           });
@@ -255,16 +352,47 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (data.isEmpty || _opusInputController == null) {
       return;
     }
+    _receivedAudioFrames += 1;
+    if (_receivedAudioFrames % 50 == 0 && _recvLogThrottle.shouldRun()) {
+      AppLogger.event(
+        'SessionCoordinator',
+        'audio_recv',
+        fields: <String, Object?>{
+          'frames': _receivedAudioFrames,
+          'bytes': data.length,
+        },
+        level: 'D',
+      );
+    }
     _opusInputController!.add(Uint8List.fromList(data));
   }
 
   void _handleError(String error) {
     _canSendAudio = false;
     _isListening = false;
+    if (_isSpeaking) {
+      _speakingEpoch += 1;
+      _isSpeaking = false;
+      _speakingController.add(false);
+    }
+    if (_encodeSubscription != null) {
+      unawaited(_encodeSubscription!.cancel());
+      _encodeSubscription = null;
+    }
+    unawaited(_audioInput.stop());
+    AppLogger.event(
+      'SessionCoordinator',
+      'transport_error',
+      fields: <String, Object?>{'message': error},
+      level: 'E',
+    );
     _errorController.add(error);
   }
 
   Future<void> _handleSpeakingChanged(bool speaking) async {
+    if (_transport == null) {
+      return;
+    }
     _speakingEpoch += 1;
     final epoch = _speakingEpoch;
     if (_isSpeaking == speaking) {
@@ -273,7 +401,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _isSpeaking = speaking;
     _speakingController.add(speaking);
     if (speaking) {
-      await stopListening();
+      await _pauseListeningLocal();
       _audioOutput.resetBuffer();
       return;
     }
@@ -291,6 +419,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   void _enqueuePcmForPlayback(Uint8List pcm) {
+    _emitIncomingLevel(_estimateLevelFromPcmChunk(pcm));
     if (_playbackFrameBytes <= 0) {
       return;
     }
@@ -314,5 +443,49 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (offset < buffer.length) {
       _playbackBuffer.add(Uint8List.sublistView(buffer, offset));
     }
+  }
+
+  double _estimateLevelFromPcmChunk(List<int> bytes) {
+    if (bytes.isEmpty) {
+      return 0;
+    }
+    final length = bytes.length - (bytes.length % 2);
+    if (length <= 0) {
+      return 0;
+    }
+    var sumSquares = 0.0;
+    for (var i = 0; i < length; i += 2) {
+      final lo = bytes[i];
+      final hi = bytes[i + 1];
+      var sample = (hi << 8) | lo;
+      if (sample >= 32768) {
+        sample -= 65536;
+      }
+      final normalized = sample / 32768.0;
+      sumSquares += normalized * normalized;
+    }
+    final rms = math.sqrt(sumSquares / (length / 2));
+    if (rms.isNaN || rms.isInfinite) {
+      return 0;
+    }
+    return rms.clamp(0.0, 1.0);
+  }
+
+  void _emitIncomingLevel(double level) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastIncomingLevelMs < 80) {
+      return;
+    }
+    _lastIncomingLevelMs = now;
+    _incomingLevelController.add(level);
+  }
+
+  void _emitOutgoingLevel(double level) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastOutgoingLevelMs < 80) {
+      return;
+    }
+    _lastOutgoingLevelMs = now;
+    _outgoingLevelController.add(level);
   }
 }

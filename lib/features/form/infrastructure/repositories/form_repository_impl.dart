@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:voicebot/core/system/ota/ota.dart';
+import 'package:voicebot/core/logging/app_logger.dart';
 import '../../domain/models/server_form_data.dart';
 import '../../domain/repositories/form_result.dart';
 import '../../domain/repositories/form_repository.dart';
@@ -37,20 +38,18 @@ class FormRepositoryImpl implements FormRepository {
       await _ota.checkVersion(formData.xiaoZhiConfig.qtaUrl);
       _lastResult = XiaoZhiResult(_ota.otaResult);
       _controller.add(_lastResult);
-      _settingsRepository.mqttConfig = _ota.otaResult?.mqttConfig;
-      final otaWebSocketUrl = _ota.otaResult?.websocket?.url;
-      if (otaWebSocketUrl != null && otaWebSocketUrl.isNotEmpty) {
-        _settingsRepository.webSocketUrl = otaWebSocketUrl;
+      final otaResult = _ota.otaResult;
+      if (otaResult != null) {
+        _settingsRepository.applyOtaResult(otaResult);
       }
-      _settingsRepository.webSocketToken = _ota.otaResult?.websocket?.token;
+      _settingsRepository.normalizeTransport();
     } else {
       _settingsRepository.transportType = formData.selfHostConfig.transportType;
       _settingsRepository.webSocketUrl = formData.selfHostConfig.webSocketUrl;
       _lastResult = const SelfHostResult();
       _controller.add(_lastResult);
     }
-    // Print device info for parity with Android implementation.
-    // ignore: avoid_print
-    print(_ota.deviceInfo);
+    // Log device info for parity with Android implementation.
+    AppLogger.log('FormRepository', 'device_info=${_ota.deviceInfo}');
   }
 }

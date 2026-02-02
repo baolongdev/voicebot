@@ -9,6 +9,7 @@ import 'package:voicebot/features/form/domain/models/server_form_data.dart';
 import 'package:voicebot/features/form/domain/repositories/form_result.dart';
 import 'package:voicebot/features/form/infrastructure/repositories/form_repository_impl.dart';
 import 'package:voicebot/features/form/infrastructure/repositories/settings_repository_impl.dart';
+import 'package:voicebot/features/form/infrastructure/repositories/settings_storage.dart';
 
 class _FakeOta implements core_ota.Ota {
   _FakeOta({
@@ -55,7 +56,7 @@ void main() {
         otaResult: otaResult,
         deviceInfo: DummyDataGenerator.generate(),
       );
-      final settings = SettingsRepositoryImpl();
+      final settings = SettingsRepositoryImpl(InMemorySettingsStorage());
       final repo = FormRepositoryImpl(
         ota: fakeOta,
         settingsRepository: settings,
@@ -92,7 +93,7 @@ void main() {
         'Given selfHost server, When submitForm, Then does not call OTA and emits SelfHostResult',
         () async {
       final fakeOta = _FakeOta(deviceInfo: DummyDataGenerator.generate());
-      final settings = SettingsRepositoryImpl();
+      final settings = SettingsRepositoryImpl(InMemorySettingsStorage());
       final repo = FormRepositoryImpl(
         ota: fakeOta,
         settingsRepository: settings,

@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
@@ -21,15 +22,21 @@ Future<void> configureDependencies() async {
     getIt.registerLazySingleton<GoRouter>(() => AppRouter.router);
   }
 
+  if (!getIt.isRegistered<FlutterSecureStorage>()) {
+    getIt.registerLazySingleton<FlutterSecureStorage>(
+      () => const FlutterSecureStorage(),
+    );
+  }
+
   if (!getIt.isRegistered<core_ota.Ota>()) {
     getIt.registerLazySingleton<core_ota.Ota>(
       () => _OtaAdapter(system_ota.Ota(DummyDataGenerator.generate())),
     );
   }
 
-  registerAuthFeature(getIt);
   registerRepositoryModule(getIt);
   registerChatFeature(getIt);
+  registerHomeFeature(getIt);
   registerPermissions(getIt);
 
   if (!getIt.isRegistered<SubmitFormUseCase>()) {

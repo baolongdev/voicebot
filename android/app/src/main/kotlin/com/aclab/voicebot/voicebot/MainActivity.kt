@@ -7,6 +7,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.util.Log
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
@@ -15,6 +16,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var audioTrack: AudioTrack? = null
     private val audioChannelName = "voicebot/audio_player"
+    private val otaChannelName = "voicebot/ota"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -57,6 +59,27 @@ class MainActivity : FlutterActivity() {
                         audioTrack?.release()
                         audioTrack = null
                         result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, otaChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "installFirmware" -> {
+                        // Not implemented in this client build.
+                        result.success(null)
+                    }
+                    "restartApp" -> {
+                        // Not implemented in this client build.
+                        result.success(null)
+                    }
+                    "getDeviceId" -> {
+                        val androidId = Settings.Secure.getString(
+                            contentResolver,
+                            Settings.Secure.ANDROID_ID
+                        )
+                        result.success(androidId)
                     }
                     else -> result.notImplemented()
                 }

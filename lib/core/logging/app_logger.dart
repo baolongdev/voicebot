@@ -1,21 +1,34 @@
+import '../utils/logger.dart';
+
 class AppLogger {
   static void log(
     String tag,
     String message, {
     String level = 'I',
   }) {
-    final timestamp = _timestamp();
-    final paddedTag = tag.padRight(24);
-    // ignore: avoid_print
-    print('$timestamp $paddedTag $level  $message');
+    Logger.log(tag, message, level: _mapLevel(level));
   }
 
-  static String _timestamp() {
-    final now = DateTime.now();
-    final h = now.hour.toString().padLeft(2, '0');
-    final m = now.minute.toString().padLeft(2, '0');
-    final s = now.second.toString().padLeft(2, '0');
-    final ms = now.millisecond.toString().padLeft(3, '0');
-    return '$h:$m:$s.$ms';
+  static void event(
+    String tag,
+    String name, {
+    Map<String, Object?> fields = const <String, Object?>{},
+    String level = 'I',
+  }) {
+    Logger.event(tag, name, fields: fields, level: _mapLevel(level));
+  }
+
+  static LogLevel _mapLevel(String level) {
+    switch (level.toUpperCase()) {
+      case 'D':
+        return LogLevel.debug;
+      case 'W':
+        return LogLevel.warn;
+      case 'E':
+        return LogLevel.error;
+      case 'I':
+      default:
+        return LogLevel.info;
+    }
   }
 }

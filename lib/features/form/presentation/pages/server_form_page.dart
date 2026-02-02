@@ -60,8 +60,6 @@ class _ServerFormViewState extends State<_ServerFormView> {
 
   String? _mapRoute(String route) {
     switch (route) {
-      case 'activation':
-        return Routes.activation;
       case 'chat':
         return Routes.chat;
     }

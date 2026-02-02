@@ -4,6 +4,7 @@ import 'dart:io';
 abstract class OtaPlatform {
   Future<void> installFirmware(File file);
   Future<void> restartApp();
+  Future<String?> getDeviceId();
 }
 
 class OtaNoopPlatform implements OtaPlatform {
@@ -17,5 +18,10 @@ class OtaNoopPlatform implements OtaPlatform {
   @override
   Future<void> restartApp() async {
     // No-op on unsupported platforms.
+  }
+
+  @override
+  Future<String?> getDeviceId() async {
+    return null;
   }
 }

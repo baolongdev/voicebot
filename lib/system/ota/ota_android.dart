@@ -22,4 +22,9 @@ class OtaAndroidPlatform implements OtaPlatform {
   Future<void> restartApp() async {
     await _channel.invokeMethod<void>('restartApp');
   }
+
+  @override
+  Future<String?> getDeviceId() async {
+    return _channel.invokeMethod<String>('getDeviceId');
+  }
 }

@@ -146,8 +146,7 @@ class OpusStreamPlayer {
           _sink?.add(data);
         }
       } catch (_) {
-        // ignore: avoid_print
-        print('Error writing to AudioTrack');
+        AppLogger.log('OpusStreamPlayer', 'error writing to AudioTrack');
       }
     });
   }

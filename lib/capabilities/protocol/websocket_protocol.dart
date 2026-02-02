@@ -22,7 +22,9 @@ class WebsocketProtocol extends Protocol {
 
   bool _isOpen = false;
   WebSocket? _websocket;
+  StreamSubscription? _websocketSubscription;
   Completer<bool> _helloReceived = Completer<bool>();
+  int _connectionEpoch = 0;
   // Keep parity with Android; used for diagnostics even if unused in Dart.
   // ignore: unused_field
   int _serverSampleRate = -1;
@@ -48,20 +50,30 @@ class WebsocketProtocol extends Protocol {
 
   @override
   void closeAudioChannel() {
-    _websocket?.close(1000, 'Normal closure');
+    _connectionEpoch += 1;
+    _isOpen = false;
+    _websocketSubscription?.cancel();
+    _websocketSubscription = null;
+    final socket = _websocket;
     _websocket = null;
+    socket?.close(1000, 'Normal closure');
   }
 
   @override
   Future<bool> openAudioChannel() async {
     closeAudioChannel();
     _helloReceived = Completer<bool>();
+    final epoch = _connectionEpoch;
 
-    _logMessage('WebSocket connecting to $url');
-    _logMessage('Header: Authorization: Bearer $accessToken');
-    _logMessage('Header: Protocol-Version: 1');
-    _logMessage('Header: Device-Id: ${deviceInfo.macAddress.toLowerCase()}');
-    _logMessage('Header: Client-Id: ${deviceInfo.uuid}');
+    AppLogger.event(
+      'WS',
+      'connect_start',
+      fields: <String, Object?>{
+        'url': url,
+        'device_id': deviceInfo.macAddress.toLowerCase(),
+        'client_id': deviceInfo.uuid,
+      },
+    );
     final headers = <String, String>{
       'Authorization': 'Bearer $accessToken',
       'Protocol-Version': '1',
@@ -72,13 +84,23 @@ class WebsocketProtocol extends Protocol {
     try {
       _websocket = await WebSocket.connect(url, headers: headers);
     } catch (_) {
-      networkErrorStream.add('Server not found');
+      if (!networkErrorStream.isClosed) {
+        networkErrorStream.add('Server not found');
+      }
       return false;
     }
 
-    _logMessage('WebSocket connected');
+    AppLogger.event(
+      'WS',
+      'connect_success',
+      fields: <String, Object?>{
+        'url': url,
+      },
+    );
     _isOpen = true;
-    audioChannelStateStream.add(AudioState.opened);
+    if (!audioChannelStateStream.isClosed) {
+      audioChannelStateStream.add(AudioState.opened);
+    }
 
     final helloMessage = <String, dynamic>{
       'type': 'hello',
@@ -91,12 +113,25 @@ class WebsocketProtocol extends Protocol {
         'frame_duration': AudioConfig.frameDurationMs,
       },
     };
-    _logMessage('WebSocket hello: ${jsonEncode(helloMessage)}');
+    AppLogger.event(
+      'WS',
+      'hello_send',
+      fields: <String, Object?>{
+        'audio_format': 'opus',
+        'sample_rate': AudioConfig.sampleRate,
+        'channels': AudioConfig.channels,
+        'frame_ms': AudioConfig.frameDurationMs,
+      },
+    );
     await sendText(jsonEncode(helloMessage));
-    _logMessage('hello sent');
+    AppLogger.event('WS', 'hello_sent');
 
-    _websocket?.listen(
+    StreamSubscription? subscription;
+    subscription = _websocket?.listen(
       (event) {
+        if (epoch != _connectionEpoch) {
+          return;
+        }
         if (event is String) {
           Map<String, dynamic>? json;
           try {
@@ -106,11 +141,15 @@ class WebsocketProtocol extends Protocol {
             }
           } catch (_) {
             // Emit error instead of throwing inside listener.
-            networkErrorStream.add('Invalid JSON');
+            if (!networkErrorStream.isClosed) {
+              networkErrorStream.add('Invalid JSON');
+            }
             return;
           }
           if (json == null) {
-            networkErrorStream.add('Invalid JSON');
+            if (!networkErrorStream.isClosed) {
+              networkErrorStream.add('Invalid JSON');
+            }
             return;
           }
           _logMessage('WebSocket message: ${jsonEncode(json)}');
@@ -118,45 +157,80 @@ class WebsocketProtocol extends Protocol {
           if (type == 'hello') {
             _parseServerHello(json);
           } else {
-            incomingJsonStream.add(json);
+            if (!incomingJsonStream.isClosed) {
+              incomingJsonStream.add(json);
+            }
           }
         } else if (event is List<int>) {
-          incomingAudioStream.add(Uint8List.fromList(event));
+          if (!incomingAudioStream.isClosed) {
+            incomingAudioStream.add(Uint8List.fromList(event));
+          }
         }
       },
       onError: (error) async {
+        if (epoch != _connectionEpoch) {
+          return;
+        }
         _isOpen = false;
         _logMessage('socket error');
-        networkErrorStream.add('Server not found');
+        if (!networkErrorStream.isClosed) {
+          networkErrorStream.add('Server not found');
+        }
         _websocket = null;
+        if (_websocketSubscription == subscription) {
+          _websocketSubscription = null;
+        }
       },
       onDone: () async {
+        if (epoch != _connectionEpoch) {
+          return;
+        }
         _isOpen = false;
         final code = _websocket?.closeCode;
         final reason = _websocket?.closeReason;
-        _logMessage(
-          'socket closed code=${code ?? '-'} reason=${reason ?? '-'}',
+        AppLogger.event(
+          'WS',
+          'socket_closed',
+          fields: <String, Object?>{
+            'code': code?.toString(),
+            'reason': reason,
+          },
         );
-        networkErrorStream.add('Socket closed');
-        audioChannelStateStream.add(AudioState.closed);
+        if (!networkErrorStream.isClosed) {
+          networkErrorStream.add('Socket closed');
+        }
+        if (!audioChannelStateStream.isClosed) {
+          audioChannelStateStream.add(AudioState.closed);
+        }
         _websocket = null;
+        if (_websocketSubscription == subscription) {
+          _websocketSubscription = null;
+        }
       },
+      cancelOnError: true,
     );
+    if (subscription != null) {
+      _websocketSubscription = subscription;
+    }
 
     try {
-      _logMessage('Waiting for server hello');
+      AppLogger.event('WS', 'hello_wait');
       return await _helloReceived.future.timeout(
         const Duration(seconds: 10),
         onTimeout: () async {
-          _logMessage('hello timeout');
-          networkErrorStream.add('Server timeout');
+          AppLogger.event('WS', 'hello_timeout');
+          if (!networkErrorStream.isClosed) {
+            networkErrorStream.add('Server timeout');
+          }
           closeAudioChannel();
           return false;
         },
       );
     } catch (_) {
-      _logMessage('hello timeout');
-      networkErrorStream.add('Server timeout');
+      AppLogger.event('WS', 'hello_timeout');
+      if (!networkErrorStream.isClosed) {
+        networkErrorStream.add('Server timeout');
+      }
       closeAudioChannel();
       return false;
     }
@@ -176,7 +250,14 @@ class WebsocketProtocol extends Protocol {
       }
     }
     sessionId = root['session_id'] as String? ?? '';
-    _logMessage('hello received');
+    AppLogger.event(
+      'WS',
+      'hello_received',
+      fields: <String, Object?>{
+        'session_id': sessionId,
+        'sample_rate': _serverSampleRate,
+      },
+    );
 
     if (!_helloReceived.isCompleted) {
       _helloReceived.complete(true);

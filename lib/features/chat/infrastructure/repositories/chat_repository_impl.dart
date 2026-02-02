@@ -4,12 +4,15 @@ import 'dart:typed_data';
 import '../../../../capabilities/voice/session_coordinator.dart';
 import '../../../../capabilities/voice/transport_client.dart';
 import '../../../../capabilities/voice/websocket_transport_client.dart';
+import '../../../../capabilities/voice/mqtt_transport_client.dart';
+import '../../../form/domain/models/server_form_data.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/result/result.dart';
 import '../../domain/entities/chat_config.dart';
 import '../../domain/entities/chat_response.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../../../../core/logging/app_logger.dart';
+import '../../../../core/utils/throttle.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
   ChatRepositoryImpl({
@@ -36,12 +39,20 @@ class ChatRepositoryImpl implements ChatRepository {
   bool _isSpeaking = false;
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
   static const Duration _recentTextWindow = Duration(seconds: 10);
+  static const String _missingMqttCode = 'missing_mqtt';
+  final Throttler _errorLogThrottle = Throttler(25000);
 
   @override
   Stream<ChatResponse> get responses => _responsesController.stream;
 
   @override
   Stream<List<int>> get audioStream => _audioController.stream;
+
+  @override
+  Stream<double> get incomingLevel => _sessionCoordinator.incomingLevel;
+
+  @override
+  Stream<double> get outgoingLevel => _sessionCoordinator.outgoingLevel;
 
   @override
   Stream<Failure> get errors => _errorController.stream;
@@ -54,30 +65,64 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<Result<bool>> connect(ChatConfig config) async {
-    if (_isConnected) {
-      return Result.success(true);
+    if (_isConnected || _transport != null) {
+      await disconnect();
     }
-    if (config.url.isEmpty || config.accessToken.isEmpty) {
+    if (config.transportType == TransportType.webSockets) {
+      if (config.url.isEmpty || config.accessToken.isEmpty) {
+        return Result.failure(
+          const Failure(message: 'Thiếu thông tin kết nối'),
+        );
+      }
+    } else if (config.transportType == TransportType.mqtt &&
+        config.mqttConfig == null) {
       return Result.failure(
-        const Failure(message: 'Thiếu thông tin kết nối'),
+        const Failure(message: 'Chưa có cấu hình MQTT', code: _missingMqttCode),
       );
     }
     _lastConfig = config;
-    _logMessage('connect started');
-
-    _transport = WebsocketTransportClient(
-      deviceInfo: config.deviceInfo,
-      url: config.url,
-      accessToken: config.accessToken,
+    AppLogger.event(
+      'ChatRepository',
+      'connect_start',
+      fields: <String, Object?>{
+        'transport': config.transportType.name,
+      },
     );
+
+    _transport = _buildTransport(config);
+    if (_transport == null) {
+      return Result.failure(
+        const Failure(message: 'Không thể chọn transport'),
+      );
+    }
 
     final opened = await _sessionCoordinator.connect(_transport!);
     if (!opened) {
-      _logMessage('connect failed: openAudioChannel returned false');
+      AppLogger.event(
+        'ChatRepository',
+        'connect_failed',
+        fields: <String, Object?>{
+          'reason': 'open_audio_channel_failed',
+          'transport': config.transportType.name,
+        },
+      );
+      await _sessionCoordinator.disconnect();
+      _transport = null;
       return Result.failure(
-        const Failure(message: 'Không thể kết nối WebSocket'),
+        Failure(
+          message: config.transportType == TransportType.mqtt
+              ? 'Không thể kết nối MQTT'
+              : 'Không thể kết nối WebSocket',
+        ),
       );
     }
+    AppLogger.event(
+      'ChatRepository',
+      'connect_success',
+      fields: <String, Object?>{
+        'transport': config.transportType.name,
+      },
+    );
     _isConnected = true;
 
     _jsonSubscription = _sessionCoordinator.incomingJson.listen(
@@ -94,7 +139,14 @@ class ChatRepositoryImpl implements ChatRepository {
     );
     _errorSubscription = _sessionCoordinator.errors.listen(
       (error) {
-        _logMessage('network error: $error');
+        if (_errorLogThrottle.shouldRun()) {
+          AppLogger.event(
+            'ChatRepository',
+            'network_error',
+            fields: <String, Object?>{'message': error},
+            level: 'D',
+          );
+        }
         _isConnected = false;
         _errorController.add(Failure(message: error));
       },
@@ -115,7 +167,11 @@ class ChatRepositoryImpl implements ChatRepository {
     _audioSubscription = null;
     _errorSubscription = null;
     _speakingSubscription = null;
-    await _sessionCoordinator.disconnect();
+    try {
+      await _sessionCoordinator
+          .disconnect()
+          .timeout(const Duration(seconds: 1));
+    } catch (_) {}
     _transport = null;
   }
 
@@ -171,6 +227,16 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     if (type == 'llm') {
+      final emotion = json['emotion'] as String?;
+      if (emotion != null && emotion.isNotEmpty) {
+        _responsesController.add(
+          ChatResponse(
+            text: '',
+            isUser: false,
+            emotion: emotion,
+          ),
+        );
+      }
       return;
     }
 
@@ -204,6 +270,23 @@ class ChatRepositoryImpl implements ChatRepository {
     _speakingController.add(speaking);
   }
 
+  TransportClient? _buildTransport(ChatConfig config) {
+    switch (config.transportType) {
+      case TransportType.mqtt:
+        final mqtt = config.mqttConfig;
+        if (mqtt == null) {
+          return null;
+        }
+        return MqttTransportClient(mqttConfig: mqtt);
+      case TransportType.webSockets:
+        return WebsocketTransportClient(
+          deviceInfo: config.deviceInfo,
+          url: config.url,
+          accessToken: config.accessToken,
+        );
+    }
+  }
+
   void _rememberBotText(String text) {
     _recentBotTexts.add(_RecentText(text: _normalize(text), at: DateTime.now()));
     _pruneRecentTexts();
@@ -234,9 +317,6 @@ class ChatRepositoryImpl implements ChatRepository {
     return cleaned.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 
-  void _logMessage(String message) {
-    AppLogger.log('ChatRepository', message);
-  }
 }
 
 class _RecentText {

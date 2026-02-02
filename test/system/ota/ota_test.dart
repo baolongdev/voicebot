@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voicebot/core/system/ota/model/device_info.dart' as device_info;
+import 'package:voicebot/core/system/ota/model/ota_result.dart';
 import 'package:voicebot/system/ota/ota.dart' as system_ota;
 
 class _CapturedRequest {
@@ -273,7 +274,7 @@ void main() {
         expect(ota!.otaResult?.firmware?.version, equals('1.0.2'));
         expect(captured, isNotNull);
         expect(captured!.method, equals('POST'));
-        expect(captured!.headers['Device-Id'], equals('AA:BB:CC:DD:EE:FF'));
+        expect(captured!.headers['Device-Id'], equals('aa:bb:cc:dd:ee:ff'));
         expect(captured!.headers['Client-Id'], equals('device-uuid-123'));
         expect(captured!.headers['Content-Type'], equals('application/json'));
 
@@ -290,7 +291,7 @@ void main() {
 
         final payload = jsonDecode(captured!.bodyText) as Map<String, dynamic>;
         expect(payload['application'], isA<Map<String, dynamic>>());
-        expect(payload['mac_address'], equals('AA:BB:CC:DD:EE:FF'));
+        expect(payload['mac_address'], equals('aa:bb:cc:dd:ee:ff'));
         expect(payload['uuid'], equals('device-uuid-123'));
       },
     );
@@ -363,6 +364,28 @@ void main() {
         expect(ota.otaResult, isNull);
       },
     );
+  });
+
+  group('OTA parsing edge cases', () {
+    test('Given websocket missing fields, Then defaults to empty strings', () {
+      final json = <String, dynamic>{
+        'mqtt': <String, dynamic>{
+          'endpoint': 'ssl://mqtt.example.com',
+          'client_id': 'client-123',
+          'username': 'user',
+          'password': 'pass',
+          'publish_topic': 'pub/topic',
+          'subscribe_topic': 'sub/topic',
+        },
+        'websocket': <String, dynamic>{},
+      };
+
+      final result = fromJsonToOtaResult(json);
+
+      expect(result.websocket, isNotNull);
+      expect(result.websocket?.url, equals(''));
+      expect(result.websocket?.token, equals(''));
+    });
   });
 }
 

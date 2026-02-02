@@ -5,6 +5,8 @@ import 'transport_client.dart';
 abstract class SessionCoordinator {
   Stream<Map<String, dynamic>> get incomingJson;
   Stream<Uint8List> get incomingAudio;
+  Stream<double> get incomingLevel;
+  Stream<double> get outgoingLevel;
   Stream<String> get errors;
   Stream<bool> get speaking;
   int get serverSampleRate;

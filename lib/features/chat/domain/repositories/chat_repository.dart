@@ -6,6 +6,8 @@ import '../entities/chat_response.dart';
 abstract class ChatRepository {
   Stream<ChatResponse> get responses;
   Stream<List<int>> get audioStream;
+  Stream<double> get incomingLevel;
+  Stream<double> get outgoingLevel;
   Stream<Failure> get errors;
   Stream<bool> get speakingStream;
   int get serverSampleRate;

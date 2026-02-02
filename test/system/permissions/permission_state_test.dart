@@ -25,7 +25,7 @@ void main() {
         for (final type in PermissionState.requiredPermissions)
           type: PermissionStatus.granted,
       };
-      statuses[PermissionType.bluetooth] = PermissionStatus.denied;
+      statuses[PermissionType.microphone] = PermissionStatus.denied;
 
       final state = PermissionState(
         status: PermissionFlowStatus.denied,

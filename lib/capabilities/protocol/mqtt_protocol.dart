@@ -8,6 +8,7 @@ import 'package:pointycastle/export.dart';
 import 'package:synchronized/synchronized.dart';
 
 import '../../core/audio/audio_config.dart';
+import '../../core/logging/app_logger.dart';
 import '../../core/system/ota/model/ota_result.dart';
 import 'protocol.dart';
 import 'udp_client.dart';
@@ -55,6 +56,12 @@ class MqttProtocol extends Protocol {
       networkErrorStream.add('Server not found');
       return;
     }
+
+    AppLogger.event(
+      'MQTT',
+      'connect_start',
+      fields: <String, Object?>{'endpoint': _endpoint},
+    );
 
     final client = MqttServerClient(_endpoint, _clientId)
       ..keepAlivePeriod = 90
@@ -110,6 +117,12 @@ class MqttProtocol extends Protocol {
     try {
       await client.connect();
     } catch (_) {
+      AppLogger.event(
+        'MQTT',
+        'connect_failed',
+        fields: <String, Object?>{'endpoint': _endpoint},
+        level: 'E',
+      );
       networkErrorStream.add('Server not connected');
       return;
     }
@@ -161,6 +174,16 @@ class MqttProtocol extends Protocol {
         'frame_duration': AudioConfig.frameDurationMs,
       },
     };
+    AppLogger.event(
+      'MQTT',
+      'hello_send',
+      fields: <String, Object?>{
+        'audio_format': 'opus',
+        'sample_rate': AudioConfig.sampleRate,
+        'channels': AudioConfig.channels,
+        'frame_ms': AudioConfig.frameDurationMs,
+      },
+    );
     await sendText(jsonEncode(helloMessage));
 
     final completer = Completer<bool>();
@@ -224,6 +247,11 @@ class MqttProtocol extends Protocol {
     }
 
     sessionId = json['session_id'] as String? ?? '';
+    AppLogger.event(
+      'MQTT',
+      'hello_received',
+      fields: <String, Object?>{'session_id': sessionId},
+    );
 
     final udp = json['udp'] as Map<String, dynamic>?;
     if (udp == null) {

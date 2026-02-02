@@ -1,8 +1,10 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
-import '../../../../di/locator.dart';
-import '../../application/state/chat_controller.dart';
+import '../../application/state/chat_cubit.dart';
+import '../../application/state/chat_state.dart';
+import '../../domain/entities/chat_message.dart';
 import '../widgets/chat_input.dart';
 import '../widgets/chat_message_list.dart';
 
@@ -14,21 +16,17 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
-  late final ChatController _controller;
   final ScrollController _scrollController = ScrollController();
   String _inputText = '';
 
   @override
   void initState() {
     super.initState();
-    _controller = getIt<ChatController>();
-    _controller.initialize();
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
-    _controller.dispose();
     super.dispose();
   }
 
@@ -40,7 +38,7 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       _inputText = '';
     });
-    await _controller.sendMessage(text);
+    await context.read<ChatCubit>().sendMessage(text);
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
@@ -67,10 +65,9 @@ class _ChatPageState extends State<ChatPage> {
                 ),
               ),
             ),
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final error = _controller.connectionError;
+            BlocSelector<ChatCubit, ChatState, String?>(
+              selector: (state) => state.connectionError,
+              builder: (context, error) {
                 if (error == null || error.isEmpty) {
                   return const SizedBox.shrink();
                 }
@@ -89,19 +86,19 @@ class _ChatPageState extends State<ChatPage> {
               },
             ),
             Expanded(
-              child: AnimatedBuilder(
-                animation: _controller,
-                builder: (context, _) {
+              child: BlocSelector<ChatCubit, ChatState, List<ChatMessage>>(
+                selector: (state) => state.messages,
+                builder: (context, messages) {
                   return ChatMessageList(
-                    messages: _controller.messages,
+                    messages: messages,
                     scrollController: _scrollController,
                   );
                 },
               ),
             ),
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
+            BlocSelector<ChatCubit, ChatState, bool>(
+              selector: (state) => state.isSending,
+              builder: (context, isSending) {
                 return ChatInput(
                   text: _inputText,
                   onTextChanged: (value) {
@@ -110,7 +107,7 @@ class _ChatPageState extends State<ChatPage> {
                     });
                   },
                   onSend: _handleSend,
-                  isSending: _controller.isSending,
+                  isSending: isSending,
                 );
               },
             ),

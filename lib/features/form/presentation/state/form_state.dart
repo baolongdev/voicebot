@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/logging/app_logger.dart';
 import '../../domain/repositories/form_repository.dart';
 import '../../domain/repositories/form_result.dart';
 import '../../domain/models/server_form_data.dart';
-import 'package:voicebot/core/system/ota/model/ota_result.dart';
 import '../../domain/usecases/submit_form_use_case.dart';
 import '../../domain/usecases/validate_form_use_case.dart';
 
@@ -150,10 +150,7 @@ class FormBloc extends Bloc<FormEvent, FormState> {
     });
   }
 
-  String _mapNavigationTarget(OtaResult? otaResult) {
-    if (otaResult?.activation != null) {
-      return 'activation';
-    }
+  String _mapNavigationTarget(Object? otaResult) {
     return 'chat';
   }
 
@@ -234,9 +231,9 @@ class FormBloc extends Bloc<FormEvent, FormState> {
   }
 
   void _logSubmission(ServerFormData data) {
-    // ignore: avoid_print
-    print(
-      'Submit: type=${data.serverType}, '
+    AppLogger.log(
+      'FormBloc',
+      'submit type=${data.serverType}, '
       'ws=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.webSocketUrl : data.selfHostConfig.webSocketUrl}, '
       'qta=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.qtaUrl : '-'}, '
       'transport=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.transportType : data.selfHostConfig.transportType}',
@@ -249,17 +246,16 @@ class FormBloc extends Bloc<FormEvent, FormState> {
     }
     if (result is XiaoZhiResult) {
       final ota = result.otaResult;
-      // ignore: avoid_print
-      print(
-        'Result: XiaoZhi, ota='
+      AppLogger.log(
+        'FormBloc',
+        'result=xiaozhi '
         'fw=${ota?.firmware?.version ?? '-'} '
         'url=${ota?.firmware?.url ?? '-'} '
         'activation=${ota?.activation?.code ?? '-'}',
       );
       return;
     }
-    // ignore: avoid_print
-    print('Result: SelfHost');
+    AppLogger.log('FormBloc', 'result=selfhost');
   }
 
   @override

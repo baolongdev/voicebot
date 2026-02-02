@@ -11,4 +11,9 @@ abstract class SettingsRepository {
   set webSocketUrl(String? value);
   String? get webSocketToken;
   set webSocketToken(String? value);
+  bool get hasValidWebSocketConfig;
+  bool get hasValidMqttConfig;
+  void applyOtaResult(OtaResult result);
+  void normalizeTransport();
+  Future<void> hydrate();
 }

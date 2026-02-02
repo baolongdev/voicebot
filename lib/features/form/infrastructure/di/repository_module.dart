@@ -1,3 +1,4 @@
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 
 import 'package:voicebot/core/system/ota/ota.dart';
@@ -5,11 +6,16 @@ import '../../domain/repositories/form_repository.dart';
 import '../repositories/form_repository_impl.dart';
 import '../repositories/settings_repository.dart';
 import '../repositories/settings_repository_impl.dart';
+import '../repositories/settings_storage.dart';
 
 // Ported from Android Kotlin: RepositoryModule.kt
 void registerRepositoryModule(GetIt getIt) {
   if (!getIt.isRegistered<SettingsRepository>()) {
-    getIt.registerLazySingleton<SettingsRepository>(SettingsRepositoryImpl.new);
+    getIt.registerLazySingleton<SettingsRepository>(
+      () => SettingsRepositoryImpl(
+        SecureSettingsStorage(getIt<FlutterSecureStorage>()),
+      ),
+    );
   }
 
   if (!getIt.isRegistered<FormRepository>()) {
