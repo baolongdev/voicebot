@@ -1,5 +1,10 @@
 # Changelog - main
 
+## 2026-02-03
+- Streamlined release workflow to manual dispatch that builds APK and Windows, zips Windows output, creates a tag from pubspec version + run number, and publishes release assets.
+- Removed AAB and Linux build jobs from the release workflow.
+- Ignored desktop generated plugin registrant files and removed tracked instances from git index.
+
 ## 2026-01-30
 - Updated CI build workflow to publish only Android/Windows/Linux and create Releases on tags.
 - Adjusted build workflow trigger to run only on version tags (v*).
