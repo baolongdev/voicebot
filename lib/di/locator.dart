@@ -12,6 +12,9 @@ import '../features/form/domain/usecases/validate_form_use_case.dart';
 import '../features/form/presentation/state/form_state.dart';
 import '../features/form/domain/repositories/form_repository.dart';
 import '../presentation/app/listening_mode_cubit.dart';
+import '../presentation/app/carousel_settings_cubit.dart';
+import '../presentation/app/text_send_mode_cubit.dart';
+import '../presentation/app/connect_greeting_cubit.dart';
 import '../presentation/app/theme_mode_cubit.dart';
 import '../presentation/app/theme_palette_cubit.dart';
 import '../presentation/app/text_scale_cubit.dart';
@@ -57,9 +60,27 @@ Future<void> configureDependencies() async {
     );
   }
 
+  if (!getIt.isRegistered<CarouselSettingsCubit>()) {
+    getIt.registerLazySingleton<CarouselSettingsCubit>(
+      () => CarouselSettingsCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
   if (!getIt.isRegistered<ListeningModeCubit>()) {
     getIt.registerLazySingleton<ListeningModeCubit>(
       () => ListeningModeCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<TextSendModeCubit>()) {
+    getIt.registerLazySingleton<TextSendModeCubit>(
+      () => TextSendModeCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<ConnectGreetingCubit>()) {
+    getIt.registerLazySingleton<ConnectGreetingCubit>(
+      () => ConnectGreetingCubit(getIt<UiSettingsStore>()),
     );
   }
 

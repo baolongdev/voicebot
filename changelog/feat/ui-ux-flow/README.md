@@ -1,6 +1,10 @@
 # Changelog - feat/ui-ux-flow
 
 ## 2026-02-04
+- Added connect-greeting persistence + settings field, with short wake-word coercion for detect mode.
+- Added Xiaozhi text service + greeting usecase to isolate payload/session handling and log send_text payloads.
+- Added text send mode wiring + new cubits (carousel/text send/greeting) and DI/app hydration.
+- Expanded home settings sheet with collapsible sections and detailed carousel controls (height/autoplay/interval/speed/viewport/enlarge).
 - Rebuilt home UI widgets: header/content/footer split, added draggable camera overlay, and improved bottom carousel with full-screen preview.
 - Enhanced settings sheet with tabs for Wi-Fi/audio/camera/theme/text scale plus listening mode selection and persisted UI settings.
 - Added listening-mode plumbing through session coordinator and chat repository, plus manual-send button beside connect.

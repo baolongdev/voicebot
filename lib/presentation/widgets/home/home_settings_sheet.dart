@@ -40,6 +40,22 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onSetDark,
     required this.listeningMode,
     required this.onListeningModeChanged,
+    required this.textSendMode,
+    required this.onTextSendModeChanged,
+    required this.connectGreeting,
+    required this.onConnectGreetingChanged,
+    required this.carouselHeight,
+    required this.carouselAutoPlay,
+    required this.carouselAutoPlayInterval,
+    required this.carouselAnimationDuration,
+    required this.carouselViewportFraction,
+    required this.carouselEnlargeCenter,
+    required this.onCarouselHeightChanged,
+    required this.onCarouselAutoPlayChanged,
+    required this.onCarouselIntervalChanged,
+    required this.onCarouselAnimationChanged,
+    required this.onCarouselViewportChanged,
+    required this.onCarouselEnlargeChanged,
   });
 
   final double? volume;
@@ -69,12 +85,38 @@ class HomeSettingsSheet extends StatefulWidget {
   final VoidCallback onSetDark;
   final ListeningMode listeningMode;
   final ValueChanged<ListeningMode> onListeningModeChanged;
+  final TextSendMode textSendMode;
+  final ValueChanged<TextSendMode> onTextSendModeChanged;
+  final String connectGreeting;
+  final ValueChanged<String> onConnectGreetingChanged;
+  final double carouselHeight;
+  final bool carouselAutoPlay;
+  final Duration carouselAutoPlayInterval;
+  final Duration carouselAnimationDuration;
+  final double carouselViewportFraction;
+  final bool carouselEnlargeCenter;
+  final ValueChanged<double> onCarouselHeightChanged;
+  final ValueChanged<bool> onCarouselAutoPlayChanged;
+  final ValueChanged<Duration> onCarouselIntervalChanged;
+  final ValueChanged<Duration> onCarouselAnimationChanged;
+  final ValueChanged<double> onCarouselViewportChanged;
+  final ValueChanged<bool> onCarouselEnlargeChanged;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
 }
 
-class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
+enum _SettingsSection {
+  connectivity,
+  audio,
+  camera,
+  appearance,
+  text,
+  carousel,
+}
+
+class _HomeSettingsSheetState extends State<HomeSettingsSheet>
+    with TickerProviderStateMixin {
   static const List<double> _textScaleSteps = [
     0.85,
     0.95,
@@ -107,12 +149,54 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     'Thủ công',
     'Luôn nghe',
   ];
+  static const List<TextSendMode> _textSendModes = [
+    TextSendMode.listenDetect,
+    TextSendMode.text,
+  ];
+  static const List<String> _textSendModeLabels = [
+    'Lắng nghe',
+    'Văn bản',
+  ];
+  static const List<double> _carouselHeights = [
+    160,
+    200,
+    240,
+    280,
+  ];
+  static const List<double> _carouselViewports = [
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+  ];
+  static const List<Duration> _carouselIntervals = [
+    Duration(seconds: 2),
+    Duration(seconds: 3),
+    Duration(seconds: 4),
+    Duration(seconds: 6),
+  ];
+  static const List<Duration> _carouselAnimations = [
+    Duration(milliseconds: 400),
+    Duration(milliseconds: 700),
+    Duration(milliseconds: 1000),
+  ];
+  late final Map<_SettingsSection, AnimationController> _sectionControllers;
+  late final Map<_SettingsSection, Animation<double>> _sectionAnimations;
+  late final Map<_SettingsSection, bool> _sectionExpanded;
+  late String _greetingText;
   late double _sliderValue;
   late int _textScaleIndex;
   late int _paletteIndex;
   late int _cameraAspectIndex;
   late bool _cameraEnabledLocal;
   late int _listeningModeIndex;
+  late int _textSendModeIndex;
+  late int _carouselHeightIndex;
+  late int _carouselViewportIndex;
+  late int _carouselIntervalIndex;
+  late int _carouselAnimationIndex;
+  late bool _carouselAutoPlayLocal;
+  late bool _carouselEnlargeLocal;
 
   @override
   void initState() {
@@ -123,6 +207,40 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     _cameraAspectIndex = _cameraAspectToIndex(widget.cameraAspectRatio);
     _cameraEnabledLocal = widget.cameraEnabled;
     _listeningModeIndex = _listeningModeToIndex(widget.listeningMode);
+    _textSendModeIndex = _textSendModeToIndex(widget.textSendMode);
+    _greetingText = widget.connectGreeting;
+    _carouselHeightIndex = _carouselHeightToIndex(widget.carouselHeight);
+    _carouselViewportIndex =
+        _carouselViewportToIndex(widget.carouselViewportFraction);
+    _carouselIntervalIndex =
+        _carouselIntervalToIndex(widget.carouselAutoPlayInterval);
+    _carouselAnimationIndex =
+        _carouselAnimationToIndex(widget.carouselAnimationDuration);
+    _carouselAutoPlayLocal = widget.carouselAutoPlay;
+    _carouselEnlargeLocal = widget.carouselEnlargeCenter;
+    _sectionExpanded = {
+      _SettingsSection.connectivity: false,
+      _SettingsSection.audio: false,
+      _SettingsSection.camera: false,
+      _SettingsSection.appearance: false,
+      _SettingsSection.text: false,
+      _SettingsSection.carousel: false,
+    };
+    _sectionControllers = {
+      for (final section in _SettingsSection.values)
+        section: AnimationController(
+          vsync: this,
+          duration: const Duration(milliseconds: 250),
+          value: _sectionExpanded[section]! ? 1.0 : 0.0,
+        ),
+    };
+    _sectionAnimations = {
+      for (final section in _SettingsSection.values)
+        section: CurvedAnimation(
+          parent: _sectionControllers[section]!,
+          curve: Curves.easeInOut,
+        ),
+    };
   }
 
   @override
@@ -158,9 +276,57 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
         _listeningModeIndex = nextListeningIndex;
       });
     }
+    final nextTextSendIndex = _textSendModeToIndex(widget.textSendMode);
+    if (nextTextSendIndex != _textSendModeIndex) {
+      setState(() {
+        _textSendModeIndex = nextTextSendIndex;
+      });
+    }
+    if (_greetingText != widget.connectGreeting) {
+      setState(() {
+        _greetingText = widget.connectGreeting;
+      });
+    }
     if (_cameraEnabledLocal != widget.cameraEnabled) {
       setState(() {
         _cameraEnabledLocal = widget.cameraEnabled;
+      });
+    }
+    final nextCarouselHeight = _carouselHeightToIndex(widget.carouselHeight);
+    if (nextCarouselHeight != _carouselHeightIndex) {
+      setState(() {
+        _carouselHeightIndex = nextCarouselHeight;
+      });
+    }
+    final nextCarouselViewport =
+        _carouselViewportToIndex(widget.carouselViewportFraction);
+    if (nextCarouselViewport != _carouselViewportIndex) {
+      setState(() {
+        _carouselViewportIndex = nextCarouselViewport;
+      });
+    }
+    final nextCarouselInterval =
+        _carouselIntervalToIndex(widget.carouselAutoPlayInterval);
+    if (nextCarouselInterval != _carouselIntervalIndex) {
+      setState(() {
+        _carouselIntervalIndex = nextCarouselInterval;
+      });
+    }
+    final nextCarouselAnim =
+        _carouselAnimationToIndex(widget.carouselAnimationDuration);
+    if (nextCarouselAnim != _carouselAnimationIndex) {
+      setState(() {
+        _carouselAnimationIndex = nextCarouselAnim;
+      });
+    }
+    if (_carouselAutoPlayLocal != widget.carouselAutoPlay) {
+      setState(() {
+        _carouselAutoPlayLocal = widget.carouselAutoPlay;
+      });
+    }
+    if (_carouselEnlargeLocal != widget.carouselEnlargeCenter) {
+      setState(() {
+        _carouselEnlargeLocal = widget.carouselEnlargeCenter;
       });
     }
   }
@@ -203,6 +369,71 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     return index < 0 ? 0 : index;
   }
 
+  int _textSendModeToIndex(TextSendMode mode) {
+    final index = _textSendModes.indexOf(mode);
+    return index < 0 ? 0 : index;
+  }
+
+  int _carouselHeightToIndex(double height) {
+    var nearestIndex = 0;
+    var nearestDiff = double.infinity;
+    for (var i = 0; i < _carouselHeights.length; i++) {
+      final diff = (height - _carouselHeights[i]).abs();
+      if (diff < nearestDiff) {
+        nearestDiff = diff;
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  int _carouselViewportToIndex(double value) {
+    var nearestIndex = 0;
+    var nearestDiff = double.infinity;
+    for (var i = 0; i < _carouselViewports.length; i++) {
+      final diff = (value - _carouselViewports[i]).abs();
+      if (diff < nearestDiff) {
+        nearestDiff = diff;
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  int _carouselIntervalToIndex(Duration value) {
+    var nearestIndex = 0;
+    var nearestDiff = double.infinity;
+    for (var i = 0; i < _carouselIntervals.length; i++) {
+      final diff = (value - _carouselIntervals[i]).abs();
+      if (diff.inMilliseconds < nearestDiff) {
+        nearestDiff = diff.inMilliseconds.toDouble();
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  int _carouselAnimationToIndex(Duration value) {
+    var nearestIndex = 0;
+    var nearestDiff = double.infinity;
+    for (var i = 0; i < _carouselAnimations.length; i++) {
+      final diff = (value - _carouselAnimations[i]).abs();
+      if (diff.inMilliseconds < nearestDiff) {
+        nearestDiff = diff.inMilliseconds.toDouble();
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _sectionControllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final route = routeIcon(widget.audioDevice);
@@ -220,6 +451,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     final cameraIndex = _cameraEnabledLocal ? 1 : 0;
     final cameraAspectLabel = _cameraAspectLabels[_cameraAspectIndex];
     final listeningModeLabel = _listeningModeLabels[_listeningModeIndex];
+    final textSendModeLabel = _textSendModeLabels[_textSendModeIndex];
+    final carouselHeightLabel =
+        '${_carouselHeights[_carouselHeightIndex].round()}';
+    final carouselViewportLabel =
+        (_carouselViewports[_carouselViewportIndex] * 100).round();
+    final carouselIntervalLabel =
+        '${_carouselIntervals[_carouselIntervalIndex].inSeconds}s';
+    final carouselAnimLabel =
+        '${_carouselAnimations[_carouselAnimationIndex].inMilliseconds}ms';
     final offline = isOffline(widget.connectivity);
     final isWifiConnected =
         widget.connectivity?.contains(HomeConnectivity.wifi) ?? false;
@@ -254,6 +494,57 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
         WidgetState.any: normal.copyWith(size: iconSize),
       });
     }
+    FItemGroupStyle itemGroupStyle(FItemGroupStyle style) => style.copyWith(
+          itemStyle: (itemStyle) => itemStyle.copyWith(
+            contentStyle: (contentStyle) => contentStyle.copyWith(
+              prefixIconStyle: scaledItemIconStyle(
+                contentStyle.prefixIconStyle,
+              ),
+              suffixIconStyle: scaledItemIconStyle(
+                contentStyle.suffixIconStyle,
+              ),
+            ),
+          ),
+        );
+
+    Widget sectionHeader(String title, _SettingsSection section) {
+      final expanded = _sectionExpanded[section] ?? false;
+      return Padding(
+        padding: const EdgeInsets.only(bottom: ThemeTokens.spaceXs),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              title,
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            FButton.icon(
+              onPress: () => _toggleSection(section),
+              child: Icon(
+                expanded ? Icons.expand_less : Icons.expand_more,
+                size: iconSize,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget sectionBody(_SettingsSection section, Widget child) {
+      final animation = _sectionAnimations[section]!;
+      return AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) => FCollapsible(
+          value: animation.value,
+          child: child ?? const SizedBox.shrink(),
+        ),
+        child: child,
+      );
+    }
+
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(
         dragDevices: {
@@ -269,74 +560,77 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                decoration: BoxDecoration(
-                  color: context.theme.colors.mutedForeground.withAlpha(90),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            Text(
-              'Cài đặt',
-              style: context.theme.typography.xl.copyWith(
-                fontWeight: FontWeight.w700,
-                color: context.theme.colors.foreground,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Wi‑Fi, pin, âm lượng, giao diện, cỡ chữ',
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            FItemGroup(
-              divider: FItemDivider.none,
-              style: (style) => style.copyWith(
-                itemStyle: (itemStyle) => itemStyle.copyWith(
-                  contentStyle: (contentStyle) => contentStyle.copyWith(
-                    prefixIconStyle: scaledItemIconStyle(
-                      contentStyle.prefixIconStyle,
-                    ),
-                    suffixIconStyle: scaledItemIconStyle(
-                      contentStyle.suffixIconStyle,
-                    ),
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                  decoration: BoxDecoration(
+                    color: context.theme.colors.mutedForeground.withAlpha(90),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
-              children: [
-                FItem(
-                  prefix: Icon(wifiPrefixIcon, size: iconSize),
-                  title: const Text('Wi‑Fi'),
-                  details: Text(
-                    wifiStatus,
-                    style: context.theme.typography.sm.copyWith(
-                      color: wifiStatusColor,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  suffix: Icon(FIcons.chevronRight, size: iconSize),
-                  onPress: widget.onWifiSettings,
+              Text(
+                'Cài đặt',
+                style: context.theme.typography.xl.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: context.theme.colors.foreground,
                 ),
-                FItem(
-                  prefix: Icon(
-                    batteryIcon(widget.batteryLevel, widget.batteryState),
-                    size: iconSize,
-                  ),
-                  title: const Text('Pin'),
-                  suffix: Text(
-                    batteryText(widget.batteryLevel),
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Kết nối, âm thanh, camera, giao diện, cỡ chữ',
+                style: context.theme.typography.sm.copyWith(
+                  color: context.theme.colors.mutedForeground,
                 ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceSm),
+              sectionHeader('Kết nối', _SettingsSection.connectivity),
+              sectionBody(
+                _SettingsSection.connectivity,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                    FItem(
+                      prefix: Icon(wifiPrefixIcon, size: iconSize),
+                      title: const Text('Wi‑Fi'),
+                      details: Text(
+                        wifiStatus,
+                        style: context.theme.typography.sm.copyWith(
+                          color: wifiStatusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      suffix: Icon(FIcons.chevronRight, size: iconSize),
+                      onPress: widget.onWifiSettings,
+                    ),
+                    FItem(
+                      prefix: Icon(
+                        batteryIcon(widget.batteryLevel, widget.batteryState),
+                        size: iconSize,
+                      ),
+                      title: const Text('Pin'),
+                      suffix: Text(
+                        batteryText(widget.batteryLevel),
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Âm thanh & nghe', _SettingsSection.audio),
+              sectionBody(
+                _SettingsSection.audio,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
                 FItem(
                   prefix: Icon(audioIcon(_sliderValue), size: iconSize),
                   title: const Text('Âm lượng'),
@@ -416,6 +710,89 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     ),
                   ),
                 ),
+                FItem(
+                  prefix: Icon(Icons.chat_bubble_outline, size: iconSize),
+                  title: const Text('Gửi text'),
+                  suffix: Text(
+                    textSendModeLabel,
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _textSendModeIndex,
+                        onChange: (index) {
+                          setState(() {
+                            _textSendModeIndex = index;
+                          });
+                          widget.onTextSendModeChanged(
+                            _textSendModes[index],
+                          );
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      scrollable: false,
+                      children: const [
+                        FTabEntry(
+                          label: Text('Lắng nghe'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('Văn bản'),
+                          child: SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(Icons.mark_chat_read_outlined, size: iconSize),
+                  title: const Text('Lời chào kết nối'),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTextField(
+                      label: const Text('Nội dung gửi khi kết nối'),
+                      hint: 'Ví dụ: Xin chào',
+                      maxLines: 2,
+                      control: FTextFieldControl.lifted(
+                        value: TextEditingValue(
+                          text: _greetingText,
+                          selection: TextSelection.collapsed(
+                            offset: _greetingText.length,
+                          ),
+                        ),
+                        onChange: (value) {
+                          setState(() {
+                            _greetingText = value.text;
+                          });
+                          widget.onConnectGreetingChanged(value.text);
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Camera', _SettingsSection.camera),
+              sectionBody(
+                _SettingsSection.camera,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
                 FItem(
                   prefix: Icon(FIcons.camera, size: iconSize),
                   title: const Text('Camera'),
@@ -505,6 +882,17 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     ),
                   ),
                 ),
+                ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Giao diện', _SettingsSection.appearance),
+              sectionBody(
+                _SettingsSection.appearance,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
                 FItem(
                   prefix: Icon(FIcons.moon, size: iconSize),
                   title: const Text('Giao diện'),
@@ -588,6 +976,17 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     ),
                   ),
                 ),
+                ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Cỡ chữ', _SettingsSection.text),
+              sectionBody(
+                _SettingsSection.text,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
                 FItem(
                   prefix: Icon(FIcons.aLargeSmall, size: iconSize),
                   title: const Text('Cỡ chữ'),
@@ -627,12 +1026,269 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                     ),
                   ),
                 ),
-              ],
-            ),
+                ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Carousel', _SettingsSection.carousel),
+              sectionBody(
+                _SettingsSection.carousel,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                  FItem(
+                    prefix: Icon(Icons.image_outlined, size: iconSize),
+                    title: const Text('Chiều cao'),
+                    suffix: Text(
+                      '${carouselHeightLabel}px',
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselHeightIndex,
+                          onChange: (index) {
+                            setState(() {
+                              _carouselHeightIndex = index;
+                            });
+                            widget.onCarouselHeightChanged(
+                              _carouselHeights[index],
+                            );
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        scrollable: false,
+                        children: const [
+                          FTabEntry(label: Text('160'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('200'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('240'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('280'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FItem(
+                    prefix: Icon(Icons.play_arrow_rounded, size: iconSize),
+                    title: const Text('Tự chạy'),
+                    suffix: Text(
+                      _carouselAutoPlayLocal ? 'Bật' : 'Tắt',
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselAutoPlayLocal ? 1 : 0,
+                          onChange: (index) {
+                            final enabled = index == 1;
+                            setState(() {
+                              _carouselAutoPlayLocal = enabled;
+                            });
+                            widget.onCarouselAutoPlayChanged(enabled);
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        children: const [
+                          FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FItem(
+                    prefix: Icon(Icons.timer_outlined, size: iconSize),
+                    title: const Text('Chu kỳ'),
+                    suffix: Text(
+                      carouselIntervalLabel,
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselIntervalIndex,
+                          onChange: (index) {
+                            setState(() {
+                              _carouselIntervalIndex = index;
+                            });
+                            widget.onCarouselIntervalChanged(
+                              _carouselIntervals[index],
+                            );
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        scrollable: false,
+                        children: const [
+                          FTabEntry(label: Text('2s'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('3s'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('4s'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('6s'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FItem(
+                    prefix: Icon(Icons.speed_rounded, size: iconSize),
+                    title: const Text('Tốc độ chạy'),
+                    suffix: Text(
+                      carouselAnimLabel,
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselAnimationIndex,
+                          onChange: (index) {
+                            setState(() {
+                              _carouselAnimationIndex = index;
+                            });
+                            widget.onCarouselAnimationChanged(
+                              _carouselAnimations[index],
+                            );
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        scrollable: false,
+                        children: const [
+                          FTabEntry(label: Text('400'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('700'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('1000'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FItem(
+                    prefix: Icon(Icons.view_carousel_outlined, size: iconSize),
+                    title: const Text('Hiển thị'),
+                    suffix: Text(
+                      '$carouselViewportLabel%',
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselViewportIndex,
+                          onChange: (index) {
+                            setState(() {
+                              _carouselViewportIndex = index;
+                            });
+                            widget.onCarouselViewportChanged(
+                              _carouselViewports[index],
+                            );
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        scrollable: false,
+                        children: const [
+                          FTabEntry(label: Text('60%'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('70%'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('80%'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('90%'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                  FItem(
+                    prefix: Icon(Icons.open_in_full_outlined, size: iconSize),
+                    title: const Text('Phóng to giữa'),
+                    suffix: Text(
+                      _carouselEnlargeLocal ? 'Bật' : 'Tắt',
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: context.theme.colors.foreground,
+                      ),
+                    ),
+                  ),
+                  FItem.raw(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                      child: FTabs(
+                        control: FTabControl.lifted(
+                          index: _carouselEnlargeLocal ? 1 : 0,
+                          onChange: (index) {
+                            final enabled = index == 1;
+                            setState(() {
+                              _carouselEnlargeLocal = enabled;
+                            });
+                            widget.onCarouselEnlargeChanged(enabled);
+                          },
+                        ),
+                        style: (style) => style.copyWith(
+                          spacing: 0,
+                          height: tabHeight,
+                        ),
+                        children: const [
+                          FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
+                          FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                ),
+              ),
           ],
         ),
       ),
     ),
     );
+  }
+
+  void _toggleSection(_SettingsSection section) {
+    final current = _sectionExpanded[section] ?? false;
+    final next = !current;
+    setState(() {
+      _sectionExpanded[section] = next;
+    });
+    final controller = _sectionControllers[section]!;
+    if (next) {
+      controller.forward();
+    } else {
+      controller.reverse();
+    }
   }
 }

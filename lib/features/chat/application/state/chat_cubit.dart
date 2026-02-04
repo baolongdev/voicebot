@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../capabilities/protocol/protocol.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/result/result.dart';
@@ -19,7 +20,9 @@ import '../usecases/observe_chat_outgoing_level_usecase.dart';
 import '../usecases/observe_chat_responses_usecase.dart';
 import '../usecases/observe_chat_speaking_usecase.dart';
 import '../usecases/send_chat_message_usecase.dart';
+import '../usecases/send_greeting_message_usecase.dart';
 import '../usecases/set_listening_mode_usecase.dart';
+import '../usecases/set_text_send_mode_usecase.dart';
 import '../usecases/start_listening_usecase.dart';
 import '../usecases/stop_listening_usecase.dart';
 import '../../domain/entities/chat_config.dart';
@@ -32,6 +35,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     required ConnectChatUseCase connect,
     required DisconnectChatUseCase disconnect,
     required SendChatMessageUseCase sendMessage,
+    required SendGreetingMessageUseCase sendGreeting,
     required StartListeningUseCase startListening,
     required StopListeningUseCase stopListening,
     required ObserveChatResponsesUseCase observeResponses,
@@ -40,13 +44,16 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     required ObserveChatOutgoingLevelUseCase observeOutgoingLevel,
     required ObserveChatSpeakingUseCase observeSpeaking,
     required SetListeningModeUseCase setListeningMode,
+    required SetTextSendModeUseCase setTextSendMode,
   })  : _loadConfig = loadConfig,
         _connect = connect,
         _disconnect = disconnect,
         _sendMessage = sendMessage,
+        _sendGreeting = sendGreeting,
         _startListening = startListening,
         _stopListening = stopListening,
         _setListeningMode = setListeningMode,
+        _setTextSendMode = setTextSendMode,
         _observeResponses = observeResponses,
         _observeErrors = observeErrors,
         _observeIncomingLevel = observeIncomingLevel,
@@ -58,9 +65,11 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   final ConnectChatUseCase _connect;
   final DisconnectChatUseCase _disconnect;
   final SendChatMessageUseCase _sendMessage;
+  final SendGreetingMessageUseCase _sendGreeting;
   final StartListeningUseCase _startListening;
   final StopListeningUseCase _stopListening;
   final SetListeningModeUseCase _setListeningMode;
+  final SetTextSendModeUseCase _setTextSendMode;
   final ObserveChatResponsesUseCase _observeResponses;
   final ObserveChatErrorsUseCase _observeErrors;
   final ObserveChatIncomingLevelUseCase _observeIncomingLevel;
@@ -90,6 +99,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   DateTime? _ttsStartAt;
   String? _lastAgentText;
   static const Duration _networkWarningHold = Duration(seconds: 12);
+  String _connectGreeting = AppConfig.connectGreetingDefault;
   Future<void> initialize() async {
     await _attachStreams();
     await _connectWithConfig();
@@ -184,6 +194,14 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
 
   Future<void> setListeningMode(ListeningMode mode) async {
     await _setListeningMode(mode);
+  }
+
+  Future<void> setTextSendMode(TextSendMode mode) async {
+    await _setTextSendMode(mode);
+  }
+
+  void setConnectGreeting(String value) {
+    _connectGreeting = value;
   }
 
   Future<void> stopListening() async {
@@ -436,6 +454,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       if (state.networkWarning) {
         _scheduleNetworkWarningClear();
       }
+      await _sendGreetingBeforeListening();
       await _startListening().timeout(const Duration(seconds: 4));
     } on TimeoutException {
       if (_disposed || isClosed || generation != _connectGeneration) {
@@ -452,6 +471,41 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       _connectCompleter?.complete();
       _connectCompleter = null;
     }
+  }
+
+  Future<void> _sendGreetingBeforeListening() async {
+    final rawGreeting = _connectGreeting.trim();
+    if (rawGreeting.isEmpty) {
+      return;
+    }
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final greeting = _coerceGreeting(rawGreeting);
+      final result =
+          await _sendGreeting(greeting).timeout(const Duration(seconds: 3));
+      AppLogger.event(
+        'ChatCubit',
+        'auto_greeting_send',
+        fields: <String, Object?>{
+          'length': greeting.length,
+          'success': result.isSuccess,
+        },
+      );
+    } catch (_) {
+      AppLogger.event('ChatCubit', 'auto_greeting_failed');
+    }
+  }
+
+  String _coerceGreeting(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return trimmed;
+    }
+    final wordCount = trimmed.split(RegExp(r'\s+')).length;
+    if (trimmed.length > 20 || wordCount > 3) {
+      return 'Xin chào';
+    }
+    return trimmed;
   }
 
   Future<void> _awaitDisconnecting() async {

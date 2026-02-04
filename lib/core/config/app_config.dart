@@ -13,4 +13,6 @@ class AppConfig {
   // Feature flag for new v2 flow entry.
   static const bool useNewFlow = true;
 
+  // Default text sent right after connection succeeds.
+  static const String connectGreetingDefault = 'Xin chào';
 }

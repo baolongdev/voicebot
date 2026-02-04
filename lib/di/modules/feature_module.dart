@@ -12,7 +12,9 @@ import '../../features/chat/application/usecases/observe_chat_responses_usecase.
 import '../../features/chat/application/usecases/observe_chat_speaking_usecase.dart';
 import '../../features/chat/application/usecases/send_audio_frame_usecase.dart';
 import '../../features/chat/application/usecases/send_chat_message_usecase.dart';
+import '../../features/chat/application/usecases/send_greeting_message_usecase.dart';
 import '../../features/chat/application/usecases/set_listening_mode_usecase.dart';
+import '../../features/chat/application/usecases/set_text_send_mode_usecase.dart';
 import '../../features/chat/application/usecases/start_listening_usecase.dart';
 import '../../features/chat/application/usecases/stop_listening_usecase.dart';
 import '../../features/chat/domain/repositories/chat_config_provider.dart';
@@ -78,6 +80,12 @@ void registerChatFeature(GetIt getIt) {
     );
   }
 
+  if (!getIt.isRegistered<SendGreetingMessageUseCase>()) {
+    getIt.registerFactory<SendGreetingMessageUseCase>(
+      () => SendGreetingMessageUseCase(getIt<ChatRepository>()),
+    );
+  }
+
   if (!getIt.isRegistered<SendAudioFrameUseCase>()) {
     getIt.registerFactory<SendAudioFrameUseCase>(
       () => SendAudioFrameUseCase(getIt<ChatRepository>()),
@@ -99,6 +107,12 @@ void registerChatFeature(GetIt getIt) {
   if (!getIt.isRegistered<SetListeningModeUseCase>()) {
     getIt.registerFactory<SetListeningModeUseCase>(
       () => SetListeningModeUseCase(getIt<ChatRepository>()),
+    );
+  }
+
+  if (!getIt.isRegistered<SetTextSendModeUseCase>()) {
+    getIt.registerFactory<SetTextSendModeUseCase>(
+      () => SetTextSendModeUseCase(getIt<ChatRepository>()),
     );
   }
 
@@ -139,9 +153,11 @@ void registerChatFeature(GetIt getIt) {
         connect: getIt<ConnectChatUseCase>(),
         disconnect: getIt<DisconnectChatUseCase>(),
         sendMessage: getIt<SendChatMessageUseCase>(),
+        sendGreeting: getIt<SendGreetingMessageUseCase>(),
         startListening: getIt<StartListeningUseCase>(),
         stopListening: getIt<StopListeningUseCase>(),
         setListeningMode: getIt<SetListeningModeUseCase>(),
+        setTextSendMode: getIt<SetTextSendModeUseCase>(),
         observeResponses: getIt<ObserveChatResponsesUseCase>(),
         observeErrors: getIt<ObserveChatErrorsUseCase>(),
         observeIncomingLevel: getIt<ObserveChatIncomingLevelUseCase>(),

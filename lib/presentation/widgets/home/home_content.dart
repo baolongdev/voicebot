@@ -15,6 +15,12 @@ class HomeContent extends StatelessWidget {
     required this.cameraEnabled,
     required this.cameraAspectRatio,
     required this.onCameraEnabledChanged,
+    required this.carouselHeight,
+    required this.carouselAutoPlay,
+    required this.carouselAutoPlayInterval,
+    required this.carouselAnimationDuration,
+    required this.carouselViewportFraction,
+    required this.carouselEnlargeCenter,
   });
 
   final EmotionPalette palette;
@@ -22,9 +28,14 @@ class HomeContent extends StatelessWidget {
   final bool cameraEnabled;
   final double cameraAspectRatio;
   final ValueChanged<bool> onCameraEnabledChanged;
+  final double carouselHeight;
+  final bool carouselAutoPlay;
+  final Duration carouselAutoPlayInterval;
+  final Duration carouselAnimationDuration;
+  final double carouselViewportFraction;
+  final bool carouselEnlargeCenter;
 
   static const double audioActiveThreshold = 0.02;
-  static const double _carouselHeight = 256;
   static const List<String> _carouselImages = [
     'https://chanhviet.com/wp-content/uploads/2024/05/syrup-chanh-vang-chavi-1.png',
     'https://chanhviet.com/wp-content/uploads/2023/07/cot-chanh-tuoi-100-chavi-chavi-1024x1024.jpg',
@@ -78,7 +89,15 @@ class HomeContent extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _BottomCarousel(palette: palette),
+                      _BottomCarousel(
+                        palette: palette,
+                        height: carouselHeight,
+                        autoPlay: carouselAutoPlay,
+                        autoPlayInterval: carouselAutoPlayInterval,
+                        animationDuration: carouselAnimationDuration,
+                        viewportFraction: carouselViewportFraction,
+                        enlargeCenter: carouselEnlargeCenter,
+                      ),
                     ],
                   ),
                 ),
@@ -98,14 +117,28 @@ class HomeContent extends StatelessWidget {
 }
 
 class _BottomCarousel extends StatelessWidget {
-  const _BottomCarousel({required this.palette});
+  const _BottomCarousel({
+    required this.palette,
+    required this.height,
+    required this.autoPlay,
+    required this.autoPlayInterval,
+    required this.animationDuration,
+    required this.viewportFraction,
+    required this.enlargeCenter,
+  });
 
   final EmotionPalette palette;
+  final double height;
+  final bool autoPlay;
+  final Duration autoPlayInterval;
+  final Duration animationDuration;
+  final double viewportFraction;
+  final bool enlargeCenter;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: HomeContent._carouselHeight,
+      height: height,
       width: double.infinity,
       child: CarouselSlider(
         items: List.generate(HomeContent._carouselImages.length, (index) {
@@ -128,7 +161,7 @@ class _BottomCarousel extends StatelessWidget {
                   Image.network(
                     imageUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, _error, _stackTrace) => Center(
+                    errorBuilder: (context, error, stackTrace) => Center(
                       child: Text(
                         'Hình ảnh lỗi',
                         style: context.theme.typography.sm.copyWith(
@@ -174,13 +207,13 @@ class _BottomCarousel extends StatelessWidget {
           );
         }),
         options: CarouselOptions(
-          height: HomeContent._carouselHeight,
-          viewportFraction: 0.7,
-          enlargeCenterPage: true,
-          enableInfiniteScroll: false,
-          autoPlay: true,
-          autoPlayInterval: const Duration(seconds: 4),
-          autoPlayAnimationDuration: const Duration(milliseconds: 700),
+          height: height,
+          viewportFraction: viewportFraction.clamp(0.4, 1.0),
+          enlargeCenterPage: enlargeCenter,
+          enableInfiniteScroll: true,
+          autoPlay: autoPlay,
+          autoPlayInterval: autoPlayInterval,
+          autoPlayAnimationDuration: animationDuration,
           autoPlayCurve: Curves.easeOutCubic,
           pauseAutoPlayOnTouch: true,
         ),
@@ -209,7 +242,7 @@ void _openImagePreview(BuildContext context, String imageUrl) {
                     child: Image.network(
                       imageUrl,
                       fit: BoxFit.contain,
-                      errorBuilder: (context, _error, _stackTrace) => Center(
+                      errorBuilder: (context, error, stackTrace) => Center(
                         child: Text(
                           'Hình ảnh lỗi',
                           style: context.theme.typography.sm.copyWith(

@@ -23,6 +23,9 @@ import '../app/theme_mode_cubit.dart';
 import '../app/theme_palette_cubit.dart';
 import '../app/text_scale_cubit.dart';
 import '../app/listening_mode_cubit.dart';
+import '../app/carousel_settings_cubit.dart';
+import '../app/text_send_mode_cubit.dart';
+import '../app/connect_greeting_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
@@ -61,6 +64,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     context.read<HomeCubit>().initialize();
+    context.read<ChatCubit>().setTextSendMode(
+      context.read<TextSendModeCubit>().state,
+    );
+    context.read<ChatCubit>().setConnectGreeting(
+      context.read<ConnectGreetingCubit>().state,
+    );
     if (AppConfig.permissionsEnabled) {
       _schedulePermissionPrompt();
     }
@@ -84,6 +93,16 @@ class _HomePageState extends State<HomePage> {
         BlocListener<ListeningModeCubit, ListeningMode>(
           listener: (context, mode) {
             context.read<ChatCubit>().setListeningMode(mode);
+          },
+        ),
+        BlocListener<TextSendModeCubit, TextSendMode>(
+          listener: (context, mode) {
+            context.read<ChatCubit>().setTextSendMode(mode);
+          },
+        ),
+        BlocListener<ConnectGreetingCubit, String>(
+          listener: (context, greeting) {
+            context.read<ChatCubit>().setConnectGreeting(greeting);
           },
         ),
         BlocListener<ChatCubit, ChatState>(
@@ -245,18 +264,37 @@ class _HomePageState extends State<HomePage> {
                         networkWarning: data.networkWarning,
                       );
                       return Expanded(
-                        child: ValueListenableBuilder<bool>(
-                          valueListenable: _cameraEnabled,
-                          builder: (context, cameraEnabled, _) {
-                            return ValueListenableBuilder<double>(
-                              valueListenable: _cameraAspectRatio,
-                              builder: (context, cameraAspectRatio, _) {
-                                return HomeContent(
-                                  palette: palette,
-                                  connectionData: connectionData,
-                                  cameraEnabled: cameraEnabled,
-                                  cameraAspectRatio: cameraAspectRatio,
-                                  onCameraEnabledChanged: _setCameraEnabled,
+                        child: BlocBuilder<
+                          CarouselSettingsCubit,
+                          CarouselSettings
+                        >(
+                          builder: (context, carouselSettings) {
+                            return ValueListenableBuilder<bool>(
+                              valueListenable: _cameraEnabled,
+                              builder: (context, cameraEnabled, _) {
+                                return ValueListenableBuilder<double>(
+                                  valueListenable: _cameraAspectRatio,
+                                  builder: (context, cameraAspectRatio, _) {
+                                    return HomeContent(
+                                      palette: palette,
+                                      connectionData: connectionData,
+                                      cameraEnabled: cameraEnabled,
+                                      cameraAspectRatio: cameraAspectRatio,
+                                      onCameraEnabledChanged: _setCameraEnabled,
+                                      carouselHeight:
+                                          carouselSettings.height,
+                                      carouselAutoPlay:
+                                          carouselSettings.autoPlay,
+                                      carouselAutoPlayInterval:
+                                          carouselSettings.autoPlayInterval,
+                                      carouselAnimationDuration:
+                                          carouselSettings.animationDuration,
+                                      carouselViewportFraction:
+                                          carouselSettings.viewportFraction,
+                                      carouselEnlargeCenter:
+                                          carouselSettings.enlargeCenter,
+                                    );
+                                  },
                                 );
                               },
                             );
@@ -712,82 +750,166 @@ class _HomePageState extends State<HomePage> {
                       builder: (context, textScale) {
                         return BlocBuilder<ListeningModeCubit, ListeningMode>(
                           builder: (context, listeningMode) {
-                            return BlocSelector<
-                              HomeCubit,
-                              HomeState,
-                              ({
-                                double? volume,
-                                HomeAudioDevice? audioDevice,
-                                List<HomeConnectivity>? connectivity,
-                                String? wifiName,
-                                String? carrierName,
-                                List<HomeWifiNetwork> wifiNetworks,
-                                bool wifiLoading,
-                                String? wifiError,
-                                int? batteryLevel,
-                                HomeBatteryState? batteryState,
-                              })
+                            return BlocBuilder<
+                              TextSendModeCubit,
+                              TextSendMode
                             >(
-                              selector: (state) => (
-                                volume: state.volume,
-                                audioDevice: state.audioDevice,
-                                connectivity: state.connectivity,
-                                wifiName: state.wifiName,
-                                carrierName: state.carrierName,
-                                wifiNetworks: state.wifiNetworks,
-                                wifiLoading: state.wifiLoading,
-                                wifiError: state.wifiError,
-                                batteryLevel: state.batteryLevel,
-                                batteryState: state.batteryState,
-                              ),
-                              builder: (context, data) {
-                                return ValueListenableBuilder<bool>(
-                                  valueListenable: _cameraEnabled,
-                                  builder: (context, cameraEnabled, _) {
-                                    return ValueListenableBuilder<double>(
-                                      valueListenable: _cameraAspectRatio,
-                                      builder:
-                                          (context, cameraAspectRatio, _) {
-                                        return HomeSettingsSheet(
-                                          volume: data.volume,
-                                          audioDevice: data.audioDevice,
-                                          connectivity: data.connectivity,
-                                          wifiName: data.wifiName,
-                                          carrierName: data.carrierName,
-                                          wifiNetworks: data.wifiNetworks,
-                                          wifiLoading: data.wifiLoading,
-                                          wifiError: data.wifiError,
-                                          batteryLevel: data.batteryLevel,
-                                          batteryState: data.batteryState,
-                                          onWifiRefresh: _refreshWifiNetworks,
-                                          onWifiSettings: _openWifiSettings,
-                                          onWifiSelect: _openWifiPasswordSheet,
-                                          onVolumeChanged: _handleVolumeChanged,
-                                          textScale: textScale,
-                                          onTextScaleChanged: sheetContext
-                                              .read<TextScaleCubit>()
-                                              .setScale,
-                                          cameraEnabled: cameraEnabled,
-                                          onCameraEnabledChanged:
-                                              _setCameraEnabled,
-                                          cameraAspectRatio: cameraAspectRatio,
-                                          onCameraAspectChanged:
-                                              _setCameraAspectRatio,
-                                          themeMode: themeMode,
-                                          themePalette: themePalette,
-                                          onThemePaletteChanged: sheetContext
-                                              .read<ThemePaletteCubit>()
-                                              .setPalette,
-                                          onSetLight: sheetContext
-                                              .read<ThemeModeCubit>()
-                                              .setLight,
-                                          onSetDark: sheetContext
-                                              .read<ThemeModeCubit>()
-                                              .setDark,
-                                          listeningMode: listeningMode,
-                                          onListeningModeChanged: sheetContext
-                                              .read<ListeningModeCubit>()
-                                              .setMode,
+                              builder: (context, textSendMode) {
+                                return BlocBuilder<
+                                  ConnectGreetingCubit,
+                                  String
+                                >(
+                                  builder: (context, connectGreeting) {
+                                    return BlocBuilder<
+                                      CarouselSettingsCubit,
+                                      CarouselSettings
+                                    >(
+                                      builder: (context, carouselSettings) {
+                                    return BlocSelector<
+                                      HomeCubit,
+                                      HomeState,
+                                      ({
+                                        double? volume,
+                                        HomeAudioDevice? audioDevice,
+                                        List<HomeConnectivity>? connectivity,
+                                        String? wifiName,
+                                        String? carrierName,
+                                        List<HomeWifiNetwork> wifiNetworks,
+                                        bool wifiLoading,
+                                        String? wifiError,
+                                        int? batteryLevel,
+                                        HomeBatteryState? batteryState,
+                                      })
+                                    >(
+                                      selector: (state) => (
+                                        volume: state.volume,
+                                        audioDevice: state.audioDevice,
+                                        connectivity: state.connectivity,
+                                        wifiName: state.wifiName,
+                                        carrierName: state.carrierName,
+                                        wifiNetworks: state.wifiNetworks,
+                                        wifiLoading: state.wifiLoading,
+                                        wifiError: state.wifiError,
+                                        batteryLevel: state.batteryLevel,
+                                        batteryState: state.batteryState,
+                                      ),
+                                      builder: (context, data) {
+                                        return ValueListenableBuilder<bool>(
+                                          valueListenable: _cameraEnabled,
+                                          builder: (context, cameraEnabled, _) {
+                                            return ValueListenableBuilder<double>(
+                                              valueListenable: _cameraAspectRatio,
+                                              builder:
+                                                  (context, cameraAspectRatio, _) {
+                                                return HomeSettingsSheet(
+                                                  volume: data.volume,
+                                                  audioDevice: data.audioDevice,
+                                                  connectivity: data.connectivity,
+                                              wifiName: data.wifiName,
+                                              carrierName: data.carrierName,
+                                              wifiNetworks: data.wifiNetworks,
+                                              wifiLoading: data.wifiLoading,
+                                              wifiError: data.wifiError,
+                                              batteryLevel: data.batteryLevel,
+                                              batteryState: data.batteryState,
+                                              onWifiRefresh:
+                                                  _refreshWifiNetworks,
+                                              onWifiSettings: _openWifiSettings,
+                                              onWifiSelect:
+                                                  _openWifiPasswordSheet,
+                                              onVolumeChanged:
+                                                  _handleVolumeChanged,
+                                              textScale: textScale,
+                                              onTextScaleChanged: sheetContext
+                                                  .read<TextScaleCubit>()
+                                                  .setScale,
+                                              cameraEnabled: cameraEnabled,
+                                              onCameraEnabledChanged:
+                                                  _setCameraEnabled,
+                                              cameraAspectRatio:
+                                                  cameraAspectRatio,
+                                              onCameraAspectChanged:
+                                                  _setCameraAspectRatio,
+                                              themeMode: themeMode,
+                                              themePalette: themePalette,
+                                              onThemePaletteChanged: sheetContext
+                                                  .read<ThemePaletteCubit>()
+                                                  .setPalette,
+                                              onSetLight: sheetContext
+                                                  .read<ThemeModeCubit>()
+                                                  .setLight,
+                                              onSetDark: sheetContext
+                                                  .read<ThemeModeCubit>()
+                                                  .setDark,
+                                              listeningMode: listeningMode,
+                                              onListeningModeChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          ListeningModeCubit>()
+                                                      .setMode,
+                                              textSendMode: textSendMode,
+                                              onTextSendModeChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          TextSendModeCubit>()
+                                                      .setMode,
+                                              connectGreeting: connectGreeting,
+                                              onConnectGreetingChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          ConnectGreetingCubit>()
+                                                      .setGreeting,
+                                              carouselHeight:
+                                                  carouselSettings.height,
+                                              carouselAutoPlay:
+                                                  carouselSettings.autoPlay,
+                                              carouselAutoPlayInterval:
+                                                  carouselSettings
+                                                      .autoPlayInterval,
+                                              carouselAnimationDuration:
+                                                  carouselSettings
+                                                      .animationDuration,
+                                              carouselViewportFraction:
+                                                  carouselSettings
+                                                      .viewportFraction,
+                                              carouselEnlargeCenter:
+                                                  carouselSettings.enlargeCenter,
+                                              onCarouselHeightChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setHeight,
+                                              onCarouselAutoPlayChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setAutoPlay,
+                                              onCarouselIntervalChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setInterval,
+                                              onCarouselAnimationChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setAnimationDuration,
+                                              onCarouselViewportChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setViewportFraction,
+                                              onCarouselEnlargeChanged:
+                                                  sheetContext
+                                                      .read<
+                                                          CarouselSettingsCubit>()
+                                                      .setEnlargeCenter,
+                                                );
+                                              },
+                                                );
+                                              },
+                                            );
+                                          },
                                         );
                                       },
                                     );

@@ -9,6 +9,9 @@ import '../../di/locator.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../presentation/app/listening_mode_cubit.dart';
+import '../../presentation/app/carousel_settings_cubit.dart';
+import '../../presentation/app/text_send_mode_cubit.dart';
+import '../../presentation/app/connect_greeting_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
 import '../../presentation/app/theme_palette_cubit.dart';
 import '../../presentation/app/text_scale_cubit.dart';
@@ -34,6 +37,9 @@ class _ApplicationState extends State<Application> {
     getIt<ThemePaletteCubit>().hydrate();
     getIt<TextScaleCubit>().hydrate();
     getIt<ListeningModeCubit>().hydrate();
+    getIt<TextSendModeCubit>().hydrate();
+    getIt<ConnectGreetingCubit>().hydrate();
+    getIt<CarouselSettingsCubit>().hydrate();
   }
 
   @override
@@ -49,6 +55,15 @@ class _ApplicationState extends State<Application> {
         BlocProvider<TextScaleCubit>.value(value: getIt<TextScaleCubit>()),
         BlocProvider<ListeningModeCubit>.value(
           value: getIt<ListeningModeCubit>(),
+        ),
+        BlocProvider<TextSendModeCubit>.value(
+          value: getIt<TextSendModeCubit>(),
+        ),
+        BlocProvider<ConnectGreetingCubit>.value(
+          value: getIt<ConnectGreetingCubit>(),
+        ),
+        BlocProvider<CarouselSettingsCubit>.value(
+          value: getIt<CarouselSettingsCubit>(),
         ),
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),

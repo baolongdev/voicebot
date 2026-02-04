@@ -18,6 +18,8 @@ abstract class ChatRepository {
   Future<void> startListening({bool enableMic = true});
   Future<void> stopListening();
   Future<void> setListeningMode(ListeningMode mode);
+  Future<void> setTextSendMode(TextSendMode mode);
+  Future<Result<bool>> sendGreeting(String text);
   Future<Result<bool>> sendMessage(String text);
   Future<void> sendAudio(List<int> data);
 }

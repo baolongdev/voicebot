@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import '../../../../capabilities/protocol/protocol.dart';
 import '../../../../capabilities/voice/session_coordinator.dart';
@@ -14,6 +13,7 @@ import '../../domain/entities/chat_response.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/utils/throttle.dart';
+import '../services/xiaozhi_text_service.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
   ChatRepositoryImpl({
@@ -22,7 +22,12 @@ class ChatRepositoryImpl implements ChatRepository {
         _responsesController = StreamController<ChatResponse>.broadcast(),
         _audioController = StreamController<List<int>>.broadcast(),
         _errorController = StreamController<Failure>.broadcast(),
-        _speakingController = StreamController<bool>.broadcast();
+        _speakingController = StreamController<bool>.broadcast() {
+    _textService = XiaozhiTextService(
+      sessionCoordinator: _sessionCoordinator,
+      sessionIdProvider: () => _transport?.sessionId ?? '',
+    );
+  }
 
   final SessionCoordinator _sessionCoordinator;
   final StreamController<ChatResponse> _responsesController;
@@ -36,6 +41,7 @@ class ChatRepositoryImpl implements ChatRepository {
   StreamSubscription<bool>? _speakingSubscription;
   ChatConfig? _lastConfig;
   TransportClient? _transport;
+  late final XiaozhiTextService _textService;
   bool _isConnected = false;
   bool _isSpeaking = false;
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
@@ -192,6 +198,27 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
+  Future<void> setTextSendMode(TextSendMode mode) async {
+    return;
+  }
+
+  @override
+  Future<Result<bool>> sendGreeting(String text) async {
+    if (!_isConnected) {
+      if (_lastConfig == null) {
+        return Result.failure(
+          const Failure(message: 'Chưa cấu hình kết nối'),
+        );
+      }
+      final result = await connect(_lastConfig!);
+      if (!result.isSuccess) {
+        return result;
+      }
+    }
+    return _textService.sendTextRequest(text);
+  }
+
+  @override
   Future<Result<bool>> sendMessage(String text) async {
     if (!_isConnected) {
       if (_lastConfig == null) {
@@ -204,14 +231,9 @@ class ChatRepositoryImpl implements ChatRepository {
         return result;
       }
     }
-    final payload = <String, dynamic>{
-      'type': 'text',
-      'text': text,
-      'session_id': _transport?.sessionId ?? '',
-    };
-    await _sessionCoordinator.sendText(jsonEncode(payload));
-    return Result.success(true);
+    return _textService.sendTextRequest(text);
   }
+
 
   @override
   Future<void> sendAudio(List<int> data) async {

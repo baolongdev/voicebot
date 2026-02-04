@@ -7,6 +7,7 @@ enum AbortReason { wakeWordDetected, none }
 
 // Ported from Android Kotlin: Protocol.kt
 enum ListeningMode { alwaysOn, autoStop, manual }
+enum TextSendMode { listenDetect, text }
 
 // Ported from Android Kotlin: Protocol.kt
 enum AudioState { opened, closed }
