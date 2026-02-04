@@ -18,8 +18,8 @@ import 'package:voicebot/system/ota/ota_android.dart';
 import 'package:voicebot/system/ota/ota_platform.dart';
 import 'package:voicebot/system/ota/upgrade_state.dart';
 
-class Ota {
-  Ota(
+class OtaClient {
+  OtaClient(
     DeviceInfo deviceInfo, {
     OtaPlatform? platform,
   })  : _deviceInfo = deviceInfo,

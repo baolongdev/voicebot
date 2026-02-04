@@ -1,8 +1,5 @@
-import 'package:audio_router/audio_router.dart';
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
-
 import '../../../../core/system/ota/model/ota_result.dart';
+import '../../domain/entities/home_system_status.dart';
 import '../../domain/entities/home_wifi_network.dart';
 
 class HomeState {
@@ -56,12 +53,12 @@ class HomeState {
   final Activation? activation;
   final String? errorMessage;
   final int? batteryLevel;
-  final BatteryState? batteryState;
-  final List<ConnectivityResult>? connectivity;
+  final HomeBatteryState? batteryState;
+  final List<HomeConnectivity>? connectivity;
   final String? wifiName;
   final String? carrierName;
   final double? volume;
-  final AudioDevice? audioDevice;
+  final HomeAudioDevice? audioDevice;
   final List<HomeWifiNetwork> wifiNetworks;
   final bool wifiLoading;
   final String? wifiError;
@@ -76,7 +73,7 @@ class HomeState {
     Object? errorMessage = _noChange,
     int? batteryLevel,
     Object? batteryState = _noChange,
-    List<ConnectivityResult>? connectivity,
+    List<HomeConnectivity>? connectivity,
     Object? wifiName = _noChange,
     Object? carrierName = _noChange,
     Object? volume = _noChange,
@@ -93,14 +90,14 @@ class HomeState {
         : errorMessage as String?;
     final nextBatteryState = batteryState == _noChange
         ? this.batteryState
-        : batteryState as BatteryState?;
+        : batteryState as HomeBatteryState?;
     final nextWifiName = wifiName == _noChange ? this.wifiName : wifiName as String?;
     final nextCarrierName =
         carrierName == _noChange ? this.carrierName : carrierName as String?;
     final nextVolume = volume == _noChange ? this.volume : volume as double?;
     final nextAudioDevice = audioDevice == _noChange
         ? this.audioDevice
-        : audioDevice as AudioDevice?;
+        : audioDevice as HomeAudioDevice?;
     final nextWifiError =
         wifiError == _noChange ? this.wifiError : wifiError as String?;
     return HomeState(

@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voicebot/core/system/ota/model/device_info.dart' as device_info;
 import 'package:voicebot/core/system/ota/model/ota_result.dart';
-import 'package:voicebot/system/ota/ota.dart' as system_ota;
+import 'package:voicebot/system/ota/ota_client.dart' as system_ota;
 
 class _CapturedRequest {
   _CapturedRequest({
@@ -239,7 +239,7 @@ void main() {
 
   group('OTA checkVersion', () {
     test('Given short URL, When checkVersion, Then returns false', () async {
-      final ota = system_ota.Ota(device_info.DummyDataGenerator.generate());
+      final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
       final result = await ota.checkVersion('short');
       expect(result, isFalse);
     });
@@ -262,9 +262,9 @@ void main() {
         storage['ota_device_mac'] = 'AA:BB:CC:DD:EE:FF';
         storage['ota_device_uuid'] = 'device-uuid-123';
 
-        system_ota.Ota? ota;
+        system_ota.OtaClient? ota;
         final result = await HttpOverrides.runZoned(() async {
-          ota = system_ota.Ota(device_info.DummyDataGenerator.generate());
+          ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
           return ota!.checkVersion('https://example.com/ota');
         }, createHttpClient: overrides.createHttpClient);
 
@@ -309,7 +309,7 @@ void main() {
         }, (_) {});
         final overrides = _FakeHttpOverrides(fakeClient);
 
-        final ota = system_ota.Ota(device_info.DummyDataGenerator.generate());
+        final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
         final result = await HttpOverrides.runZoned(
           () => ota.checkVersion('https://example.com/ota'),
           createHttpClient: overrides.createHttpClient,
@@ -331,7 +331,7 @@ void main() {
       }, (_) {});
       final overrides = _FakeHttpOverrides(fakeClient);
 
-      final ota = system_ota.Ota(device_info.DummyDataGenerator.generate());
+      final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
       final result = await HttpOverrides.runZoned(
         () => ota.checkVersion('https://example.com/ota'),
         createHttpClient: overrides.createHttpClient,
@@ -354,7 +354,7 @@ void main() {
         }, (_) {});
         final overrides = _FakeHttpOverrides(fakeClient);
 
-        final ota = system_ota.Ota(device_info.DummyDataGenerator.generate());
+        final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
         final result = await HttpOverrides.runZoned(
           () => ota.checkVersion('https://example.com/ota'),
           createHttpClient: overrides.createHttpClient,

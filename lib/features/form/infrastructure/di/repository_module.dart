@@ -1,7 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 
-import 'package:voicebot/core/system/ota/ota.dart';
+import 'package:voicebot/core/system/ota/ota_service.dart';
 import '../../domain/repositories/form_repository.dart';
 import '../repositories/form_repository_impl.dart';
 import '../repositories/settings_repository.dart';
@@ -21,7 +21,7 @@ void registerRepositoryModule(GetIt getIt) {
   if (!getIt.isRegistered<FormRepository>()) {
     getIt.registerLazySingleton<FormRepository>(
       () => FormRepositoryImpl(
-        ota: getIt<Ota>(),
+        ota: getIt<OtaService>(),
         settingsRepository: getIt<SettingsRepository>(),
       ),
     );

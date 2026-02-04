@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/system/ota/model/device_info.dart';
 import '../core/system/ota/model/ota_result.dart';
-import '../core/system/ota/ota.dart' as core_ota;
+import '../core/system/ota/ota_service.dart' as core_ota;
 import '../routing/app_router.dart';
 import '../features/form/infrastructure/di/repository_module.dart';
 import '../features/form/domain/usecases/submit_form_use_case.dart';
@@ -12,7 +12,10 @@ import '../features/form/domain/usecases/validate_form_use_case.dart';
 import '../features/form/presentation/state/form_state.dart';
 import '../features/form/domain/repositories/form_repository.dart';
 import '../presentation/app/theme_mode_cubit.dart';
-import '../system/ota/ota.dart' as system_ota;
+import '../presentation/app/theme_palette_cubit.dart';
+import '../presentation/app/text_scale_cubit.dart';
+import '../presentation/app/ui_settings_store.dart';
+import '../system/ota/ota_client.dart' as system_ota;
 import 'modules/feature_module.dart';
 import 'modules/permissions_module.dart';
 
@@ -29,13 +32,33 @@ Future<void> configureDependencies() async {
     );
   }
 
-  if (!getIt.isRegistered<ThemeModeCubit>()) {
-    getIt.registerLazySingleton<ThemeModeCubit>(ThemeModeCubit.new);
+  if (!getIt.isRegistered<UiSettingsStore>()) {
+    getIt.registerLazySingleton<UiSettingsStore>(
+      () => UiSettingsStore(getIt<FlutterSecureStorage>()),
+    );
   }
 
-  if (!getIt.isRegistered<core_ota.Ota>()) {
-    getIt.registerLazySingleton<core_ota.Ota>(
-      () => _OtaAdapter(system_ota.Ota(DummyDataGenerator.generate())),
+  if (!getIt.isRegistered<ThemeModeCubit>()) {
+    getIt.registerLazySingleton<ThemeModeCubit>(
+      () => ThemeModeCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<ThemePaletteCubit>()) {
+    getIt.registerLazySingleton<ThemePaletteCubit>(
+      () => ThemePaletteCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<TextScaleCubit>()) {
+    getIt.registerLazySingleton<TextScaleCubit>(
+      () => TextScaleCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<core_ota.OtaService>()) {
+    getIt.registerLazySingleton<core_ota.OtaService>(
+      () => _OtaAdapter(system_ota.OtaClient(DummyDataGenerator.generate())),
     );
   }
 
@@ -64,10 +87,10 @@ Future<void> configureDependencies() async {
   }
 }
 
-class _OtaAdapter implements core_ota.Ota {
+class _OtaAdapter implements core_ota.OtaService {
   _OtaAdapter(this._delegate);
 
-  final system_ota.Ota _delegate;
+  final system_ota.OtaClient _delegate;
 
   @override
   OtaResult? get otaResult => _delegate.otaResult;

@@ -1,14 +1,11 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart';
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
-import 'package:audio_router/audio_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/permissions/permission_type.dart';
@@ -19,12 +16,22 @@ import '../../features/chat/application/state/chat_state.dart';
 import '../../features/chat/domain/entities/chat_message.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../features/home/application/state/home_state.dart';
+import '../../features/home/domain/entities/home_system_status.dart';
 import '../../features/home/domain/entities/home_wifi_network.dart';
 import '../app/theme_mode_cubit.dart';
-import '../../theme/brand_colors.dart';
+import '../app/theme_palette_cubit.dart';
+import '../app/text_scale_cubit.dart';
 import '../../theme/theme_extensions.dart';
+import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
 import '../../system/permissions/permission_state.dart';
+import '../widgets/home/connection_status_banner.dart';
+import '../widgets/home/emotion_palette.dart';
+import '../widgets/home/home_content.dart';
+import '../widgets/home/home_footer.dart';
+import '../widgets/home/home_header.dart';
+import '../widgets/home/home_settings_sheet.dart';
+import '../widgets/home/wifi_password_sheet.dart';
 import 'permission_sheet_content.dart';
 
 class HomePage extends StatefulWidget {
@@ -43,6 +50,8 @@ class _HomePageState extends State<HomePage> {
   bool _permissionSheetOpen = false;
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  final Map<FLayout, FPersistentSheetController> _settingsSheetControllers = {};
+  bool _settingsSheetVisible = false;
 
   @override
   void initState() {
@@ -55,6 +64,9 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    for (final controller in _settingsSheetControllers.values) {
+      controller.dispose();
+    }
     _chimePlayer.dispose();
     super.dispose();
   }
@@ -128,34 +140,38 @@ class _HomePageState extends State<HomePage> {
   Widget _buildFullHome(BuildContext context) {
     _scheduleHeaderMeasure();
     return FScaffold(
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(
-            top: ThemeTokens.spaceXs,
-            bottom: ThemeTokens.spaceSm,
-          ),
-          child: Column(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  key: _headerKey,
-                  width: double.infinity,
-                  color: context.theme.brand.headerBackground,
-                  padding: const EdgeInsets.all(8),
-                  child:
-                      BlocSelector<
+      child: Stack(
+        children: [
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.only(
+                top: ThemeTokens.spaceXs,
+                bottom: ThemeTokens.spaceSm,
+              ),
+              child: Column(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      key: _headerKey,
+                      width: double.infinity,
+                      color: context.theme.brand.headerBackground,
+                      padding: const EdgeInsets.all(8),
+                      child: BlocSelector<
                         HomeCubit,
                         HomeState,
                         ({
                           DateTime now,
                           int? batteryLevel,
-                          BatteryState? batteryState,
-                          List<ConnectivityResult>? connectivity,
+                          HomeBatteryState? batteryState,
+                          List<HomeConnectivity>? connectivity,
                           double? volume,
-                          AudioDevice? audioDevice,
+                          HomeAudioDevice? audioDevice,
                           String? wifiName,
                           String? carrierName,
+                          List<HomeWifiNetwork> wifiNetworks,
+                          bool wifiLoading,
+                          String? wifiError,
                         })
                       >(
                         selector: (state) => (
@@ -167,70 +183,188 @@ class _HomePageState extends State<HomePage> {
                           audioDevice: state.audioDevice,
                           wifiName: state.wifiName,
                           carrierName: state.carrierName,
+                          wifiNetworks: state.wifiNetworks,
+                          wifiLoading: state.wifiLoading,
+                          wifiError: state.wifiError,
                         ),
                         builder: (context, data) {
-                          return _HomeHeader(
+                          return HomeHeader(
                             now: data.now,
-                            batteryLevel: data.batteryLevel,
-                            batteryState: data.batteryState,
-                            connectivity: data.connectivity,
-                            volume: data.volume,
-                            audioDevice: data.audioDevice,
-                            wifiName: data.wifiName,
-                            carrierName: data.carrierName,
-                            onWifiTap: _refreshWifiNetworks,
-                            onWifiSettings: _openWifiSettings,
-                            onWifiSelect: _openWifiPasswordSheet,
-                            onVolumeChanged: _handleVolumeChanged,
+                            onOpenSettings: () => _openSettingsSheet(context),
                           );
                         },
                       ),
-                ),
+                    ),
+                  ),
+                  SizedBox(height: _headerSpacing()),
+                  BlocSelector<
+                    ChatCubit,
+                    ChatState,
+                    ({
+                      String? emotion,
+                      ChatConnectionStatus status,
+                      bool isSpeaking,
+                      double outgoing,
+                      String? error,
+                      bool networkWarning,
+                    })
+                  >(
+                    selector: (state) => (
+                      emotion: state.currentEmotion,
+                      status: state.status,
+                      isSpeaking: state.isSpeaking,
+                      outgoing: state.outgoingLevel,
+                      error: state.connectionError,
+                      networkWarning: state.networkWarning,
+                    ),
+                    builder: (context, data) {
+                      final palette = EmotionPalette.resolve(
+                        context,
+                        data.emotion,
+                      );
+                      final connectionData = ConnectionStatusData(
+                        status: data.status,
+                        isSpeaking: data.isSpeaking,
+                        outgoingLevel: data.outgoing,
+                        error: data.error,
+                        networkWarning: data.networkWarning,
+                      );
+                      return Expanded(
+                        child: HomeContent(
+                          palette: palette,
+                          connectionData: connectionData,
+                        ),
+                      );
+                    },
+                  ),
+                  SizedBox(height: _headerSpacing()),
+                  BlocSelector<
+                    HomeCubit,
+                    HomeState,
+                    ({
+                      Activation? activation,
+                      bool awaitingActivation,
+                      double activationProgress,
+                      bool isConnecting,
+                      bool isConnected,
+                    })
+                  >(
+                    selector: (state) => (
+                      activation: state.activation,
+                      awaitingActivation: state.awaitingActivation,
+                      activationProgress: state.activationProgress,
+                      isConnecting: state.isConnecting,
+                      isConnected: state.isConnected,
+                    ),
+                    builder: (context, homeData) {
+                      return BlocSelector<
+                        ChatCubit,
+                        ChatState,
+                        ({
+                          String? emotion,
+                          ChatMessage? message,
+                          int? ttsDurationMs,
+                          String? ttsText,
+                          double incoming,
+                          double outgoing,
+                          bool isSpeaking,
+                        })
+                      >(
+                        selector: (state) => (
+                          emotion: state.currentEmotion,
+                          message: state.messages.isNotEmpty
+                              ? state.messages.last
+                              : null,
+                          ttsDurationMs: state.lastTtsDurationMs,
+                          ttsText: state.lastTtsText,
+                          incoming: state.incomingLevel,
+                          outgoing: state.outgoingLevel,
+                          isSpeaking: state.isSpeaking,
+                        ),
+                        builder: (context, chatData) {
+                          return HomeFooter(
+                            activation: homeData.activation,
+                            awaitingActivation: homeData.awaitingActivation,
+                            activationProgress: homeData.activationProgress,
+                            onConnect: _handleConnectChat,
+                            onDisconnect: _handleDisconnectChat,
+                            isConnecting: homeData.isConnecting,
+                            isConnected: homeData.isConnected,
+                            currentEmotion: chatData.emotion,
+                            lastMessage: chatData.message,
+                            lastTtsDurationMs: chatData.ttsDurationMs,
+                            lastTtsText: chatData.ttsText,
+                            incomingLevel: chatData.incoming,
+                            outgoingLevel: chatData.outgoing,
+                            isSpeaking: chatData.isSpeaking,
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
               ),
-              SizedBox(height: _headerSpacing()),
-              BlocSelector<ChatCubit, ChatState, String?>(
-                selector: (state) => state.currentEmotion,
-                builder: (context, emotion) {
-                  final palette = _EmotionPalette.resolve(context, emotion);
-                  return Expanded(child: _HomeContent(palette: palette));
-                },
+            ),
+          ),
+          _buildSettingsBlur(context),
+          _buildSettingsDismissBarrier(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingsBlur(BuildContext context) {
+    return Positioned.fill(
+      child: IgnorePointer(
+        ignoring: true,
+        child: AnimatedOpacity(
+          opacity: _settingsSheetVisible ? 1 : 0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: BackdropFilter(
+            filter: ImageFilter.compose(
+              outer: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+              inner: ColorFilter.mode(
+                context.theme.colors.barrier,
+                BlendMode.srcOver,
               ),
-              SizedBox(height: _headerSpacing()),
-              BlocSelector<
-                HomeCubit,
-                HomeState,
-                ({
-                  Activation? activation,
-                  bool awaitingActivation,
-                  double activationProgress,
-                  bool isConnecting,
-                  bool isConnected,
-                })
-              >(
-                selector: (state) => (
-                  activation: state.activation,
-                  awaitingActivation: state.awaitingActivation,
-                  activationProgress: state.activationProgress,
-                  isConnecting: state.isConnecting,
-                  isConnected: state.isConnected,
-                ),
-                builder: (context, data) {
-                  return _HomeFooter(
-                    activation: data.activation,
-                    awaitingActivation: data.awaitingActivation,
-                    activationProgress: data.activationProgress,
-                    onConnect: _handleConnectChat,
-                    onDisconnect: _handleDisconnectChat,
-                    isConnecting: data.isConnecting,
-                    isConnected: data.isConnected,
-                  );
-                },
-              ),
-            ],
+            ),
+            child: const SizedBox.expand(),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildSettingsDismissBarrier() {
+    if (!_settingsSheetVisible) {
+      return const SizedBox.shrink();
+    }
+    return Positioned.fill(
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: _dismissSettingsSheet,
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  void _dismissSettingsSheet() {
+    const side = FLayout.btt;
+    final controller = _settingsSheetControllers[side];
+    if (controller == null) {
+      return;
+    }
+    final isOpen = controller.status == AnimationStatus.completed ||
+        controller.status == AnimationStatus.forward;
+    if (isOpen) {
+      if (mounted) {
+        setState(() {
+          _settingsSheetVisible = false;
+        });
+      }
+      controller.toggle();
+    }
   }
 
   Future<void> _openWifiSettings() async {
@@ -466,7 +600,7 @@ class _HomePageState extends State<HomePage> {
               }
             }
 
-            return _WifiPasswordSheet(
+            return WifiPasswordSheet(
               network: network,
               password: _wifiPassword,
               onPasswordChanged: (value) {
@@ -488,2028 +622,133 @@ class _HomePageState extends State<HomePage> {
     await context.read<HomeCubit>().refreshNetworkStatus();
   }
 
-  static String _normalizeTranscript(String text) {
-    return text.replaceAll(RegExp(r'\n{2,}'), '\n').trimRight();
-  }
-
-  static List<TextSpan> _highlightNumbers(
-    String text,
-    TextStyle baseStyle,
-    TextStyle numberStyle,
-  ) {
-    final spans = <TextSpan>[];
-    final regex = RegExp(r'\d+');
-    var start = 0;
-    for (final match in regex.allMatches(text)) {
-      if (match.start > start) {
-        spans.add(
-          TextSpan(text: text.substring(start, match.start), style: baseStyle),
-        );
-      }
-      spans.add(
-        TextSpan(
-          text: text.substring(match.start, match.end),
-          style: numberStyle,
-        ),
-      );
-      start = match.end;
-    }
-    if (start < text.length) {
-      spans.add(TextSpan(text: text.substring(start), style: baseStyle));
-    }
-    return spans;
-  }
-}
-
-class _HomeHeader extends StatelessWidget {
-  const _HomeHeader({
-    required this.now,
-    required this.batteryLevel,
-    required this.batteryState,
-    required this.connectivity,
-    required this.volume,
-    required this.audioDevice,
-    required this.wifiName,
-    required this.carrierName,
-    this.onWifiTap,
-    this.onWifiSettings,
-    this.onWifiSelect,
-    this.onVolumeChanged,
-  });
-
-  final DateTime now;
-  final int? batteryLevel;
-  final BatteryState? batteryState;
-  final List<ConnectivityResult>? connectivity;
-  final double? volume;
-  final AudioDevice? audioDevice;
-  final String? wifiName;
-  final String? carrierName;
-  final VoidCallback? onWifiTap;
-  final VoidCallback? onWifiSettings;
-  final ValueChanged<HomeWifiNetwork>? onWifiSelect;
-  final ValueChanged<double>? onVolumeChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final dateText = '${_two(now.day)}/${_two(now.month)}/${now.year}';
-    final timeText = '${_two(now.hour)}:${_two(now.minute)}';
-    final networkDisplay = _networkDisplay(connectivity, wifiName, carrierName);
-    final isOffline = _isOffline(connectivity);
-    final headerTextColor = context.theme.brand.headerForeground;
-    final wifiTextColor = isOffline
-        ? context.theme.colors.destructive
-        : headerTextColor;
-    final wifiEnabled =
-        connectivity?.contains(ConnectivityResult.wifi) ?? false;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: ThemeTokens.spaceSm),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  dateText,
-                  style: context.theme.typography.base.copyWith(
-                    color: headerTextColor,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.center,
-                child: Text(
-                  timeText,
-                  style: context.theme.typography.base.copyWith(
-                    color: headerTextColor,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FPopover(
-                      control: FPopoverControl.managed(),
-                      popoverAnchor: Alignment.bottomRight,
-                      childAnchor: Alignment.topRight,
-                      spacing: const FPortalSpacing(6),
-                      popoverBuilder: (context, controller) =>
-                          _AudioPopoverContent(
-                            volume: volume,
-                            onChanged: onVolumeChanged,
-                          ),
-                      builder: (_, controller, _) => GestureDetector(
-                        onTap: controller.toggle,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: ThemeTokens.spaceXs,
-                            vertical: 2,
-                          ),
-                          child: _AudioStatusValue(
-                            volume: volume,
-                            audioDevice: audioDevice,
-                            color: headerTextColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: ThemeTokens.spaceSm),
-                    BlocSelector<
-                      HomeCubit,
-                      HomeState,
-                      ({
-                        List<HomeWifiNetwork> networks,
-                        bool wifiLoading,
-                        String? wifiError,
-                      })
-                    >(
-                      selector: (state) => (
-                        networks: state.wifiNetworks,
-                        wifiLoading: state.wifiLoading,
-                        wifiError: state.wifiError,
-                      ),
-                      builder: (context, wifiData) {
-                        return FPopover(
-                          control: FPopoverControl.managed(
-                            onChange: (shown) {
-                              if (shown) {
-                                onWifiTap?.call();
-                              }
-                            },
-                          ),
-                          popoverAnchor: Alignment.bottomRight,
-                          childAnchor: Alignment.topRight,
-                          spacing: const FPortalSpacing(6),
-                          popoverBuilder: (context, controller) =>
-                              _WifiPopoverContent(
-                                isLoading: wifiData.wifiLoading,
-                                errorMessage: wifiData.wifiError,
-                                networks: wifiData.networks,
-                                onRefresh: onWifiTap,
-                                onSelect: (network) {
-                                  controller.hide();
-                                  onWifiSelect?.call(network);
-                                },
-                              ),
-                          builder: (_, controller, _) => GestureDetector(
-                            onTap: () {
-                              if (!wifiEnabled) {
-                                showFToast(
-                                  context: context,
-                                  alignment: FToastAlignment.topRight,
-                                  icon: const Icon(FIcons.wifiOff),
-                                  title: const Text('Wi‑Fi đang tắt'),
-                                  description: const Text(
-                                    'Bật Wi‑Fi để xem danh sách.',
-                                  ),
-                                  suffixBuilder: (context, entry) => SizedBox(
-                                    height: ThemeTokens.buttonHeight,
-                                    child: FButton(
-                                      mainAxisSize: MainAxisSize.min,
-                                      onPress: () {
-                                        entry.dismiss();
-                                        onWifiSettings?.call();
-                                      },
-                                      child: const Text('Mở cài đặt'),
-                                    ),
-                                  ),
-                                );
-                                return;
-                              }
-                              controller.toggle();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: ThemeTokens.spaceXs,
-                                vertical: 2,
-                              ),
-                              child: _StatusIconValue(
-                                icon: _wifiIcon(connectivity, wifiName),
-                                value: networkDisplay,
-                                color: wifiTextColor,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: ThemeTokens.spaceSm),
-                    _StatusIconValue(
-                      icon: _batteryIcon(batteryLevel, batteryState),
-                      value: _batteryText(batteryLevel, batteryState),
-                      color: headerTextColor,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  static String _two(int value) => value.toString().padLeft(2, '0');
-
-  static String _batteryText(int? level, BatteryState? state) {
-    final percent = level == null ? '--' : '$level%';
-    return percent;
-  }
-
-  static IconData _batteryIcon(int? level, BatteryState? state) {
-    if (state == BatteryState.charging) {
-      return FIcons.batteryCharging;
-    }
-    if (level == null) {
-      return FIcons.battery;
-    }
-    if (level < 10) {
-      return FIcons.batteryLow;
-    }
-    if (level < 50) {
-      return FIcons.batteryLow;
-    }
-    if (level < 85) {
-      return FIcons.batteryMedium;
-    }
-    return FIcons.batteryFull;
-  }
-
-  static String _volumeText(double? volume) {
-    if (volume == null) {
-      return '--%';
-    }
-    return '${(volume * 100).round()}%';
-  }
-
-  static IconData _audioIcon(double? volume) {
-    if (volume == null) {
-      return FIcons.volume;
-    }
-    if (volume <= 0.01) {
-      return FIcons.volumeOff;
-    }
-    if (volume < 0.34) {
-      return FIcons.volume;
-    }
-    if (volume < 0.67) {
-      return FIcons.volume1;
-    }
-    return FIcons.volume2;
-  }
-
-  static IconData? _routeIcon(AudioDevice? device) {
-    if (device == null) {
-      return null;
-    }
-    switch (device.type) {
-      case AudioSourceType.bluetooth:
-        return FIcons.bluetoothSearching;
-      case AudioSourceType.builtinSpeaker:
-        return FIcons.speaker;
-      default:
-        return null;
-    }
-  }
-
-  static String _networkDisplay(
-    List<ConnectivityResult>? results,
-    String? wifiName,
-    String? carrierName,
-  ) {
-    if (results == null || results.isEmpty) {
-      return '--';
-    }
-    if (results.contains(ConnectivityResult.wifi)) {
-      final name = _cleanWifiName(wifiName);
-      return name ?? 'Wi‑Fi';
-    }
-    if (results.contains(ConnectivityResult.mobile)) {
-      return carrierName ?? 'Mobile';
-    }
-    if (results.contains(ConnectivityResult.ethernet)) {
-      return 'Ethernet';
-    }
-    return 'Offline';
-  }
-
-  static bool _isOffline(List<ConnectivityResult>? results) {
-    if (results == null || results.isEmpty) {
-      return true;
-    }
-    if (results.contains(ConnectivityResult.none)) {
-      return true;
-    }
-    return false;
-  }
-
-  static String? _cleanWifiName(String? name) {
-    if (name == null) {
-      return null;
-    }
-    final trimmed = name.trim();
-    if (trimmed.isEmpty || trimmed == '<unknown ssid>') {
-      return null;
-    }
-    if (trimmed.length >= 2 &&
-        trimmed.startsWith('"') &&
-        trimmed.endsWith('"')) {
-      return trimmed.substring(1, trimmed.length - 1);
-    }
-    return trimmed;
-  }
-
-  static IconData _wifiIcon(
-    List<ConnectivityResult>? results,
-    String? wifiName,
-  ) {
-    if (results == null || results.isEmpty) {
-      return FIcons.wifiOff;
-    }
-    if (results.contains(ConnectivityResult.wifi)) {
-      final hasName = _cleanWifiName(wifiName) != null;
-      return hasName ? FIcons.wifiHigh : FIcons.wifiLow;
-    }
-    if (results.contains(ConnectivityResult.mobile)) {
-      return FIcons.cardSim;
-    }
-    if (results.contains(ConnectivityResult.ethernet)) {
-      return FIcons.wifiHigh;
-    }
-    return FIcons.wifiOff;
-  }
-}
-
-class _EmotionPalette {
-  const _EmotionPalette({
-    required this.surface,
-    required this.accent,
-    required this.accentForeground,
-  });
-
-  final Color surface;
-  final Color accent;
-  final Color accentForeground;
-
-  static _EmotionPalette resolve(BuildContext context, String? emotion) {
-    final brand = context.theme.brand;
-    final normalized = emotion?.toLowerCase().trim();
-
-    final tone = _toneFor(normalized, brand);
-
-    return _EmotionPalette(
-      surface: brand.homeSurface,
-      accent: tone.background,
-      accentForeground: tone.foreground,
-    );
-  }
-
-  Color controlBackground(BuildContext context) {
-    return surface;
-  }
-
-  Color controlBorder(BuildContext context) {
-    return context.theme.brand.emotionBorder;
-  }
-
-  Color controlForeground(BuildContext context) {
-    return context.theme.brand.headerForeground;
-  }
-
-  static _EmotionTone _toneFor(String? emotion, BrandColors brand) {
-    final tone = brand.emotionTones[emotion];
-    if (tone != null) {
-      return _EmotionTone(tone.background, tone.foreground);
-    }
-    return _EmotionTone(brand.homeAccent, brand.accentForeground);
-  }
-}
-
-class _EmotionTone {
-  _EmotionTone(this.background, this.foreground);
-
-  final Color background;
-  final Color foreground;
-}
-
-class _HomeContent extends StatelessWidget {
-  const _HomeContent({required this.palette});
-
-  final _EmotionPalette palette;
-  static const double _audioActiveThreshold = 0.02;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        width: double.infinity,
-        color: palette.surface,
-        child: Column(
-          children: [
-            const SizedBox(height: ThemeTokens.spaceSm),
-            _ConnectionStatusBanner(
-              palette: palette,
-              audioThreshold: _audioActiveThreshold,
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            Expanded(
-              child: Center(
-                child: Container(
-                  width: 180,
-                  height: 180,
-                  decoration: BoxDecoration(
-                    color: palette.accent,
-                    shape: BoxShape.circle,
-                  ),
-                  child: Center(
-                    child: SizedBox(
-                      width: 120,
-                      height: 120,
-                      child: CustomPaint(
-                        painter: _SmileFacePainter(
-                          color: palette.accentForeground,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConnectionStatusBanner extends StatefulWidget {
-  const _ConnectionStatusBanner({
-    required this.palette,
-    required this.audioThreshold,
-  });
-
-  final _EmotionPalette palette;
-  final double audioThreshold;
-
-  @override
-  State<_ConnectionStatusBanner> createState() =>
-      _ConnectionStatusBannerState();
-}
-
-class _ConnectionStatusBannerState extends State<_ConnectionStatusBanner> {
-  bool? _lastWasSpeaking;
-
-  FBadgeStyle _buildBadgeStyle(
-    BuildContext context, {
-    required Color background,
-    required Color foreground,
-    Color? border,
-  }) {
-    final typography = context.theme.typography;
-    final borderRadius = FBadgeStyles.defaultRadius;
-    final decoration = BoxDecoration(
-      color: background,
-      borderRadius: borderRadius,
-      border: border == null
-          ? null
-          : Border.all(color: border, width: context.theme.style.borderWidth),
-    );
-    return FBadgeStyle(
-      decoration: decoration,
-      contentStyle: FBadgeContentStyle(
-        labelTextStyle: typography.base.copyWith(
-          color: foreground,
-          fontWeight: FontWeight.w700,
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: ThemeTokens.badgePaddingHorizontal,
-          vertical: ThemeTokens.badgePaddingVertical,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocSelector<
-      ChatCubit,
-      ChatState,
-      ({
-        ChatConnectionStatus status,
-        bool isSpeaking,
-        double outgoing,
-        String? error,
-        bool networkWarning,
-      })
-    >(
-      selector: (state) => (
-        status: state.status,
-        isSpeaking: state.isSpeaking,
-        outgoing: state.outgoingLevel,
-        error: state.connectionError,
-        networkWarning: state.networkWarning,
-      ),
-      builder: (context, snapshot) {
-        final colors = context.theme.colors;
-        final palette = widget.palette;
-        final isListening =
-            !snapshot.isSpeaking && snapshot.outgoing > widget.audioThreshold;
-        final status = snapshot.status;
-        final networkWarning = snapshot.networkWarning;
-
-        String label;
-        FBadgeStyle badgeStyle;
-
-        if (status == ChatConnectionStatus.connecting ||
-            status == ChatConnectionStatus.reconnecting) {
-          label = 'Đang kết nối';
-          badgeStyle = _buildBadgeStyle(
-            context,
-            background: colors.primary,
-            foreground: colors.primaryForeground,
-          );
-        } else if (status == ChatConnectionStatus.error ||
-            snapshot.error != null) {
-          label = networkWarning ? 'Mất kết nối do mạng yếu' : 'Mất kết nối';
-          badgeStyle = _buildBadgeStyle(
-            context,
-            background: colors.destructive,
-            foreground: colors.destructiveForeground,
-          );
-        } else if (status == ChatConnectionStatus.connected) {
-          if (snapshot.isSpeaking) {
-            _lastWasSpeaking = true;
-            label = 'Đang nói';
-            badgeStyle = _buildBadgeStyle(
-              context,
-              background: palette.accent,
-              foreground: palette.accentForeground,
-            );
-          } else if (isListening) {
-            _lastWasSpeaking = false;
-            label = 'Đang nghe';
-            badgeStyle = _buildBadgeStyle(
-              context,
-              background: colors.secondary,
-              foreground: colors.secondaryForeground,
-            );
-          } else {
-            final wasSpeaking = _lastWasSpeaking ?? false;
-            label = wasSpeaking ? 'Đang nói' : 'Đang nghe';
-            badgeStyle = _buildBadgeStyle(
-              context,
-              background: wasSpeaking ? palette.accent : colors.secondary,
-              foreground: wasSpeaking
-                  ? palette.accentForeground
-                  : colors.secondaryForeground,
-            );
-          }
-        } else {
-          label = 'Chưa kết nối';
-          badgeStyle = _buildBadgeStyle(
-            context,
-            background: colors.muted,
-            foreground: colors.mutedForeground,
-            border: colors.border,
-          );
-        }
-
-        final warningBadge =
-            status == ChatConnectionStatus.connected && networkWarning
-            ? FBadge(
-                style: _buildBadgeStyle(
-                  context,
-                  background: colors.primary,
-                  foreground: colors.primaryForeground,
-                ).call,
-                child: const Text('Mạng yếu'),
-              )
-            : null;
-
-        return Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FBadge(style: badgeStyle.call, child: Text(label)),
-              if (warningBadge != null) ...[
-                const SizedBox(height: 6),
-                warningBadge,
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _HomeFooter extends StatelessWidget {
-  const _HomeFooter({
-    required this.activation,
-    required this.awaitingActivation,
-    required this.activationProgress,
-    required this.onConnect,
-    required this.onDisconnect,
-    required this.isConnecting,
-    required this.isConnected,
-  });
-
-  final Activation? activation;
-  final bool awaitingActivation;
-  final double activationProgress;
-  final VoidCallback onConnect;
-  final VoidCallback onDisconnect;
-  final bool isConnecting;
-  final bool isConnected;
-
-  static const double _audioActiveThreshold = 0.02;
-
-  static const List<String> _emotionOptions = [
-    'neutral',
-    'happy',
-    'laughing',
-    'funny',
-    'sad',
-    'angry',
-    'crying',
-    'loving',
-    'embarrassed',
-    'surprised',
-    'shocked',
-    'thinking',
-    'winking',
-    'cool',
-    'relaxed',
-    'delicious',
-    'kissy',
-    'confident',
-    'sleepy',
-    'silly',
-    'confused',
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final headerBackground = context.theme.brand.headerBackground;
-    final headerForeground = context.theme.brand.headerForeground;
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: ThemeTokens.spaceMd,
-        vertical: ThemeTokens.spaceSm,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          BlocSelector<ChatCubit, ChatState, String?>(
-            selector: (state) => state.currentEmotion,
-            builder: (context, emotion) {
-              final selectedIndex = _emotionIndex(emotion);
-              final palette = _EmotionPalette.resolve(context, emotion);
-              return _EmotionPicker(
-                options: _emotionOptions,
-                selectedIndex: selectedIndex,
-                palette: palette,
-              );
-            },
-          ),
-          const SizedBox(height: ThemeTokens.spaceSm),
-          if (activation != null) ...[
-            SizedBox(
-              width: double.infinity,
-              child: FTextField(
-                label: const Text('Activation'),
-                readOnly: true,
-                control: FTextFieldControl.lifted(
-                  value: TextEditingValue(
-                    text: activation?.code ?? '',
-                    selection: TextSelection.collapsed(
-                      offset: (activation?.code ?? '').length,
-                    ),
-                  ),
-                  onChange: (_) {},
-                ),
-              ),
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            if (awaitingActivation)
-              FDeterminateProgress(
-                value: activationProgress,
-                semanticsLabel: 'Activation progress',
-              ),
-          ] else ...[
-            BlocSelector<
-              ChatCubit,
-              ChatState,
-              ({ChatMessage? message, int? ttsDurationMs, String? ttsText})
-            >(
-              selector: (state) => (
-                message: state.messages.isNotEmpty ? state.messages.last : null,
-                ttsDurationMs: state.lastTtsDurationMs,
-                ttsText: state.lastTtsText,
-              ),
-              builder: (context, snapshot) {
-                final lastMessage = snapshot.message;
-                if (lastMessage == null) {
-                  return Text(
-                    'Transcript / lời thoại',
-                    textAlign: TextAlign.left,
-                    style: context.theme.typography.xl.copyWith(
-                      color: context.theme.colors.mutedForeground,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  );
-                }
-                final rawText = lastMessage.text;
-                final text = _HomePageState._normalizeTranscript(rawText);
-                final prefix = lastMessage.isUser ? 'USER: ' : 'AGENT: ';
-                final readStyle = context.theme.typography.xl.copyWith(
-                  color: context.theme.colors.foreground,
-                  fontWeight: FontWeight.w600,
-                );
-                final prefixStyle = readStyle.copyWith(
-                  fontWeight: FontWeight.w700,
-                );
-                final numberReadStyle = TextStyle(
-                  color: context.theme.colors.destructive,
-                  fontWeight: FontWeight.w700,
-                );
-                return ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 84),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: lastMessage.isUser
-                        ? Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: prefix, style: prefixStyle),
-                                ..._HomePageState._highlightNumbers(
-                                  text,
-                                  readStyle,
-                                  numberReadStyle,
-                                ),
-                              ],
-                            ),
-                            textAlign: TextAlign.left,
-                          )
-                        : Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(text: prefix, style: prefixStyle),
-                                ..._HomePageState._highlightNumbers(
-                                  text,
-                                  readStyle,
-                                  numberReadStyle,
-                                ),
-                              ],
-                            ),
-                            textAlign: TextAlign.left,
-                          ),
-                  ),
-                );
-              },
-            ),
-          ],
-          const SizedBox(height: ThemeTokens.spaceSm),
-          BlocSelector<
-            ChatCubit,
-            ChatState,
-            ({double incoming, double outgoing, bool isSpeaking})
-          >(
-            selector: (state) => (
-              incoming: state.incomingLevel,
-              outgoing: state.outgoingLevel,
-              isSpeaking: state.isSpeaking,
-            ),
-            builder: (context, snapshot) {
-              final serverLevel = snapshot.incoming;
-              final userLevel = snapshot.outgoing;
-              final isServerSpeaking = snapshot.isSpeaking;
-              final isUserSpeaking =
-                  !isServerSpeaking && userLevel > _audioActiveThreshold;
-              final color = isServerSpeaking
-                  ? context.theme.colors.destructive
-                  : isUserSpeaking
-                  ? context.theme.colors.primary
-                  : context.theme.colors.mutedForeground;
-              final level = isServerSpeaking
-                  ? serverLevel
-                  : (isUserSpeaking ? userLevel : 0.0);
-              return RepaintBoundary(
-                child: _AudioWaveIndicator(level: level, color: color),
-              );
-            },
-          ),
-          const SizedBox(height: ThemeTokens.spaceSm),
-          Row(
-            children: [
-              const _ThemeModeActions(),
-              const Spacer(),
-              SizedBox(
-                width: ThemeTokens.footerButtonWidth,
-                height: ThemeTokens.buttonHeight,
-                child: FButton(
-                  onPress: isConnected
-                      ? onDisconnect
-                      : isConnecting
-                      ? null
-                      : onConnect,
-                  style: isConnected
-                      ? FButtonStyle.secondary(
-                          (style) => style.copyWith(
-                            contentStyle: (content) => content.copyWith(
-                              textStyle: content.textStyle.map(
-                                (style) =>
-                                    style.copyWith(fontWeight: FontWeight.w700),
-                              ),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: ThemeTokens.buttonPaddingHorizontal,
-                                vertical: ThemeTokens.buttonPaddingVertical,
-                              ),
-                            ),
-                          ),
-                        )
-                      : FButtonStyle.primary(
-                          (style) =>
-                              FButtonStyle.inherit(
-                                colors: context.theme.colors,
-                                typography: context.theme.typography,
-                                style: context.theme.style,
-                                color: headerBackground,
-                                foregroundColor: headerForeground,
-                              ).copyWith(
-                                contentStyle: (content) => content.copyWith(
-                                  textStyle: content.textStyle.map(
-                                    (style) => style.copyWith(
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal:
-                                        ThemeTokens.buttonPaddingHorizontal,
-                                    vertical: ThemeTokens.buttonPaddingVertical,
-                                  ),
-                                ),
-                              ),
-                        ),
-                  mainAxisSize: MainAxisSize.min,
-                  child: Text(
-                    isConnected
-                        ? 'Ngắt kết nối'
-                        : isConnecting
-                        ? 'Đang kết nối'
-                        : 'Kết nối',
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: ThemeTokens.spaceXs),
-          const Align(alignment: Alignment.center, child: _AuthorLink()),
-        ],
-      ),
-    );
-  }
-
-  int _emotionIndex(String? emotion) {
-    if (emotion == null || emotion.isEmpty) {
-      return 0;
-    }
-    final normalized = emotion.toLowerCase().trim();
-    final index = _emotionOptions.indexOf(normalized);
-    if (index == -1) {
-      return 0;
-    }
-    return index;
-  }
-}
-
-class _ThemeModeActions extends StatelessWidget {
-  const _ThemeModeActions();
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<ThemeModeCubit, ThemeMode>(
-      builder: (context, mode) {
-        final systemBrightness = MediaQuery.platformBrightnessOf(context);
-        final effectiveBrightness = mode == ThemeMode.system
-            ? systemBrightness
-            : (mode == ThemeMode.dark ? Brightness.dark : Brightness.light);
-        final isCurrentlyDark = effectiveBrightness == Brightness.dark;
-        final label = isCurrentlyDark ? 'Sáng' : 'Tối';
-        final icon = isCurrentlyDark ? Icons.light_mode : Icons.dark_mode;
-        return SizedBox(
-          width: ThemeTokens.footerButtonWidth,
-          height: ThemeTokens.buttonHeight,
-          child: FButton(
-            onPress: () {
-              if (isCurrentlyDark) {
-                context.read<ThemeModeCubit>().setLight();
-              } else {
-                context.read<ThemeModeCubit>().setDark();
-              }
-            },
-            style: FButtonStyle.secondary(),
-            mainAxisSize: MainAxisSize.min,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 16),
-                const SizedBox(width: ThemeTokens.spaceXs),
-                Text(label),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _AuthorLink extends StatelessWidget {
-  const _AuthorLink();
-
-  static final Uri _authorUri = Uri.parse('https://github.com/baolongdev');
-
-  @override
-  Widget build(BuildContext context) {
-    final style = context.theme.typography.sm.copyWith(
-      color: const Color(0xFF2F6BFF),
-      fontWeight: FontWeight.w900,
-      decoration: TextDecoration.underline,
-    );
-    return Semantics(
-      link: true,
-      button: true,
-      label: 'baolongdev',
-      child: GestureDetector(
-        onTap: () {
-          launchUrl(_authorUri, mode: LaunchMode.externalApplication);
-        },
-        child: Text(
-          'Author: baolongdev + ACLAB',
-          style: style,
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
-  }
-}
-
-class _AudioWaveIndicator extends StatefulWidget {
-  const _AudioWaveIndicator({required this.level, required this.color});
-
-  final double level;
-  final Color color;
-
-  static const _heights = [
-    8.0,
-    10.0,
-    12.0,
-    14.0,
-    16.0,
-    18.0,
-    20.0,
-    22.0,
-    24.0,
-    26.0,
-    28.0,
-    30.0,
-    32.0,
-    34.0,
-    36.0,
-    38.0,
-    40.0,
-    42.0,
-    44.0,
-    46.0,
-    48.0,
-    46.0,
-    44.0,
-    42.0,
-    40.0,
-    38.0,
-    36.0,
-    34.0,
-    32.0,
-    30.0,
-    28.0,
-    26.0,
-    24.0,
-    22.0,
-    20.0,
-    18.0,
-    16.0,
-    14.0,
-    12.0,
-    10.0,
-    8.0,
-  ];
-
-  @override
-  State<_AudioWaveIndicator> createState() => _AudioWaveIndicatorState();
-}
-
-class _AudioWaveIndicatorState extends State<_AudioWaveIndicator>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-  late final List<double> _barSeeds = _buildSeeds();
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 160),
-      value: 0,
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _AudioWaveIndicator oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.level != widget.level) {
-      _animateToLevel();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _animateToLevel() {
-    final target = widget.level.clamp(0.0, 1.0);
-    if (target == 0) {
-      _controller.stop();
-      _controller.value = 0;
+  Future<void> _openSettingsSheet(BuildContext sheetContext) async {
+    await _refreshWifiNetworks();
+    if (!mounted) {
       return;
     }
-    _controller.animateTo(
-      target,
-      duration: const Duration(milliseconds: 160),
-      curve: Curves.easeOut,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final color = widget.color;
-    return SizedBox(
-      height: 56,
-      width: double.infinity,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final level = _controller.value;
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              for (var i = 0; i < _AudioWaveIndicator._heights.length; i++) ...[
-                Container(
-                  width: 5,
-                  height: _scaledHeight(
-                    _AudioWaveIndicator._heights[i],
-                    i,
-                    level,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-                if (i != _AudioWaveIndicator._heights.length - 1)
-                  const SizedBox(width: 1),
-              ],
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  double _scaledHeight(double base, int index, double level) {
-    final seed = _barSeeds[index % _barSeeds.length];
-    final intensity = level.clamp(0.0, 1.0);
-    final boosted = math.pow(intensity, 0.5).toDouble();
-    final scaled = base * (0.2 + 1.2 * boosted * seed);
-    return scaled.clamp(4.0, base * 1.4);
-  }
-
-  List<double> _buildSeeds() {
-    final seeds = <double>[];
-    for (var i = 0; i < _AudioWaveIndicator._heights.length; i++) {
-      final v = math.sin(i * 12.9898) * 43758.5453;
-      final seed = v - v.floorToDouble();
-      seeds.add(0.6 + 0.4 * seed);
+    const side = FLayout.btt;
+    for (final MapEntry(:key, :value) in _settingsSheetControllers.entries) {
+      if (key != side && value.status == AnimationStatus.completed) {
+        return;
+      }
     }
-    return seeds;
-  }
-}
-
-class _StatusIconValue extends StatelessWidget {
-  const _StatusIconValue({required this.icon, required this.value, this.color});
-
-  final IconData icon;
-  final String value;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final typography = context.theme.typography;
-    final colors = context.theme.colors;
-    final effectiveColor = color ?? colors.foreground;
-
-    final content = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: typography.base.copyWith(
-            color: effectiveColor,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: ThemeTokens.spaceXs),
-        Icon(icon, size: 18, color: effectiveColor),
-      ],
-    );
-
-    return content;
-  }
-}
-
-class _AudioStatusValue extends StatelessWidget {
-  const _AudioStatusValue({
-    required this.volume,
-    required this.audioDevice,
-    this.color,
-  });
-
-  final double? volume;
-  final AudioDevice? audioDevice;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final typography = context.theme.typography;
-    final colors = context.theme.colors;
-    final effectiveColor = color ?? colors.foreground;
-    final volumeValue = volume;
-    final value = _HomeHeader._volumeText(volumeValue);
-    final isMax = (volumeValue ?? 0) >= 0.99;
-    final routeIcon = isMax ? _HomeHeader._routeIcon(audioDevice) : null;
-    final icon = routeIcon ?? _HomeHeader._audioIcon(volumeValue);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          value,
-          style: typography.base.copyWith(
-            color: effectiveColor,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(width: ThemeTokens.spaceXs),
-        Icon(icon, size: 18, color: effectiveColor),
-      ],
-    );
-  }
-}
-
-class _AudioPopoverContent extends StatelessWidget {
-  const _AudioPopoverContent({required this.volume, this.onChanged});
-
-  final double? volume;
-  final ValueChanged<double>? onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.theme.colors;
-    final typography = context.theme.typography;
-    final value = (volume ?? 0.35).clamp(0.0, 1.0);
-
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: 320,
-        decoration: BoxDecoration(
-          color: colors.background,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: colors.border),
-          boxShadow: [
-            BoxShadow(
-              color: colors.foreground.withAlpha(26),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Âm lượng',
-                    style: typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: colors.foreground,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${(value * 100).round()}%',
-                    style: typography.sm.copyWith(
-                      color: colors.mutedForeground,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: ThemeTokens.spaceSm),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final trackWidth = (constraints.maxWidth - 24).clamp(
-                    160.0,
-                    360.0,
-                  );
-                  return FSlider(
-                    control: FSliderControl.liftedContinuous(
-                      value: FSliderValue(max: value),
-                      onChange: (next) => onChanged?.call(next.max),
-                    ),
-                    layout: FLayout.ltr,
-                    trackMainAxisExtent: trackWidth,
-                    marks: const [
-                      FSliderMark(value: 0, label: Text('0%')),
-                      FSliderMark(value: 0.25, tick: false),
-                      FSliderMark(value: 0.5),
-                      FSliderMark(value: 0.75, tick: false),
-                      FSliderMark(value: 1, label: Text('100%')),
-                    ],
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-IconData _wifiSignalIcon(int level) {
-  if (level < -70) {
-    return FIcons.wifiLow;
-  }
-  return FIcons.wifiHigh;
-}
-
-class _WifiPopoverContent extends StatefulWidget {
-  const _WifiPopoverContent({
-    required this.networks,
-    required this.isLoading,
-    required this.errorMessage,
-    required this.onRefresh,
-    required this.onSelect,
-  });
-
-  final List<HomeWifiNetwork> networks;
-  final bool isLoading;
-  final String? errorMessage;
-  final VoidCallback? onRefresh;
-  final ValueChanged<HomeWifiNetwork> onSelect;
-
-  @override
-  State<_WifiPopoverContent> createState() => _WifiPopoverContentState();
-}
-
-class _WifiPopoverContentState extends State<_WifiPopoverContent> {
-  HomeWifiNetwork? _selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: 280,
-        constraints: const BoxConstraints(maxHeight: 320),
-        decoration: BoxDecoration(
-          color: context.theme.colors.background,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.theme.colors.border),
-          boxShadow: [
-            BoxShadow(
-              color: context.theme.colors.foreground.withAlpha(26),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    _selected == null ? 'Wi‑Fi' : 'Chi tiết Wi‑Fi',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_selected == null)
-                    IconButton(
-                      onPressed: widget.onRefresh,
-                      icon: Icon(
-                        FIcons.refreshCw,
-                        size: 16,
-                        color: context.theme.colors.mutedForeground,
-                      ),
-                    )
-                  else
-                    IconButton(
-                      onPressed: null,
-                      icon: Icon(
-                        FIcons.refreshCw,
-                        size: 16,
-                        color: Colors.transparent,
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: ThemeTokens.spaceXs),
-              Expanded(
-                child: _selected == null
-                    ? _buildList(context)
-                    : _buildDetails(context, _selected!),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildList(BuildContext context) {
-    if (widget.isLoading) {
-      return const Center(child: FCircularProgress());
-    }
-    if (widget.errorMessage != null) {
-      return Center(
-        child: Text(
-          widget.errorMessage!,
-          style: context.theme.typography.sm.copyWith(
-            color: context.theme.colors.mutedForeground,
-          ),
-        ),
-      );
-    }
-    if (widget.networks.isEmpty) {
-      return Center(
-        child: Text(
-          'Không tìm thấy Wi‑Fi.',
-          style: context.theme.typography.sm.copyWith(
-            color: context.theme.colors.mutedForeground,
-          ),
-        ),
-      );
-    }
-    return ListView.separated(
-      itemCount: widget.networks.length,
-      separatorBuilder: (_, _) => const SizedBox(height: 2),
-      itemBuilder: (context, index) {
-        final network = widget.networks[index];
-        return InkWell(
-          onTap: () => widget.onSelect(network),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: _WifiRow(
-              network: network,
-              onDetails: () {
-                setState(() {
-                  _selected = network;
-                });
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDetails(BuildContext context, HomeWifiNetwork network) {
-    final strength = _signalStrength(network.level);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          network.ssid,
-          style: context.theme.typography.base.copyWith(
-            fontWeight: FontWeight.w700,
-            color: context.theme.colors.foreground,
-          ),
-        ),
-        const SizedBox(height: ThemeTokens.spaceXs),
-        _DetailRow(label: 'Công nghệ', value: network.bandLabel),
-        _DetailRow(
-          label: 'Cường độ',
-          value: '${network.level} dBm • $strength',
-        ),
-        _DetailRow(label: 'Bảo mật', value: network.securityLabel),
-        const Spacer(),
-        SizedBox(
-          height: ThemeTokens.buttonHeight,
-          child: FButton(
-            onPress: () {
-              setState(() {
-                _selected = null;
-              });
-            },
-            style: FButtonStyle.ghost(),
-            child: const Text('Quay lại danh sách'),
-          ),
-        ),
-      ],
-    );
-  }
-
-  String _signalStrength(int level) {
-    if (level >= -50) {
-      return 'Mạnh';
-    }
-    if (level >= -65) {
-      return 'Tốt';
-    }
-    if (level >= -75) {
-      return 'Trung bình';
-    }
-    return 'Yếu';
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: context.theme.colors.secondary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: context.theme.typography.xs.copyWith(
-          color: context.theme.colors.secondaryForeground,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
-class _IconTag extends StatelessWidget {
-  const _IconTag({required this.icon, this.onTap});
-
-  final IconData icon;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: context.theme.colors.secondary,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Icon(
-        icon,
-        size: 14,
-        color: context.theme.colors.secondaryForeground,
-      ),
-    );
-    if (onTap == null) {
-      return child;
-    }
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(999),
-      child: child,
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.mutedForeground,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.foreground,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WifiRow extends StatelessWidget {
-  const _WifiRow({required this.network, required this.onDetails});
-
-  final HomeWifiNetwork network;
-  final VoidCallback onDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    final highlight = context.theme.colors.primary.withAlpha(32);
-    final foreground = context.theme.colors.foreground;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: network.isCurrent ? highlight : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(_wifiSignalIcon(network.level), size: 16, color: foreground),
-          const SizedBox(width: ThemeTokens.spaceSm),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    network.ssid,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: context.theme.typography.sm.copyWith(
-                      fontWeight: network.isCurrent
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: foreground,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                _Tag(label: network.bandLabel),
-                const SizedBox(width: 6),
-                _Tag(label: network.secured ? 'Bảo mật' : 'Mở'),
-              ],
-            ),
-          ),
-          const SizedBox(width: ThemeTokens.spaceSm),
-          _IconTag(icon: FIcons.chevronRight, onTap: onDetails),
-        ],
-      ),
-    );
-  }
-}
-
-class _WifiPasswordSheet extends StatelessWidget {
-  const _WifiPasswordSheet({
-    required this.network,
-    required this.password,
-    required this.onPasswordChanged,
-    required this.onConnect,
-    required this.onCancel,
-    required this.isConnecting,
-  });
-
-  final HomeWifiNetwork network;
-  final String password;
-  final ValueChanged<String> onPasswordChanged;
-  final VoidCallback? onConnect;
-  final VoidCallback onCancel;
-  final bool isConnecting;
-
-  @override
-  Widget build(BuildContext context) {
-    final needsPassword = network.secured;
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(
-              ThemeTokens.spaceMd,
-              0,
-              ThemeTokens.spaceMd,
-              ThemeTokens.spaceMd,
-            ),
-            decoration: BoxDecoration(
-              color: context.theme.colors.background,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.theme.colors.border),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                ThemeTokens.spaceLg,
-                ThemeTokens.spaceMd,
-                ThemeTokens.spaceLg,
-                ThemeTokens.spaceLg,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    network.ssid,
-                    style: context.theme.typography.xl.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                  const SizedBox(height: ThemeTokens.spaceXs),
-                  Text(
-                    needsPassword
-                        ? 'Nhập mật khẩu để kết nối.'
-                        : 'Mạng mở, không cần mật khẩu.',
-                    style: context.theme.typography.sm.copyWith(
-                      color: context.theme.colors.mutedForeground,
-                    ),
-                  ),
-                  const SizedBox(height: ThemeTokens.spaceMd),
-                  if (needsPassword)
-                    FTextField(
-                      label: const Text('Mật khẩu'),
-                      obscureText: true,
-                      control: FTextFieldControl.lifted(
-                        value: TextEditingValue(
-                          text: password,
-                          selection: TextSelection.collapsed(
-                            offset: password.length,
-                          ),
-                        ),
-                        onChange: (value) => onPasswordChanged(value.text),
-                      ),
-                    ),
-                  const SizedBox(height: ThemeTokens.spaceLg),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: ThemeTokens.buttonHeight,
-                          child: FButton(
-                            onPress: onCancel,
-                            style: FButtonStyle.ghost(),
-                            child: const Text('Từ chối'),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: ThemeTokens.spaceSm),
-                      Expanded(
-                        child: SizedBox(
-                          height: ThemeTokens.buttonHeight,
-                          child: FButton(
-                            onPress: needsPassword && password.isEmpty
-                                ? null
-                                : onConnect,
-                            child: isConnecting
-                                ? const FCircularProgress()
-                                : const Text('Kết nối'),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmotionPicker extends StatefulWidget {
-  const _EmotionPicker({
-    required this.options,
-    required this.selectedIndex,
-    required this.palette,
-  });
-
-  final List<String> options;
-  final int selectedIndex;
-  final _EmotionPalette palette;
-
-  @override
-  State<_EmotionPicker> createState() => _EmotionPickerState();
-}
-
-class _EmotionPickerState extends State<_EmotionPicker> {
-  final ScrollController _scrollController = ScrollController();
-  static const double _itemSpacing = ThemeTokens.spaceXs;
-  double _itemExtent = 120.0;
-  double _viewportWidth = 0;
-  int _loopIndex = 0;
-  int _lastSelectedIndex = -1;
-  int _lastOptionsLength = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _syncLoopIndex();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _jumpToSelected(animated: false);
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _EmotionPicker oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final selectionChanged = oldWidget.selectedIndex != widget.selectedIndex;
-    final lengthChanged = oldWidget.options.length != widget.options.length;
-    if (selectionChanged || lengthChanged) {
-      _syncLoopIndex();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _jumpToSelected(animated: selectionChanged);
+    var controller = _settingsSheetControllers[side];
+    if (controller == null) {
+      setState(() {
+        _settingsSheetVisible = true;
       });
-    }
-  }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = widget.palette;
-    if (widget.options.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return Container(
-      padding: const EdgeInsets.all(ThemeTokens.spaceXs),
-      decoration: BoxDecoration(
-        color: palette.controlBackground(context),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: SizedBox(
-        height: ThemeTokens.buttonHeight - ThemeTokens.spaceXs,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final nextExtent = _resolveItemExtent(
-              context,
-              constraints.maxWidth,
-            );
-            final extentChanged = (nextExtent - _itemExtent).abs() > 0.5;
-            final widthChanged =
-                (constraints.maxWidth - _viewportWidth).abs() > 0.5;
-            _itemExtent = nextExtent;
-            _viewportWidth = constraints.maxWidth;
-            if (extentChanged || widthChanged) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!mounted) {
-                  return;
-                }
-                _jumpToSelected(animated: false);
-              });
-            }
-            final itemCount = widget.options.length * 3;
-            return ListView.separated(
-                  controller: _scrollController,
-                  scrollDirection: Axis.horizontal,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: itemCount,
-                  separatorBuilder: (_, _) =>
-                      const SizedBox(width: _itemSpacing),
-                  itemBuilder: (context, index) {
-                    final normalized = _normalizeIndex(index);
-                    final isSelected = index == _loopIndex;
-                    final scale = isSelected ? 1.0 : 0.96;
-                    final opacity = isSelected ? 1.0 : 0.72;
-                    return SizedBox(
-                      width: _itemExtent,
-                      child: AnimatedScale(
-                        duration: const Duration(milliseconds: 220),
-                        curve: Curves.easeOutCubic,
-                        scale: scale,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 180),
-                          curve: Curves.easeOut,
-                          opacity: opacity,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 220),
-                            curve: Curves.easeOutCubic,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: ThemeTokens.spaceSm,
-                              vertical: ThemeTokens.spaceXs,
-                            ),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? palette.accent
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(999),
-                              boxShadow: isSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: palette.accent.withAlpha(90),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 3),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            alignment: Alignment.center,
-                            child: AnimatedDefaultTextStyle(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeOut,
-                              style: context.theme.typography.base.copyWith(
-                                color: isSelected
-                                    ? palette.accentForeground
-                                    : palette.controlForeground(context),
-                                fontWeight: FontWeight.w600,
-                              ),
-                              child: Text(
-                                widget.options[normalized],
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
+      controller = _settingsSheetControllers[side] ??= showFPersistentSheet(
+        context: sheetContext,
+        side: side,
+        keepAliveOffstage: true,
+        onClosing: () {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _settingsSheetVisible = false;
+          });
+        },
+        builder: (context, controller) => Container(
+          height: double.infinity,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: context.theme.colors.background,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(ThemeTokens.radiusMd),
+            ),
+            border: Border.symmetric(
+              horizontal: BorderSide(color: context.theme.colors.border),
+            ),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+            child: BlocBuilder<ThemeModeCubit, ThemeMode>(
+              builder: (context, themeMode) {
+                return BlocBuilder<ThemePaletteCubit, AppThemePalette>(
+                  builder: (context, themePalette) {
+                    return BlocBuilder<TextScaleCubit, double>(
+                      builder: (context, textScale) {
+                        return BlocSelector<
+                          HomeCubit,
+                          HomeState,
+                          ({
+                            double? volume,
+                            HomeAudioDevice? audioDevice,
+                            List<HomeConnectivity>? connectivity,
+                            String? wifiName,
+                            String? carrierName,
+                            List<HomeWifiNetwork> wifiNetworks,
+                            bool wifiLoading,
+                            String? wifiError,
+                            int? batteryLevel,
+                            HomeBatteryState? batteryState,
+                          })
+                        >(
+                          selector: (state) => (
+                            volume: state.volume,
+                            audioDevice: state.audioDevice,
+                            connectivity: state.connectivity,
+                            wifiName: state.wifiName,
+                            carrierName: state.carrierName,
+                            wifiNetworks: state.wifiNetworks,
+                            wifiLoading: state.wifiLoading,
+                            wifiError: state.wifiError,
+                            batteryLevel: state.batteryLevel,
+                            batteryState: state.batteryState,
                           ),
-                        ),
-                      ),
+                          builder: (context, data) {
+                            return HomeSettingsSheet(
+                              volume: data.volume,
+                              audioDevice: data.audioDevice,
+                              connectivity: data.connectivity,
+                              wifiName: data.wifiName,
+                              carrierName: data.carrierName,
+                              wifiNetworks: data.wifiNetworks,
+                              wifiLoading: data.wifiLoading,
+                              wifiError: data.wifiError,
+                              batteryLevel: data.batteryLevel,
+                              batteryState: data.batteryState,
+                              onWifiRefresh: _refreshWifiNetworks,
+                              onWifiSettings: _openWifiSettings,
+                              onWifiSelect: _openWifiPasswordSheet,
+                              onVolumeChanged: _handleVolumeChanged,
+                              textScale: textScale,
+                              onTextScaleChanged:
+                                  sheetContext.read<TextScaleCubit>().setScale,
+                              themeMode: themeMode,
+                              themePalette: themePalette,
+                              onThemePaletteChanged: sheetContext
+                                  .read<ThemePaletteCubit>()
+                                  .setPalette,
+                              onSetLight: sheetContext
+                                  .read<ThemeModeCubit>()
+                                  .setLight,
+                              onSetDark: sheetContext
+                                  .read<ThemeModeCubit>()
+                                  .setDark,
+                            );
+                          },
+                        );
+                      },
                     );
                   },
                 );
-          },
+              },
+            ),
+          ),
         ),
-      ),
-    );
-  }
-
-  double _resolveItemExtent(BuildContext context, double maxWidth) {
-    const visibleCount = 5;
-    final totalSpacing = _itemSpacing * (visibleCount - 1);
-    final raw = (maxWidth - totalSpacing) / visibleCount;
-    return raw < 52.0 ? 52.0 : raw;
-  }
-
-  int _normalizeIndex(int index) {
-    final length = widget.options.length;
-    if (length == 0) {
-      return 0;
-    }
-    final mod = index % length;
-    return mod < 0 ? mod + length : mod;
-  }
-
-  void _syncLoopIndex() {
-    final length = widget.options.length;
-    if (length == 0) {
-      _loopIndex = 0;
-      _lastSelectedIndex = -1;
-      _lastOptionsLength = 0;
-      return;
-    }
-    final selected = widget.selectedIndex.clamp(0, length - 1);
-    _loopIndex = length + selected;
-    _lastSelectedIndex = selected;
-    _lastOptionsLength = length;
-  }
-
-  void _jumpToSelected({required bool animated}) {
-    if (widget.options.isEmpty || _viewportWidth <= 0) {
-      return;
-    }
-    if (!_scrollController.hasClients) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _jumpToSelected(animated: animated);
-      });
-      return;
-    }
-    final length = widget.options.length;
-    if (_lastOptionsLength != length ||
-        _lastSelectedIndex != widget.selectedIndex) {
-      _syncLoopIndex();
-    }
-    final target = _loopIndex * (_itemExtent + _itemSpacing);
-    final centeredTarget = target - (_viewportWidth - _itemExtent) / 2;
-    final position = _scrollController.position;
-    final clamped = centeredTarget.clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
-    if (animated) {
-      _scrollController.animateTo(
-        clamped,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
       );
-    } else {
-      _scrollController.jumpTo(clamped);
+      return;
     }
+
+    final isOpen = controller.status == AnimationStatus.completed ||
+        controller.status == AnimationStatus.forward;
+    setState(() {
+      _settingsSheetVisible = !isOpen;
+    });
+    controller.toggle();
   }
-}
-
-class _SmileFacePainter extends CustomPainter {
-  const _SmileFacePainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    final dotPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final eyeOffsetX = size.width * 0.18;
-    final eyeOffsetY = size.height * 0.08;
-    final eyeRadius = size.width * 0.04;
-
-    canvas.drawCircle(
-      Offset(center.dx - eyeOffsetX, center.dy - eyeOffsetY),
-      eyeRadius,
-      dotPaint,
-    );
-    canvas.drawCircle(
-      Offset(center.dx + eyeOffsetX, center.dy - eyeOffsetY),
-      eyeRadius,
-      dotPaint,
-    );
-
-    final nosePath = Path()
-      ..moveTo(center.dx, center.dy - size.height * 0.02)
-      ..lineTo(center.dx - size.width * 0.02, center.dy + size.height * 0.03)
-      ..lineTo(center.dx + size.width * 0.02, center.dy + size.height * 0.03);
-    canvas.drawPath(nosePath, linePaint);
-
-    final smileRect = Rect.fromCenter(
-      center: Offset(center.dx, center.dy + size.height * 0.12),
-      width: size.width * 0.32,
-      height: size.height * 0.18,
-    );
-    canvas.drawArc(smileRect, 0, 3.14, false, linePaint);
-
-    final hairPath = Path()
-      ..moveTo(center.dx - size.width * 0.1, center.dy - size.height * 0.32)
-      ..cubicTo(
-        center.dx - size.width * 0.02,
-        center.dy - size.height * 0.42,
-        center.dx + size.width * 0.08,
-        center.dy - size.height * 0.38,
-        center.dx + size.width * 0.04,
-        center.dy - size.height * 0.3,
-      );
-    canvas.drawPath(hairPath, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

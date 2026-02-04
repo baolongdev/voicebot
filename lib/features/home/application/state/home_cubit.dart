@@ -1,16 +1,15 @@
 import 'dart:async';
 
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/logging/app_logger.dart';
-import '../../../../core/system/ota/ota.dart' as core_ota;
+import '../../../../core/system/ota/ota_service.dart' as core_ota;
 import '../../../../core/system/ota/model/ota_result.dart';
 import '../../../chat/application/state/chat_state.dart';
 import '../../../chat/application/state/chat_session.dart';
 import '../../../form/domain/models/server_form_data.dart';
 import '../../../form/infrastructure/repositories/settings_repository.dart';
+import '../../domain/entities/home_system_status.dart';
 import '../../domain/entities/home_wifi_network.dart';
 import '../../domain/services/home_system_service.dart';
 import 'home_state.dart';
@@ -18,7 +17,7 @@ import 'home_state.dart';
 class HomeCubit extends Cubit<HomeState> {
   HomeCubit({
     required SettingsRepository settingsRepository,
-    required core_ota.Ota ota,
+    required core_ota.OtaService ota,
     required ChatSession chatCubit,
     required HomeSystemService systemService,
   })  : _settingsRepository = settingsRepository,
@@ -30,7 +29,7 @@ class HomeCubit extends Cubit<HomeState> {
   }
 
   final SettingsRepository _settingsRepository;
-  final core_ota.Ota _ota;
+  final core_ota.OtaService _ota;
   final ChatSession _chatCubit;
   final HomeSystemService _systemService;
 
@@ -39,7 +38,7 @@ class HomeCubit extends Cubit<HomeState> {
   Timer? _clockTimer;
   StreamSubscription<ChatState>? _chatSubscription;
   StreamSubscription? _batteryStateSub;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  StreamSubscription<List<HomeConnectivity>>? _connectivitySub;
   StreamSubscription<double>? _volumeSub;
   StreamSubscription? _audioDeviceSub;
   bool _connectInFlight = false;
@@ -358,7 +357,7 @@ class HomeCubit extends Cubit<HomeState> {
       final cleaned = _cleanWifiName(name);
       if (cleaned != null && cleaned.isNotEmpty) {
         emit(state.copyWith(
-          connectivity: const <ConnectivityResult>[ConnectivityResult.wifi],
+          connectivity: const <HomeConnectivity>[HomeConnectivity.wifi],
         ));
         return;
       }
@@ -372,7 +371,7 @@ class HomeCubit extends Cubit<HomeState> {
     }
   }
 
-  Future<void> _refreshBatteryLevel({BatteryState? batteryState}) async {
+  Future<void> _refreshBatteryLevel({HomeBatteryState? batteryState}) async {
     if (_batteryRefreshInFlight) {
       if (batteryState != null) {
         emit(state.copyWith(batteryState: batteryState));

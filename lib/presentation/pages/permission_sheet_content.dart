@@ -45,32 +45,29 @@ class _PermissionSheetContentState extends State<PermissionSheetContent> {
             currentStatus == PermissionStatus.permanentlyDenied;
         final showLaterHint = _declined || showDenied;
         final mediaSize = MediaQuery.sizeOf(context);
+        final textScale = MediaQuery.textScaleFactorOf(context).clamp(0.85, 1.5);
         final width = mediaSize.width;
-        final shortestSide = mediaSize.shortestSide;
         final maxHeight = mediaSize.height * (width >= 1200 ? 0.5 : 0.6);
-        final textScale = shortestSide >= 900
-            ? 1.12
-            : shortestSide >= 700
-                ? 1.06
-                : 1.0;
         final titleStyle = textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
           color: colorScheme.onSurface,
-        ).apply(fontSizeFactor: textScale);
+        );
         final headingStyle = textTheme.titleMedium?.copyWith(
           fontWeight: FontWeight.w700,
           color: colorScheme.onSurface,
-        ).apply(fontSizeFactor: textScale);
+        );
         final bodyStyle = textTheme.bodyMedium?.copyWith(
           color: colorScheme.onSurfaceVariant,
-        ).apply(fontSizeFactor: textScale);
+        );
         final helperStyle = textTheme.bodySmall?.copyWith(
           color: colorScheme.onSurfaceVariant,
-        ).apply(fontSizeFactor: textScale);
+        );
         final errorStyle = textTheme.bodySmall?.copyWith(
           color: colorScheme.error,
-        ).apply(fontSizeFactor: textScale);
+        );
         final handleColor = colorScheme.onSurfaceVariant.withAlpha(153);
+        final iconBox = (96 * textScale).clamp(96.0, 144.0);
+        final iconSize = iconBox * 0.5;
 
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: maxHeight),
@@ -113,15 +110,15 @@ class _PermissionSheetContentState extends State<PermissionSheetContent> {
                       const SizedBox(height: ThemeTokens.spaceLg),
                       Center(
                         child: Container(
-                          width: 96,
-                          height: 96,
+                          width: iconBox,
+                          height: iconBox,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: colorScheme.primary.withAlpha(41),
                           ),
                           child: Icon(
                             currentMeta.icon,
-                            size: 48,
+                            size: iconSize,
                             color: colorScheme.primary,
                           ),
                         ),

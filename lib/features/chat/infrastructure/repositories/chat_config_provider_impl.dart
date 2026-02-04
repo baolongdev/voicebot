@@ -1,7 +1,7 @@
 import '../../../../core/errors/failure.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/result/result.dart';
-import '../../../../core/system/ota/ota.dart' as core_ota;
+import '../../../../core/system/ota/ota_service.dart' as core_ota;
 import '../../../form/domain/models/server_form_data.dart';
 import '../../../form/infrastructure/repositories/settings_repository.dart';
 import '../../domain/entities/chat_config.dart';
@@ -10,12 +10,12 @@ import '../../domain/repositories/chat_config_provider.dart';
 class ChatConfigProviderImpl implements ChatConfigProvider {
   ChatConfigProviderImpl({
     required SettingsRepository settings,
-    required core_ota.Ota ota,
+    required core_ota.OtaService ota,
   })  : _settings = settings,
         _ota = ota;
 
   final SettingsRepository _settings;
-  final core_ota.Ota _ota;
+  final core_ota.OtaService _ota;
 
   static const String _missingUrlCode = 'missing_url';
   static const String _missingTokenCode = 'missing_token';

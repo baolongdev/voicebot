@@ -24,27 +24,22 @@ class BrandColors extends ThemeExtension<BrandColors> {
   final Color emotionBorder;
   final Map<String, EmotionTone> emotionTones;
 
-  static final BrandColors light = BrandColors(
-    headerBackground: AppColors.light.primary,
-    headerForeground: AppColors.light.onPrimary,
-    homeSurface: AppColors.light.surface,
-    homeAccent: AppColors.light.primaryAlt,
-    accentForeground: AppColors.light.onPrimary,
-    emotionBackground: AppColors.light.surface,
-    emotionBorder: AppColors.light.outline,
-    emotionTones: _emotionTonesLight,
-  );
+  static final BrandColors light = fromPalette(AppColors.light);
 
-  static final BrandColors dark = BrandColors(
-    headerBackground: AppColors.dark.primary,
-    headerForeground: AppColors.dark.onPrimary,
-    homeSurface: AppColors.dark.surface,
-    homeAccent: AppColors.dark.primaryAlt,
-    accentForeground: AppColors.dark.onPrimary,
-    emotionBackground: AppColors.dark.surface,
-    emotionBorder: AppColors.dark.outline,
-    emotionTones: _emotionTonesDark,
-  );
+  static final BrandColors dark = fromPalette(AppColors.dark);
+
+  static BrandColors fromPalette(AppSemanticColors palette) {
+    return BrandColors(
+      headerBackground: palette.primary,
+      headerForeground: palette.onPrimary,
+      homeSurface: palette.surface,
+      homeAccent: palette.primaryAlt,
+      accentForeground: palette.onPrimary,
+      emotionBackground: palette.surface,
+      emotionBorder: palette.outline,
+      emotionTones: _emotionTonesLight,
+    );
+  }
 
   @override
   BrandColors copyWith({

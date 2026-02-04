@@ -1,52 +1,50 @@
 import 'dart:async';
 
-import 'package:audio_router/audio_router.dart';
-import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voicebot/core/system/ota/model/device_info.dart';
 import 'package:voicebot/core/system/ota/model/ota_result.dart';
-import 'package:voicebot/core/system/ota/ota.dart' as core_ota;
+import 'package:voicebot/core/system/ota/ota_service.dart' as core_ota;
 import 'package:voicebot/features/chat/application/state/chat_session.dart';
 import 'package:voicebot/features/chat/application/state/chat_state.dart';
 import 'package:voicebot/features/form/domain/models/server_form_data.dart';
 import 'package:voicebot/features/form/infrastructure/repositories/settings_repository.dart';
 import 'package:voicebot/features/home/application/state/home_cubit.dart';
+import 'package:voicebot/features/home/domain/entities/home_system_status.dart';
 import 'package:voicebot/features/home/domain/entities/home_wifi_network.dart';
 import 'package:voicebot/features/home/domain/services/home_system_service.dart';
 
 class _FakeHomeSystemService implements HomeSystemService {
   int? batteryLevel;
-  List<ConnectivityResult> connectivity = const <ConnectivityResult>[];
+  List<HomeConnectivity> connectivity = const <HomeConnectivity>[];
   String? wifiName;
   String? carrierName;
   double? volume;
-  AudioDevice? audioDevice;
+  HomeAudioDevice? audioDevice;
   List<HomeWifiNetwork> wifiNetworks = const <HomeWifiNetwork>[];
   bool connectResult = true;
 
-  final StreamController<BatteryState> _batteryStateController =
-      StreamController<BatteryState>.broadcast();
-  final StreamController<List<ConnectivityResult>> _connectivityController =
-      StreamController<List<ConnectivityResult>>.broadcast();
+  final StreamController<HomeBatteryState> _batteryStateController =
+      StreamController<HomeBatteryState>.broadcast();
+  final StreamController<List<HomeConnectivity>> _connectivityController =
+      StreamController<List<HomeConnectivity>>.broadcast();
   final StreamController<double> _volumeController =
       StreamController<double>.broadcast();
-  final StreamController<AudioDevice?> _audioDeviceController =
-      StreamController<AudioDevice?>.broadcast();
+  final StreamController<HomeAudioDevice?> _audioDeviceController =
+      StreamController<HomeAudioDevice?>.broadcast();
 
   @override
   Future<int?> fetchBatteryLevel() async => batteryLevel;
 
   @override
-  Stream<BatteryState> get batteryStateStream =>
+  Stream<HomeBatteryState> get batteryStateStream =>
       _batteryStateController.stream;
 
   @override
-  Future<List<ConnectivityResult>> fetchConnectivity() async => connectivity;
+  Future<List<HomeConnectivity>> fetchConnectivity() async => connectivity;
 
   @override
-  Stream<List<ConnectivityResult>> get connectivityStream =>
+  Stream<List<HomeConnectivity>> get connectivityStream =>
       _connectivityController.stream;
 
   @override
@@ -62,10 +60,10 @@ class _FakeHomeSystemService implements HomeSystemService {
   Stream<double> get volumeStream => _volumeController.stream;
 
   @override
-  Future<AudioDevice?> fetchAudioDevice() async => audioDevice;
+  Future<HomeAudioDevice?> fetchAudioDevice() async => audioDevice;
 
   @override
-  Stream<AudioDevice?> get audioDeviceStream =>
+  Stream<HomeAudioDevice?> get audioDeviceStream =>
       _audioDeviceController.stream;
 
   @override
@@ -95,11 +93,11 @@ class _FakeHomeSystemService implements HomeSystemService {
     await _audioDeviceController.close();
   }
 
-  void emitBatteryState(BatteryState state) {
+  void emitBatteryState(HomeBatteryState state) {
     _batteryStateController.add(state);
   }
 
-  void emitConnectivity(List<ConnectivityResult> results) {
+  void emitConnectivity(List<HomeConnectivity> results) {
     _connectivityController.add(results);
   }
 
@@ -144,7 +142,7 @@ class _FakeSettingsRepository implements SettingsRepository {
   Future<void> hydrate() async {}
 }
 
-class _FakeOta implements core_ota.Ota {
+class _FakeOta implements core_ota.OtaService {
   _FakeOta({
     this.deviceInfo,
     this.nextResult,
@@ -203,7 +201,7 @@ void main() {
   test('HomeCubit initialize populates system info', () async {
     final system = _FakeHomeSystemService()
       ..batteryLevel = 88
-      ..connectivity = <ConnectivityResult>[ConnectivityResult.wifi]
+      ..connectivity = <HomeConnectivity>[HomeConnectivity.wifi]
       ..wifiName = 'OfficeWiFi'
       ..carrierName = 'Carrier'
       ..volume = 0.7;
@@ -217,7 +215,7 @@ void main() {
     await cubit.initialize();
 
     expect(cubit.state.batteryLevel, equals(88));
-    expect(cubit.state.connectivity, equals([ConnectivityResult.wifi]));
+    expect(cubit.state.connectivity, equals([HomeConnectivity.wifi]));
     expect(cubit.state.wifiName, equals('OfficeWiFi'));
     expect(cubit.state.carrierName, equals('Carrier'));
     expect(cubit.state.volume, equals(0.7));
@@ -235,12 +233,12 @@ void main() {
 
     await cubit.initialize();
 
-    system.emitBatteryState(BatteryState.charging);
-    system.emitConnectivity(<ConnectivityResult>[ConnectivityResult.mobile]);
+    system.emitBatteryState(HomeBatteryState.charging);
+    system.emitConnectivity(<HomeConnectivity>[HomeConnectivity.mobile]);
     await pumpEventQueue();
 
-    expect(cubit.state.batteryState, equals(BatteryState.charging));
-    expect(cubit.state.connectivity, equals([ConnectivityResult.mobile]));
+    expect(cubit.state.batteryState, equals(HomeBatteryState.charging));
+    expect(cubit.state.connectivity, equals([HomeConnectivity.mobile]));
     await cubit.close();
   });
 

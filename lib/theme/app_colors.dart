@@ -135,6 +135,43 @@ class AppAlphas {
 }
 
 @immutable
+class AppThemePaletteSpec {
+  const AppThemePaletteSpec({
+    required this.primaryHue,
+    required this.accentHue,
+    required this.primarySat,
+    required this.primaryLig,
+    required this.primaryAltLig,
+    required this.titleSat,
+    required this.titleLig,
+    required this.textSat,
+    required this.textLig,
+    required this.textLightSat,
+    required this.textLightLig,
+    required this.bodySat,
+    required this.bodyLig,
+    required this.containerSat,
+    required this.containerLig,
+  });
+
+  final double primaryHue;
+  final double accentHue;
+  final double primarySat;
+  final double primaryLig;
+  final double primaryAltLig;
+  final double titleSat;
+  final double titleLig;
+  final double textSat;
+  final double textLig;
+  final double textLightSat;
+  final double textLightLig;
+  final double bodySat;
+  final double bodyLig;
+  final double containerSat;
+  final double containerLig;
+}
+
+@immutable
 class AppSemanticColors {
   const AppSemanticColors({
     required this.primary,
@@ -181,32 +218,61 @@ class AppSemanticColors {
   final Color stateDisabled;
 
   factory AppSemanticColors.fromTokens({required Brightness brightness}) {
+    return AppSemanticColors.fromSpec(
+      brightness: brightness,
+      spec: const AppThemePaletteSpec(
+        primaryHue: AppHslTokens.firstHue,
+        accentHue: AppHslTokens.secondHue,
+        primarySat: AppHslTokens.firstSat,
+        primaryLig: AppHslTokens.firstLig,
+        primaryAltLig: AppHslTokens.firstAltLig,
+        titleSat: AppHslTokens.titleSat,
+        titleLig: AppHslTokens.titleLig,
+        textSat: AppHslTokens.textSat,
+        textLig: AppHslTokens.textLig,
+        textLightSat: AppHslTokens.textLightSat,
+        textLightLig: AppHslTokens.textLightLig,
+        bodySat: AppHslTokens.bodySat,
+        bodyLig: AppHslTokens.bodyLig,
+        containerSat: AppHslTokens.containerSat,
+        containerLig: AppHslTokens.containerLig,
+      ),
+    );
+  }
+
+  factory AppSemanticColors.fromSpec({
+    required Brightness brightness,
+    required AppThemePaletteSpec spec,
+  }) {
     final isDark = brightness == Brightness.dark;
-    final primary = AppHslTokens.firstColor.toColor();
-    final primaryAlt = AppHslTokens.firstColorAlt.toColor();
+    final primaryHsl = AppHsl(spec.primaryHue, spec.primarySat, spec.primaryLig);
+    final primaryAltHsl = AppHsl(
+      spec.primaryHue,
+      spec.primarySat,
+      spec.primaryAltLig,
+    );
+    final primary = primaryHsl.toColor();
+    final primaryAlt = primaryAltHsl.toColor();
 
-    final backgroundHsl = isDark
-        ? AppHslTokens.bodyColor
-        : AppHslTokens.bodyColor.invertLightness();
-    final surfaceHsl = isDark
-        ? AppHslTokens.containerColor
-        : AppHslTokens.containerColor.invertLightness();
-    final containerHsl = isDark
-        ? AppHslTokens.containerColor
-        : AppHslTokens.containerColor.invertLightness();
+    final bodyBase = AppHsl(spec.accentHue, spec.bodySat, spec.bodyLig);
+    final containerBase =
+        AppHsl(spec.accentHue, spec.containerSat, spec.containerLig);
+    final backgroundHsl = isDark ? bodyBase : bodyBase.invertLightness();
+    final surfaceHsl = isDark ? containerBase : containerBase.invertLightness();
+    final containerHsl =
+        isDark ? containerBase : containerBase.invertLightness();
 
-    final titleHsl = isDark
-        ? AppHslTokens.titleColor
-        : AppHslTokens.titleColor.invertLightness();
-    final textHsl = isDark
-        ? AppHslTokens.textColor
-        : AppHslTokens.textColor.invertLightness();
-    final textLightHsl = isDark
-        ? AppHslTokens.textColorLight
-        : AppHslTokens.textColorLight.invertLightness();
+    final titleBase = AppHsl(spec.accentHue, spec.titleSat, spec.titleLig);
+    final textBase = AppHsl(spec.accentHue, spec.textSat, spec.textLig);
+    final textLightBase =
+        AppHsl(spec.accentHue, spec.textLightSat, spec.textLightLig);
+    final titleHsl = isDark ? titleBase : titleBase.invertLightness();
+    final textHsl = isDark ? textBase : textBase.invertLightness();
+    final textLightHsl =
+        isDark ? textLightBase : textLightBase.invertLightness();
 
     final onPrimary =
-        isDark ? titleHsl.toColor() : AppHslTokens.bodyColor.toColor();
+        isDark ? titleHsl.toColor() : bodyBase.toColor();
     final onBackground = titleHsl.toColor();
     final onSurface = titleHsl.toColor();
     final outline = textLightHsl.toColor().withValues(

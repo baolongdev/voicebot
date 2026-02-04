@@ -9,7 +9,10 @@ import '../../di/locator.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
+import '../../presentation/app/theme_palette_cubit.dart';
+import '../../presentation/app/text_scale_cubit.dart';
 import '../../system/permissions/permission_notifier.dart';
+import '../../theme/theme_palette.dart';
 
 class Application extends StatefulWidget {
   const Application({super.key});
@@ -26,43 +29,74 @@ class _ApplicationState extends State<Application> {
       // Checking is safe at startup; requests stay behind explicit user action.
       getIt<PermissionCubit>().checkRequiredPermissions();
     }
+    getIt<ThemeModeCubit>().hydrate();
+    getIt<ThemePaletteCubit>().hydrate();
+    getIt<TextScaleCubit>().hydrate();
   }
 
   @override
   Widget build(BuildContext context) {
     final GoRouter router = getIt<GoRouter>();
-    final lightTheme = AppForuiTheme.light();
-    final darkTheme = AppForuiTheme.dark();
 
     return MultiBlocProvider(
       providers: [
         BlocProvider<ThemeModeCubit>.value(value: getIt<ThemeModeCubit>()),
+        BlocProvider<ThemePaletteCubit>.value(
+          value: getIt<ThemePaletteCubit>(),
+        ),
+        BlocProvider<TextScaleCubit>.value(value: getIt<TextScaleCubit>()),
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),
         BlocProvider<HomeCubit>.value(value: getIt<HomeCubit>()),
       ],
-      child: BlocBuilder<ThemeModeCubit, ThemeMode>(
-        builder: (context, themeMode) {
-          return MaterialApp.router(
-            routerConfig: router,
-            theme: lightTheme.toApproximateMaterialTheme(),
-            darkTheme: darkTheme.toApproximateMaterialTheme(),
-            themeMode: themeMode,
-            localizationsDelegates: FLocalizations.localizationsDelegates,
-            supportedLocales: FLocalizations.supportedLocales,
-            builder: (context, child) {
-              final brightness = _resolveBrightness(context, themeMode);
-              final theme = AppForuiTheme.themeForBrightness(brightness);
-              final topInset = MediaQuery.paddingOf(context).top;
+      child: BlocBuilder<ThemePaletteCubit, AppThemePalette>(
+        builder: (context, palette) {
+          final lightTheme = AppForuiTheme.light(palette);
+          final darkTheme = AppForuiTheme.dark(palette);
+          return BlocBuilder<ThemeModeCubit, ThemeMode>(
+            builder: (context, themeMode) {
+              return BlocBuilder<TextScaleCubit, double>(
+                builder: (context, textScale) {
+                  return MaterialApp.router(
+                    routerConfig: router,
+                    theme: lightTheme.toApproximateMaterialTheme(),
+                    darkTheme: darkTheme.toApproximateMaterialTheme(),
+                    themeMode: themeMode,
+                    localizationsDelegates: FLocalizations.localizationsDelegates,
+                    supportedLocales: FLocalizations.supportedLocales,
+                    builder: (context, child) {
+                      final brightness = _resolveBrightness(context, themeMode);
+                      final theme = AppForuiTheme.themeForBrightness(
+                        brightness,
+                        palette,
+                      );
+                      final topInset = MediaQuery.paddingOf(context).top;
+                      final mediaQuery = MediaQuery.of(context);
+                      final iconSize = 24 * textScale;
 
-              return FAnimatedTheme(
-                data: theme,
-                child: FToaster(
-                  style: (style) => style.copyWith(
-                    padding: EdgeInsets.fromLTRB(16, topInset + 24, 16, 16),
-                  ),
-                  child: child ?? const SizedBox.shrink(),
-                ),
+                      return MediaQuery(
+                        data: mediaQuery.copyWith(textScaleFactor: textScale),
+                        child: IconTheme(
+                          data: IconThemeData(size: iconSize),
+                          child: FAnimatedTheme(
+                            data: theme,
+                            child: FToaster(
+                              style: (style) => style.copyWith(
+                                padding: EdgeInsets.fromLTRB(
+                                  16,
+                                  topInset + 24,
+                                  16,
+                                  16,
+                                ),
+                              ),
+                              child: child ?? const SizedBox.shrink(),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
               );
             },
           );

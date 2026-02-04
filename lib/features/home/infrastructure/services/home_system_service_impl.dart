@@ -12,6 +12,7 @@ import 'package:network_info_plus/network_info_plus.dart';
 import 'package:plugin_wifi_connect/plugin_wifi_connect.dart';
 import 'package:wifi_scan/wifi_scan.dart';
 
+import '../../domain/entities/home_system_status.dart';
 import '../../domain/entities/home_wifi_network.dart';
 import '../../domain/services/home_system_service.dart';
 
@@ -55,20 +56,22 @@ class HomeSystemServiceImpl implements HomeSystemService {
   }
 
   @override
-  Stream<BatteryState> get batteryStateStream => _battery.onBatteryStateChanged;
+  Stream<HomeBatteryState> get batteryStateStream =>
+      _battery.onBatteryStateChanged.map(_mapBatteryState);
 
   @override
-  Future<List<ConnectivityResult>> fetchConnectivity() async {
+  Future<List<HomeConnectivity>> fetchConnectivity() async {
     try {
-      return await _connectivity.checkConnectivity();
+      final results = await _connectivity.checkConnectivity();
+      return _mapConnectivityResults(results);
     } catch (_) {
-      return <ConnectivityResult>[];
+      return <HomeConnectivity>[];
     }
   }
 
   @override
-  Stream<List<ConnectivityResult>> get connectivityStream =>
-      _connectivity.onConnectivityChanged;
+  Stream<List<HomeConnectivity>> get connectivityStream =>
+      _connectivity.onConnectivityChanged.map(_mapConnectivityResults);
 
   @override
   Future<String?> fetchWifiName() async {
@@ -121,17 +124,18 @@ class HomeSystemServiceImpl implements HomeSystemService {
   }
 
   @override
-  Future<AudioDevice?> fetchAudioDevice() async {
+  Future<HomeAudioDevice?> fetchAudioDevice() async {
     try {
-      return await AudioRouterPlatform.instance.getCurrentDevice();
+      final device = await AudioRouterPlatform.instance.getCurrentDevice();
+      return _mapAudioDevice(device);
     } catch (_) {
       return null;
     }
   }
 
   @override
-  Stream<AudioDevice?> get audioDeviceStream =>
-      _audioRouter.currentDeviceStream;
+  Stream<HomeAudioDevice?> get audioDeviceStream =>
+      _audioRouter.currentDeviceStream.map(_mapAudioDevice);
 
   @override
   Future<bool> connectToWifi(HomeWifiNetwork network, String password) async {
@@ -224,6 +228,64 @@ class HomeSystemServiceImpl implements HomeSystemService {
       });
 
     return networks;
+  }
+
+  HomeBatteryState _mapBatteryState(BatteryState state) {
+    switch (state) {
+      case BatteryState.charging:
+        return HomeBatteryState.charging;
+      case BatteryState.full:
+        return HomeBatteryState.full;
+      case BatteryState.discharging:
+        return HomeBatteryState.discharging;
+      case BatteryState.unknown:
+      default:
+        return HomeBatteryState.unknown;
+    }
+  }
+
+  List<HomeConnectivity> _mapConnectivityResults(
+    List<ConnectivityResult> results,
+  ) {
+    return results.map(_mapConnectivity).toList();
+  }
+
+  HomeConnectivity _mapConnectivity(ConnectivityResult result) {
+    switch (result) {
+      case ConnectivityResult.wifi:
+        return HomeConnectivity.wifi;
+      case ConnectivityResult.mobile:
+        return HomeConnectivity.mobile;
+      case ConnectivityResult.ethernet:
+        return HomeConnectivity.ethernet;
+      case ConnectivityResult.bluetooth:
+        return HomeConnectivity.bluetooth;
+      case ConnectivityResult.vpn:
+        return HomeConnectivity.vpn;
+      case ConnectivityResult.other:
+        return HomeConnectivity.other;
+      case ConnectivityResult.none:
+        return HomeConnectivity.none;
+    }
+  }
+
+  HomeAudioDevice? _mapAudioDevice(AudioDevice? device) {
+    if (device == null) {
+      return null;
+    }
+    final route = switch (device.type) {
+      AudioSourceType.bluetooth => HomeAudioRoute.bluetooth,
+      AudioSourceType.builtinSpeaker => HomeAudioRoute.speaker,
+      AudioSourceType.wiredHeadset => HomeAudioRoute.wired,
+      AudioSourceType.builtinReceiver => HomeAudioRoute.other,
+      AudioSourceType.carAudio => HomeAudioRoute.other,
+      AudioSourceType.airplay => HomeAudioRoute.other,
+      AudioSourceType.unknown => HomeAudioRoute.other,
+    };
+    return HomeAudioDevice(
+      route: route,
+      name: device.id,
+    );
   }
 
   @override

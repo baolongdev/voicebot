@@ -1,38 +1,42 @@
+import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import 'app_colors.dart';
 import 'brand_colors.dart';
+import 'theme_palette.dart';
 
-final FThemeData appLightTheme = _buildTheme(
-  base: FThemes.zinc.light,
-  brand: BrandColors.light,
+final FThemeData appLightTheme = buildTheme(
+  brightness: Brightness.light,
+  palette: AppThemePalette.green,
 );
 
-final FThemeData appDarkTheme = _buildTheme(
-  base: FThemes.zinc.dark,
-  brand: BrandColors.dark,
+final FThemeData appDarkTheme = buildTheme(
+  brightness: Brightness.dark,
+  palette: AppThemePalette.green,
 );
 
-FThemeData _buildTheme({
-  required FThemeData base,
-  required BrandColors brand,
+FThemeData buildTheme({
+  required Brightness brightness,
+  required AppThemePalette palette,
 }) {
-  final palette =
-      brand == BrandColors.light ? AppColors.light : AppColors.dark;
+  final base =
+      brightness == Brightness.dark ? FThemes.zinc.dark : FThemes.zinc.light;
+  final paletteColors = semanticColorsForPalette(palette, brightness);
+  final brand = BrandColors.fromPalette(paletteColors);
   final colors = base.colors.copyWith(
-    background: palette.background,
-    foreground: palette.text,
-    primary: palette.primary,
-    primaryForeground: palette.onPrimary,
-    secondary: palette.primaryAlt,
-    secondaryForeground: palette.onPrimary,
-    muted: palette.container,
-    mutedForeground: palette.textLight,
-    destructive: palette.error,
-    destructiveForeground: palette.onError,
-    error: palette.error,
-    errorForeground: palette.onError,
-    border: palette.outline,
+    background: paletteColors.background,
+    foreground: paletteColors.text,
+    primary: paletteColors.primary,
+    primaryForeground: paletteColors.onPrimary,
+    secondary: paletteColors.primaryAlt,
+    secondaryForeground: paletteColors.onPrimary,
+    muted: paletteColors.container,
+    mutedForeground: paletteColors.textLight,
+    destructive: paletteColors.error,
+    destructiveForeground: paletteColors.onError,
+    error: paletteColors.error,
+    errorForeground: paletteColors.onError,
+    border: paletteColors.outline,
   );
 
   final typography = base.typography;

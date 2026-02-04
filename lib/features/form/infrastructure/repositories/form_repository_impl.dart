@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:voicebot/core/system/ota/ota.dart';
+import 'package:voicebot/core/system/ota/ota_service.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
 import '../../domain/models/server_form_data.dart';
 import '../../domain/repositories/form_result.dart';
@@ -10,7 +10,7 @@ import 'settings_repository.dart';
 // Ported from Android Kotlin: FormRepository.kt
 class FormRepositoryImpl implements FormRepository {
   FormRepositoryImpl({
-    required Ota ota,
+    required OtaService ota,
     required SettingsRepository settingsRepository,
   })  : _ota = ota,
         _settingsRepository = settingsRepository,
@@ -19,7 +19,7 @@ class FormRepositoryImpl implements FormRepository {
     _controller.add(null);
   }
 
-  final Ota _ota;
+  final OtaService _ota;
   final SettingsRepository _settingsRepository;
   final StreamController<FormResult?> _controller;
   FormResult? _lastResult;

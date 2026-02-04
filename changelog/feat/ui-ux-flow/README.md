@@ -1,5 +1,12 @@
 # Changelog - feat/ui-ux-flow
 
+## 2026-02-04
+- Added selectable theme palettes (neutral/green/lime) and persisted palette selection across launches.
+- Reworked theme building to derive colors from palette specs and wire palette state through the app.
+- Expanded settings sheet with palette tabs, text scale controls, and improved dismissal/blur handling.
+- Adjusted emotion picker to a fixed 5/3-item layout so the selected item stays centered when text scale changes.
+- Removed unused presentation widgets and legacy OTA/logger wrappers no longer referenced in the UI flow.
+
 ## 2026-02-02
 - Simplified transcript rendering to static text and tightened emotion picker to 5 equal-width items without edge fades.
 - Synced system status updates: battery level refreshes on state changes/clock tick and volume slider follows hardware volume stream.

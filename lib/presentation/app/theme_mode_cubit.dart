@@ -1,12 +1,34 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'ui_settings_store.dart';
+
 class ThemeModeCubit extends Cubit<ThemeMode> {
-  ThemeModeCubit() : super(ThemeMode.system);
+  ThemeModeCubit(this._store) : super(ThemeMode.system);
 
-  void setLight() => emit(ThemeMode.light);
+  final UiSettingsStore _store;
 
-  void setDark() => emit(ThemeMode.dark);
+  Future<void> hydrate() async {
+    final saved = await _store.readThemeMode();
+    if (saved != null) {
+      emit(saved);
+    }
+  }
 
-  void setSystem() => emit(ThemeMode.system);
+  void setLight() {
+    emit(ThemeMode.light);
+    unawaited(_store.writeThemeMode(ThemeMode.light));
+  }
+
+  void setDark() {
+    emit(ThemeMode.dark);
+    unawaited(_store.writeThemeMode(ThemeMode.dark));
+  }
+
+  void setSystem() {
+    emit(ThemeMode.system);
+    unawaited(_store.writeThemeMode(ThemeMode.system));
+  }
 }

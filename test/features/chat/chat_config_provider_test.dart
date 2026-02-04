@@ -2,13 +2,13 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:voicebot/core/system/ota/model/device_info.dart';
 import 'package:voicebot/core/system/ota/model/ota_result.dart';
-import 'package:voicebot/core/system/ota/ota.dart' as core_ota;
+import 'package:voicebot/core/system/ota/ota_service.dart' as core_ota;
 import 'package:voicebot/features/chat/infrastructure/repositories/chat_config_provider_impl.dart';
 import 'package:voicebot/features/form/domain/models/server_form_data.dart';
 import 'package:voicebot/features/form/infrastructure/repositories/settings_repository_impl.dart';
 import 'package:voicebot/features/form/infrastructure/repositories/settings_storage.dart';
 
-class _FakeOta implements core_ota.Ota {
+class _FakeOta implements core_ota.OtaService {
   _FakeOta(this._deviceInfo);
 
   final DeviceInfo _deviceInfo;

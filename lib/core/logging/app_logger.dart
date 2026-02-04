@@ -1,4 +1,4 @@
-import '../utils/logger.dart';
+import 'logger.dart';
 
 class AppLogger {
   static void log(

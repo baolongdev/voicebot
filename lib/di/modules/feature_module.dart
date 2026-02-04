@@ -1,6 +1,6 @@
 import 'package:get_it/get_it.dart';
 
-import '../../core/system/ota/ota.dart' as core_ota;
+import '../../core/system/ota/ota_service.dart' as core_ota;
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/chat/application/usecases/connect_chat_usecase.dart';
 import '../../features/chat/application/usecases/disconnect_chat_usecase.dart';
@@ -47,7 +47,7 @@ void registerChatFeature(GetIt getIt) {
     getIt.registerLazySingleton<ChatConfigProvider>(
       () => ChatConfigProviderImpl(
         settings: getIt<SettingsRepository>(),
-        ota: getIt<core_ota.Ota>(),
+        ota: getIt<core_ota.OtaService>(),
       ),
     );
   }
@@ -146,7 +146,7 @@ void registerHomeFeature(GetIt getIt) {
     getIt.registerLazySingleton<HomeCubit>(
       () => HomeCubit(
         settingsRepository: getIt<SettingsRepository>(),
-        ota: getIt<core_ota.Ota>(),
+        ota: getIt<core_ota.OtaService>(),
         chatCubit: getIt<ChatCubit>(),
         systemService: getIt<HomeSystemService>(),
       ),
