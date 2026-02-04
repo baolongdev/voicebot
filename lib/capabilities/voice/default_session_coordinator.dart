@@ -53,6 +53,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   bool _isListening = false;
   bool _canSendAudio = false;
   bool _isSpeaking = false;
+  ListeningMode _listeningMode = ListeningMode.autoStop;
   int _speakingEpoch = 0;
   int _sentAudioFrames = 0;
   int _receivedAudioFrames = 0;
@@ -81,6 +82,9 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
   @override
   int get serverSampleRate => _transport?.serverSampleRate ?? -1;
+
+  @override
+  ListeningMode get listeningMode => _listeningMode;
 
   @override
   Future<bool> connect(TransportClient transport) async {
@@ -178,18 +182,23 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   @override
-  Future<void> startListening() async {
+  Future<void> startListening({bool enableMic = true}) async {
     if (_transport == null) {
       return;
     }
     if (_isListening) {
-      _canSendAudio = true;
+      _canSendAudio = enableMic;
+      if (enableMic) {
+        _startEncodingIfNeeded();
+      }
       return;
     }
-    await _transport!.startListening(ListeningMode.autoStop);
-    _startEncodingIfNeeded();
+    await _transport!.startListening(_listeningMode);
     _isListening = true;
-    _canSendAudio = true;
+    _canSendAudio = enableMic;
+    if (enableMic) {
+      _startEncodingIfNeeded();
+    }
     AppLogger.event('SessionCoordinator', 'listen_start');
   }
 
@@ -235,6 +244,20 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
     await _transport?.sendAudio(Uint8List.fromList(data));
+  }
+
+  @override
+  void setListeningMode(ListeningMode mode) {
+    if (_listeningMode == mode) {
+      return;
+    }
+    _listeningMode = mode;
+    AppLogger.event(
+      'SessionCoordinator',
+      'listen_mode',
+      fields: <String, Object?>{'mode': mode.name},
+      level: 'I',
+    );
   }
 
   Future<void> _setupPlayback() async {

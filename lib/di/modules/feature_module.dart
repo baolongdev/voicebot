@@ -12,7 +12,9 @@ import '../../features/chat/application/usecases/observe_chat_responses_usecase.
 import '../../features/chat/application/usecases/observe_chat_speaking_usecase.dart';
 import '../../features/chat/application/usecases/send_audio_frame_usecase.dart';
 import '../../features/chat/application/usecases/send_chat_message_usecase.dart';
+import '../../features/chat/application/usecases/set_listening_mode_usecase.dart';
 import '../../features/chat/application/usecases/start_listening_usecase.dart';
+import '../../features/chat/application/usecases/stop_listening_usecase.dart';
 import '../../features/chat/domain/repositories/chat_config_provider.dart';
 import '../../features/chat/domain/repositories/chat_repository.dart';
 import '../../features/chat/infrastructure/repositories/chat_config_provider_impl.dart';
@@ -88,6 +90,18 @@ void registerChatFeature(GetIt getIt) {
     );
   }
 
+  if (!getIt.isRegistered<StopListeningUseCase>()) {
+    getIt.registerFactory<StopListeningUseCase>(
+      () => StopListeningUseCase(getIt<ChatRepository>()),
+    );
+  }
+
+  if (!getIt.isRegistered<SetListeningModeUseCase>()) {
+    getIt.registerFactory<SetListeningModeUseCase>(
+      () => SetListeningModeUseCase(getIt<ChatRepository>()),
+    );
+  }
+
   if (!getIt.isRegistered<ObserveChatResponsesUseCase>()) {
     getIt.registerFactory<ObserveChatResponsesUseCase>(
       () => ObserveChatResponsesUseCase(getIt<ChatRepository>()),
@@ -126,6 +140,8 @@ void registerChatFeature(GetIt getIt) {
         disconnect: getIt<DisconnectChatUseCase>(),
         sendMessage: getIt<SendChatMessageUseCase>(),
         startListening: getIt<StartListeningUseCase>(),
+        stopListening: getIt<StopListeningUseCase>(),
+        setListeningMode: getIt<SetListeningModeUseCase>(),
         observeResponses: getIt<ObserveChatResponsesUseCase>(),
         observeErrors: getIt<ObserveChatErrorsUseCase>(),
         observeIncomingLevel: getIt<ObserveChatIncomingLevelUseCase>(),

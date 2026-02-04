@@ -41,6 +41,8 @@ dependencies:
   opus_flutter: ^3.0.3
   opus_dart: ^3.0.1
   url_launcher: ^6.3.0
+  camera: ^0.10.5+9
+  carousel_slider: ^5.0.0
 
 dev_dependencies:
   flutter_test:

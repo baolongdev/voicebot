@@ -12,4 +12,5 @@ class AppConfig {
 
   // Feature flag for new v2 flow entry.
   static const bool useNewFlow = true;
+
 }

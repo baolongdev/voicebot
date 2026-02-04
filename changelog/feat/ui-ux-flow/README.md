@@ -1,6 +1,11 @@
 # Changelog - feat/ui-ux-flow
 
 ## 2026-02-04
+- Rebuilt home UI widgets: header/content/footer split, added draggable camera overlay, and improved bottom carousel with full-screen preview.
+- Enhanced settings sheet with tabs for Wi-Fi/audio/camera/theme/text scale plus listening mode selection and persisted UI settings.
+- Added listening-mode plumbing through session coordinator and chat repository, plus manual-send button beside connect.
+- Improved audio visual with idle animation when disconnected and refined transcript rendering/perf.
+- Added carousel_slider dependency and synced text/icon scaling across the home UI.
 - Added selectable theme palettes (neutral/green/lime) and persisted palette selection across launches.
 - Reworked theme building to derive colors from palette specs and wire palette state through the app.
 - Expanded settings sheet with palette tabs, text scale controls, and improved dismissal/blur handling.

@@ -11,6 +11,7 @@ import '../features/form/domain/usecases/submit_form_use_case.dart';
 import '../features/form/domain/usecases/validate_form_use_case.dart';
 import '../features/form/presentation/state/form_state.dart';
 import '../features/form/domain/repositories/form_repository.dart';
+import '../presentation/app/listening_mode_cubit.dart';
 import '../presentation/app/theme_mode_cubit.dart';
 import '../presentation/app/theme_palette_cubit.dart';
 import '../presentation/app/text_scale_cubit.dart';
@@ -56,11 +57,18 @@ Future<void> configureDependencies() async {
     );
   }
 
+  if (!getIt.isRegistered<ListeningModeCubit>()) {
+    getIt.registerLazySingleton<ListeningModeCubit>(
+      () => ListeningModeCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
   if (!getIt.isRegistered<core_ota.OtaService>()) {
     getIt.registerLazySingleton<core_ota.OtaService>(
       () => _OtaAdapter(system_ota.OtaClient(DummyDataGenerator.generate())),
     );
   }
+
 
   registerRepositoryModule(getIt);
   registerChatFeature(getIt);

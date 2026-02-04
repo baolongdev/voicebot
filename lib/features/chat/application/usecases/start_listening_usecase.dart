@@ -5,5 +5,6 @@ class StartListeningUseCase {
 
   final ChatRepository _repository;
 
-  Future<void> call() => _repository.startListening();
+  Future<void> call({bool enableMic = true}) =>
+      _repository.startListening(enableMic: enableMic);
 }

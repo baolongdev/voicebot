@@ -1,5 +1,6 @@
 import '../../../../core/errors/failure.dart';
 import '../../../../core/result/result.dart';
+import '../../../../capabilities/protocol/protocol.dart';
 import '../entities/chat_config.dart';
 import '../entities/chat_response.dart';
 
@@ -14,8 +15,9 @@ abstract class ChatRepository {
 
   Future<Result<bool>> connect(ChatConfig config);
   Future<void> disconnect();
-  Future<void> startListening();
+  Future<void> startListening({bool enableMic = true});
   Future<void> stopListening();
+  Future<void> setListeningMode(ListeningMode mode);
   Future<Result<bool>> sendMessage(String text);
   Future<void> sendAudio(List<int> data);
 }

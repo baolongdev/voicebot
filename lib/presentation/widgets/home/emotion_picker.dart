@@ -34,7 +34,8 @@ class _EmotionPickerState extends State<EmotionPicker> {
     if (widget.options.isEmpty) {
       return const SizedBox.shrink();
     }
-    final textScale = MediaQuery.textScaleFactorOf(context).clamp(0.85, 1.5);
+    final textScale =
+        MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.5);
     final baseHeight = ThemeTokens.buttonHeight - ThemeTokens.spaceXs;
     final height = (baseHeight * textScale).clamp(baseHeight, 72.0);
     final visibleCount = textScale > 1.0 ? 3 : 5;

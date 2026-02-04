@@ -114,4 +114,3 @@ const Map<String, EmotionTone> _emotionTonesLight = {
   'neutral': EmotionTone(Color(0xFFE7F0FF), Color(0xFF2F3E5C)),
 };
 
-const Map<String, EmotionTone> _emotionTonesDark = _emotionTonesLight;

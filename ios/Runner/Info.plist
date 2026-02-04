@@ -26,6 +26,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Voicebot uses the microphone to record your voice messages.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Voicebot uses the camera to show a live preview.</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Voicebot uses Bluetooth to connect to headsets and external audio devices.</string>
 	<key>NSLocalNetworkUsageDescription</key>

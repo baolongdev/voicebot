@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../../../capabilities/protocol/protocol.dart';
 import '../../../core/theme/forui/theme_tokens.dart';
 import '../../../features/home/domain/entities/home_system_status.dart';
 import '../../../features/home/domain/entities/home_wifi_network.dart';
@@ -28,11 +29,17 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onVolumeChanged,
     required this.textScale,
     required this.onTextScaleChanged,
+    required this.cameraEnabled,
+    required this.onCameraEnabledChanged,
+    required this.cameraAspectRatio,
+    required this.onCameraAspectChanged,
     required this.themeMode,
     required this.themePalette,
     required this.onThemePaletteChanged,
     required this.onSetLight,
     required this.onSetDark,
+    required this.listeningMode,
+    required this.onListeningModeChanged,
   });
 
   final double? volume;
@@ -51,11 +58,17 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<double>? onVolumeChanged;
   final double textScale;
   final ValueChanged<double> onTextScaleChanged;
+  final bool cameraEnabled;
+  final ValueChanged<bool> onCameraEnabledChanged;
+  final double cameraAspectRatio;
+  final ValueChanged<double> onCameraAspectChanged;
   final ThemeMode themeMode;
   final AppThemePalette themePalette;
   final ValueChanged<AppThemePalette> onThemePaletteChanged;
   final VoidCallback onSetLight;
   final VoidCallback onSetDark;
+  final ListeningMode listeningMode;
+  final ValueChanged<ListeningMode> onListeningModeChanged;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
@@ -69,14 +82,37 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     1.2,
     1.5,
   ];
+  static const List<double> _cameraAspectRatios = [
+    1.0,
+    4 / 3,
+    16 / 9,
+  ];
+  static const List<String> _cameraAspectLabels = [
+    '1:1',
+    '4:3',
+    '16:9',
+  ];
   static const List<AppThemePalette> _paletteOptions = [
     AppThemePalette.neutral,
     AppThemePalette.green,
     AppThemePalette.lime,
   ];
+  static const List<ListeningMode> _listeningModes = [
+    ListeningMode.autoStop,
+    ListeningMode.manual,
+    ListeningMode.alwaysOn,
+  ];
+  static const List<String> _listeningModeLabels = [
+    'Tự dừng',
+    'Thủ công',
+    'Luôn nghe',
+  ];
   late double _sliderValue;
   late int _textScaleIndex;
   late int _paletteIndex;
+  late int _cameraAspectIndex;
+  late bool _cameraEnabledLocal;
+  late int _listeningModeIndex;
 
   @override
   void initState() {
@@ -84,6 +120,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     _sliderValue = _coerceVolume(widget.volume);
     _textScaleIndex = _textScaleToIndex(widget.textScale);
     _paletteIndex = _paletteToIndex(widget.themePalette);
+    _cameraAspectIndex = _cameraAspectToIndex(widget.cameraAspectRatio);
+    _cameraEnabledLocal = widget.cameraEnabled;
+    _listeningModeIndex = _listeningModeToIndex(widget.listeningMode);
   }
 
   @override
@@ -105,6 +144,23 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     if (nextPaletteIndex != _paletteIndex) {
       setState(() {
         _paletteIndex = nextPaletteIndex;
+      });
+    }
+    final nextAspectIndex = _cameraAspectToIndex(widget.cameraAspectRatio);
+    if (nextAspectIndex != _cameraAspectIndex) {
+      setState(() {
+        _cameraAspectIndex = nextAspectIndex;
+      });
+    }
+    final nextListeningIndex = _listeningModeToIndex(widget.listeningMode);
+    if (nextListeningIndex != _listeningModeIndex) {
+      setState(() {
+        _listeningModeIndex = nextListeningIndex;
+      });
+    }
+    if (_cameraEnabledLocal != widget.cameraEnabled) {
+      setState(() {
+        _cameraEnabledLocal = widget.cameraEnabled;
       });
     }
   }
@@ -129,6 +185,24 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
     return index < 0 ? 0 : index;
   }
 
+  int _cameraAspectToIndex(double aspectRatio) {
+    var nearestIndex = 0;
+    var nearestDiff = double.infinity;
+    for (var i = 0; i < _cameraAspectRatios.length; i++) {
+      final diff = (aspectRatio - _cameraAspectRatios[i]).abs();
+      if (diff < nearestDiff) {
+        nearestDiff = diff;
+        nearestIndex = i;
+      }
+    }
+    return nearestIndex;
+  }
+
+  int _listeningModeToIndex(ListeningMode mode) {
+    final index = _listeningModes.indexOf(mode);
+    return index < 0 ? 0 : index;
+  }
+
   @override
   Widget build(BuildContext context) {
     final route = routeIcon(widget.audioDevice);
@@ -138,10 +212,38 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
         : audioIcon(_sliderValue);
     final textScaleValue = _textScaleSteps[_textScaleIndex];
     final iconSize = scaledIconSize(context, 15);
-    final textScale = MediaQuery.textScaleFactorOf(context).clamp(0.85, 1.5);
+    final textScale =
+        MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.5);
     final tabHeight = (35.0 * textScale).clamp(35.0, 56.0);
     final themeIndex = widget.themeMode == ThemeMode.dark ? 1 : 0;
     final paletteLabel = _paletteOptions[_paletteIndex].label;
+    final cameraIndex = _cameraEnabledLocal ? 1 : 0;
+    final cameraAspectLabel = _cameraAspectLabels[_cameraAspectIndex];
+    final listeningModeLabel = _listeningModeLabels[_listeningModeIndex];
+    final offline = isOffline(widget.connectivity);
+    final isWifiConnected =
+        widget.connectivity?.contains(HomeConnectivity.wifi) ?? false;
+    final isMobileConnected =
+        widget.connectivity?.contains(HomeConnectivity.mobile) ?? false;
+    final wifiStatus = offline
+        ? 'Mất kết nối internet'
+        : isWifiConnected
+            ? (cleanWifiName(widget.wifiName) ?? 'Wi‑Fi')
+            : isMobileConnected
+                ? (widget.carrierName ?? '4G/5G')
+                : networkDisplay(
+                    widget.connectivity,
+                    widget.wifiName,
+                    widget.carrierName,
+                  );
+    final wifiStatusColor = offline
+        ? context.theme.colors.destructive
+        : context.theme.colors.mutedForeground;
+    final wifiPrefixIcon = offline
+        ? FIcons.wifiOff
+        : isMobileConnected
+            ? FIcons.cardSim
+            : wifiIcon(widget.connectivity, widget.wifiName);
     FWidgetStateMap<IconThemeData> scaledItemIconStyle(
       FWidgetStateMap<IconThemeData> base,
     ) {
@@ -209,8 +311,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
               ),
               children: [
                 FItem(
-                  prefix: Icon(FIcons.wifi, size: iconSize),
+                  prefix: Icon(wifiPrefixIcon, size: iconSize),
                   title: const Text('Wi‑Fi'),
+                  details: Text(
+                    wifiStatus,
+                    style: context.theme.typography.sm.copyWith(
+                      color: wifiStatusColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                   suffix: Icon(FIcons.chevronRight, size: iconSize),
                   onPress: widget.onWifiSettings,
                 ),
@@ -256,6 +365,143 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet> {
                           FSliderMark(value: 1, label: Text('100%')),
                         ],
                       ),
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(FIcons.mic, size: iconSize),
+                  title: const Text('Chế độ nghe'),
+                  suffix: Text(
+                    listeningModeLabel,
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _listeningModeIndex,
+                        onChange: (index) {
+                          setState(() {
+                            _listeningModeIndex = index;
+                          });
+                          widget.onListeningModeChanged(
+                            _listeningModes[index],
+                          );
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      scrollable: false,
+                      children: const [
+                        FTabEntry(
+                          label: Text('Tự dừng'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('Thủ công'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('Luôn nghe'),
+                          child: SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(FIcons.camera, size: iconSize),
+                  title: const Text('Camera'),
+                  suffix: Text(
+                    widget.cameraEnabled ? 'Bật' : 'Tắt',
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: cameraIndex,
+                        onChange: (index) {
+                          setState(() {
+                            _cameraEnabledLocal = index == 1;
+                          });
+                          widget.onCameraEnabledChanged(_cameraEnabledLocal);
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      children: const [
+                        FTabEntry(
+                          label: Text('Tắt'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('Bật'),
+                          child: SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(Icons.zoom_in_outlined, size: iconSize),
+                  title: const Text('Tỉ lệ khung hình'),
+                  suffix: Text(
+                    cameraAspectLabel,
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _cameraAspectIndex,
+                        onChange: (index) {
+                          setState(() {
+                            _cameraAspectIndex = index;
+                          });
+                          widget.onCameraAspectChanged(
+                            _cameraAspectRatios[index],
+                          );
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      scrollable: false,
+                      children: const [
+                        FTabEntry(
+                          label: Text('1:1'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('4:3'),
+                          child: SizedBox.shrink(),
+                        ),
+                        FTabEntry(
+                          label: Text('16:9'),
+                          child: SizedBox.shrink(),
+                        ),
+                      ],
                     ),
                   ),
                 ),

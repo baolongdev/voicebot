@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 
 double iconScaleFactor(BuildContext context, {double min = 0.85, double max = 1.5}) {
-  final scale = MediaQuery.textScaleFactorOf(context);
+  final scale = MediaQuery.textScalerOf(context).scale(1.0);
   if (scale < min) {
     return min;
   }

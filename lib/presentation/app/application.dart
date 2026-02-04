@@ -8,6 +8,7 @@ import '../../core/theme/forui/forui_theme.dart';
 import '../../di/locator.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/home/application/state/home_cubit.dart';
+import '../../presentation/app/listening_mode_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
 import '../../presentation/app/theme_palette_cubit.dart';
 import '../../presentation/app/text_scale_cubit.dart';
@@ -32,6 +33,7 @@ class _ApplicationState extends State<Application> {
     getIt<ThemeModeCubit>().hydrate();
     getIt<ThemePaletteCubit>().hydrate();
     getIt<TextScaleCubit>().hydrate();
+    getIt<ListeningModeCubit>().hydrate();
   }
 
   @override
@@ -45,6 +47,9 @@ class _ApplicationState extends State<Application> {
           value: getIt<ThemePaletteCubit>(),
         ),
         BlocProvider<TextScaleCubit>.value(value: getIt<TextScaleCubit>()),
+        BlocProvider<ListeningModeCubit>.value(
+          value: getIt<ListeningModeCubit>(),
+        ),
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),
         BlocProvider<HomeCubit>.value(value: getIt<HomeCubit>()),
@@ -75,7 +80,9 @@ class _ApplicationState extends State<Application> {
                       final iconSize = 24 * textScale;
 
                       return MediaQuery(
-                        data: mediaQuery.copyWith(textScaleFactor: textScale),
+                        data: mediaQuery.copyWith(
+                          textScaler: TextScaler.linear(textScale),
+                        ),
                         child: IconTheme(
                           data: IconThemeData(size: iconSize),
                           child: FAnimatedTheme(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../capabilities/protocol/protocol.dart';
 import '../../theme/theme_palette.dart';
 
 class UiSettingsStore {
@@ -11,6 +12,7 @@ class UiSettingsStore {
   static const _themeModeKey = 'ui_theme_mode';
   static const _themePaletteKey = 'ui_theme_palette';
   static const _textScaleKey = 'ui_text_scale';
+  static const _listeningModeKey = 'ui_listening_mode';
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _storage.read(key: _themeModeKey);
@@ -56,5 +58,22 @@ class UiSettingsStore {
 
   Future<void> writeTextScale(double scale) async {
     await _storage.write(key: _textScaleKey, value: scale.toString());
+  }
+
+  Future<ListeningMode?> readListeningMode() async {
+    final value = await _storage.read(key: _listeningModeKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    for (final mode in ListeningMode.values) {
+      if (mode.name == value) {
+        return mode;
+      }
+    }
+    return null;
+  }
+
+  Future<void> writeListeningMode(ListeningMode mode) async {
+    await _storage.write(key: _listeningModeKey, value: mode.name);
   }
 }

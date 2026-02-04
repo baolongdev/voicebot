@@ -45,7 +45,8 @@ class _PermissionSheetContentState extends State<PermissionSheetContent> {
             currentStatus == PermissionStatus.permanentlyDenied;
         final showLaterHint = _declined || showDenied;
         final mediaSize = MediaQuery.sizeOf(context);
-        final textScale = MediaQuery.textScaleFactorOf(context).clamp(0.85, 1.5);
+        final textScale =
+            MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.5);
         final width = mediaSize.width;
         final maxHeight = mediaSize.height * (width >= 1200 ? 0.5 : 0.6);
         final titleStyle = textTheme.titleLarge?.copyWith(

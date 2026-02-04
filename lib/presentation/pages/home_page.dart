@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
+import '../../capabilities/protocol/protocol.dart';
 import '../../core/config/app_config.dart';
 import '../../core/permissions/permission_type.dart';
 import '../../core/system/ota/model/ota_result.dart';
@@ -21,6 +22,7 @@ import '../../features/home/domain/entities/home_wifi_network.dart';
 import '../app/theme_mode_cubit.dart';
 import '../app/theme_palette_cubit.dart';
 import '../app/text_scale_cubit.dart';
+import '../app/listening_mode_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
@@ -52,6 +54,8 @@ class _HomePageState extends State<HomePage> {
   double _headerHeight = 0;
   final Map<FLayout, FPersistentSheetController> _settingsSheetControllers = {};
   bool _settingsSheetVisible = false;
+  final ValueNotifier<bool> _cameraEnabled = ValueNotifier(false);
+  final ValueNotifier<double> _cameraAspectRatio = ValueNotifier(4 / 3);
 
   @override
   void initState() {
@@ -67,6 +71,8 @@ class _HomePageState extends State<HomePage> {
     for (final controller in _settingsSheetControllers.values) {
       controller.dispose();
     }
+    _cameraEnabled.dispose();
+    _cameraAspectRatio.dispose();
     _chimePlayer.dispose();
     super.dispose();
   }
@@ -75,6 +81,11 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return MultiBlocListener(
       listeners: [
+        BlocListener<ListeningModeCubit, ListeningMode>(
+          listener: (context, mode) {
+            context.read<ChatCubit>().setListeningMode(mode);
+          },
+        ),
         BlocListener<ChatCubit, ChatState>(
           listenWhen: (previous, current) =>
               previous.isSpeaking != current.isSpeaking,
@@ -131,6 +142,10 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _handleDisconnectChat() async {
     await context.read<HomeCubit>().disconnect();
+  }
+
+  Future<void> _handleManualSend() async {
+    await context.read<ChatCubit>().stopListening();
   }
 
   Future<void> _handleVolumeChanged(double value) async {
@@ -230,9 +245,22 @@ class _HomePageState extends State<HomePage> {
                         networkWarning: data.networkWarning,
                       );
                       return Expanded(
-                        child: HomeContent(
-                          palette: palette,
-                          connectionData: connectionData,
+                        child: ValueListenableBuilder<bool>(
+                          valueListenable: _cameraEnabled,
+                          builder: (context, cameraEnabled, _) {
+                            return ValueListenableBuilder<double>(
+                              valueListenable: _cameraAspectRatio,
+                              builder: (context, cameraAspectRatio, _) {
+                                return HomeContent(
+                                  palette: palette,
+                                  connectionData: connectionData,
+                                  cameraEnabled: cameraEnabled,
+                                  cameraAspectRatio: cameraAspectRatio,
+                                  onCameraEnabledChanged: _setCameraEnabled,
+                                );
+                              },
+                            );
+                          },
                         ),
                       );
                     },
@@ -282,21 +310,32 @@ class _HomePageState extends State<HomePage> {
                           isSpeaking: state.isSpeaking,
                         ),
                         builder: (context, chatData) {
-                          return HomeFooter(
-                            activation: homeData.activation,
-                            awaitingActivation: homeData.awaitingActivation,
-                            activationProgress: homeData.activationProgress,
-                            onConnect: _handleConnectChat,
-                            onDisconnect: _handleDisconnectChat,
-                            isConnecting: homeData.isConnecting,
-                            isConnected: homeData.isConnected,
-                            currentEmotion: chatData.emotion,
-                            lastMessage: chatData.message,
-                            lastTtsDurationMs: chatData.ttsDurationMs,
-                            lastTtsText: chatData.ttsText,
-                            incomingLevel: chatData.incoming,
-                            outgoingLevel: chatData.outgoing,
-                            isSpeaking: chatData.isSpeaking,
+                          return BlocBuilder<
+                            ListeningModeCubit,
+                            ListeningMode
+                          >(
+                            builder: (context, listeningMode) {
+                              return HomeFooter(
+                                activation: homeData.activation,
+                                awaitingActivation:
+                                    homeData.awaitingActivation,
+                                activationProgress:
+                                    homeData.activationProgress,
+                                onConnect: _handleConnectChat,
+                                onDisconnect: _handleDisconnectChat,
+                                onManualSend: _handleManualSend,
+                                isConnecting: homeData.isConnecting,
+                                isConnected: homeData.isConnected,
+                                listeningMode: listeningMode,
+                                currentEmotion: chatData.emotion,
+                                lastMessage: chatData.message,
+                                lastTtsDurationMs: chatData.ttsDurationMs,
+                                lastTtsText: chatData.ttsText,
+                                incomingLevel: chatData.incoming,
+                                outgoingLevel: chatData.outgoing,
+                                isSpeaking: chatData.isSpeaking,
+                              );
+                            },
                           );
                         },
                       );
@@ -624,7 +663,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _openSettingsSheet(BuildContext sheetContext) async {
     await _refreshWifiNetworks();
-    if (!mounted) {
+    if (!mounted || !sheetContext.mounted) {
       return;
     }
     const side = FLayout.btt;
@@ -671,64 +710,90 @@ class _HomePageState extends State<HomePage> {
                   builder: (context, themePalette) {
                     return BlocBuilder<TextScaleCubit, double>(
                       builder: (context, textScale) {
-                        return BlocSelector<
-                          HomeCubit,
-                          HomeState,
-                          ({
-                            double? volume,
-                            HomeAudioDevice? audioDevice,
-                            List<HomeConnectivity>? connectivity,
-                            String? wifiName,
-                            String? carrierName,
-                            List<HomeWifiNetwork> wifiNetworks,
-                            bool wifiLoading,
-                            String? wifiError,
-                            int? batteryLevel,
-                            HomeBatteryState? batteryState,
-                          })
-                        >(
-                          selector: (state) => (
-                            volume: state.volume,
-                            audioDevice: state.audioDevice,
-                            connectivity: state.connectivity,
-                            wifiName: state.wifiName,
-                            carrierName: state.carrierName,
-                            wifiNetworks: state.wifiNetworks,
-                            wifiLoading: state.wifiLoading,
-                            wifiError: state.wifiError,
-                            batteryLevel: state.batteryLevel,
-                            batteryState: state.batteryState,
-                          ),
-                          builder: (context, data) {
-                            return HomeSettingsSheet(
-                              volume: data.volume,
-                              audioDevice: data.audioDevice,
-                              connectivity: data.connectivity,
-                              wifiName: data.wifiName,
-                              carrierName: data.carrierName,
-                              wifiNetworks: data.wifiNetworks,
-                              wifiLoading: data.wifiLoading,
-                              wifiError: data.wifiError,
-                              batteryLevel: data.batteryLevel,
-                              batteryState: data.batteryState,
-                              onWifiRefresh: _refreshWifiNetworks,
-                              onWifiSettings: _openWifiSettings,
-                              onWifiSelect: _openWifiPasswordSheet,
-                              onVolumeChanged: _handleVolumeChanged,
-                              textScale: textScale,
-                              onTextScaleChanged:
-                                  sheetContext.read<TextScaleCubit>().setScale,
-                              themeMode: themeMode,
-                              themePalette: themePalette,
-                              onThemePaletteChanged: sheetContext
-                                  .read<ThemePaletteCubit>()
-                                  .setPalette,
-                              onSetLight: sheetContext
-                                  .read<ThemeModeCubit>()
-                                  .setLight,
-                              onSetDark: sheetContext
-                                  .read<ThemeModeCubit>()
-                                  .setDark,
+                        return BlocBuilder<ListeningModeCubit, ListeningMode>(
+                          builder: (context, listeningMode) {
+                            return BlocSelector<
+                              HomeCubit,
+                              HomeState,
+                              ({
+                                double? volume,
+                                HomeAudioDevice? audioDevice,
+                                List<HomeConnectivity>? connectivity,
+                                String? wifiName,
+                                String? carrierName,
+                                List<HomeWifiNetwork> wifiNetworks,
+                                bool wifiLoading,
+                                String? wifiError,
+                                int? batteryLevel,
+                                HomeBatteryState? batteryState,
+                              })
+                            >(
+                              selector: (state) => (
+                                volume: state.volume,
+                                audioDevice: state.audioDevice,
+                                connectivity: state.connectivity,
+                                wifiName: state.wifiName,
+                                carrierName: state.carrierName,
+                                wifiNetworks: state.wifiNetworks,
+                                wifiLoading: state.wifiLoading,
+                                wifiError: state.wifiError,
+                                batteryLevel: state.batteryLevel,
+                                batteryState: state.batteryState,
+                              ),
+                              builder: (context, data) {
+                                return ValueListenableBuilder<bool>(
+                                  valueListenable: _cameraEnabled,
+                                  builder: (context, cameraEnabled, _) {
+                                    return ValueListenableBuilder<double>(
+                                      valueListenable: _cameraAspectRatio,
+                                      builder:
+                                          (context, cameraAspectRatio, _) {
+                                        return HomeSettingsSheet(
+                                          volume: data.volume,
+                                          audioDevice: data.audioDevice,
+                                          connectivity: data.connectivity,
+                                          wifiName: data.wifiName,
+                                          carrierName: data.carrierName,
+                                          wifiNetworks: data.wifiNetworks,
+                                          wifiLoading: data.wifiLoading,
+                                          wifiError: data.wifiError,
+                                          batteryLevel: data.batteryLevel,
+                                          batteryState: data.batteryState,
+                                          onWifiRefresh: _refreshWifiNetworks,
+                                          onWifiSettings: _openWifiSettings,
+                                          onWifiSelect: _openWifiPasswordSheet,
+                                          onVolumeChanged: _handleVolumeChanged,
+                                          textScale: textScale,
+                                          onTextScaleChanged: sheetContext
+                                              .read<TextScaleCubit>()
+                                              .setScale,
+                                          cameraEnabled: cameraEnabled,
+                                          onCameraEnabledChanged:
+                                              _setCameraEnabled,
+                                          cameraAspectRatio: cameraAspectRatio,
+                                          onCameraAspectChanged:
+                                              _setCameraAspectRatio,
+                                          themeMode: themeMode,
+                                          themePalette: themePalette,
+                                          onThemePaletteChanged: sheetContext
+                                              .read<ThemePaletteCubit>()
+                                              .setPalette,
+                                          onSetLight: sheetContext
+                                              .read<ThemeModeCubit>()
+                                              .setLight,
+                                          onSetDark: sheetContext
+                                              .read<ThemeModeCubit>()
+                                              .setDark,
+                                          listeningMode: listeningMode,
+                                          onListeningModeChanged: sheetContext
+                                              .read<ListeningModeCubit>()
+                                              .setMode,
+                                        );
+                                      },
+                                    );
+                                  },
+                                );
+                              },
                             );
                           },
                         );
@@ -750,5 +815,20 @@ class _HomePageState extends State<HomePage> {
       _settingsSheetVisible = !isOpen;
     });
     controller.toggle();
+  }
+
+  void _setCameraEnabled(bool enabled) {
+    if (_cameraEnabled.value == enabled) {
+      return;
+    }
+    _cameraEnabled.value = enabled;
+  }
+
+  void _setCameraAspectRatio(double aspectRatio) {
+    final next = aspectRatio.clamp(0.5, 2.0);
+    if ((next - _cameraAspectRatio.value).abs() < 0.001) {
+      return;
+    }
+    _cameraAspectRatio.value = next;
   }
 }

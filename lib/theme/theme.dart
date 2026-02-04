@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
-import 'app_colors.dart';
 import 'brand_colors.dart';
 import 'theme_palette.dart';
 

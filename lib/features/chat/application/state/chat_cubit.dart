@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../capabilities/protocol/protocol.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/result/result.dart';
@@ -18,7 +19,9 @@ import '../usecases/observe_chat_outgoing_level_usecase.dart';
 import '../usecases/observe_chat_responses_usecase.dart';
 import '../usecases/observe_chat_speaking_usecase.dart';
 import '../usecases/send_chat_message_usecase.dart';
+import '../usecases/set_listening_mode_usecase.dart';
 import '../usecases/start_listening_usecase.dart';
+import '../usecases/stop_listening_usecase.dart';
 import '../../domain/entities/chat_config.dart';
 import 'chat_state.dart';
 import 'chat_session.dart';
@@ -30,16 +33,20 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     required DisconnectChatUseCase disconnect,
     required SendChatMessageUseCase sendMessage,
     required StartListeningUseCase startListening,
+    required StopListeningUseCase stopListening,
     required ObserveChatResponsesUseCase observeResponses,
     required ObserveChatErrorsUseCase observeErrors,
     required ObserveChatIncomingLevelUseCase observeIncomingLevel,
     required ObserveChatOutgoingLevelUseCase observeOutgoingLevel,
     required ObserveChatSpeakingUseCase observeSpeaking,
+    required SetListeningModeUseCase setListeningMode,
   })  : _loadConfig = loadConfig,
         _connect = connect,
         _disconnect = disconnect,
         _sendMessage = sendMessage,
         _startListening = startListening,
+        _stopListening = stopListening,
+        _setListeningMode = setListeningMode,
         _observeResponses = observeResponses,
         _observeErrors = observeErrors,
         _observeIncomingLevel = observeIncomingLevel,
@@ -52,6 +59,8 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   final DisconnectChatUseCase _disconnect;
   final SendChatMessageUseCase _sendMessage;
   final StartListeningUseCase _startListening;
+  final StopListeningUseCase _stopListening;
+  final SetListeningModeUseCase _setListeningMode;
   final ObserveChatResponsesUseCase _observeResponses;
   final ObserveChatErrorsUseCase _observeErrors;
   final ObserveChatIncomingLevelUseCase _observeIncomingLevel;
@@ -171,6 +180,14 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     } finally {
       emit(state.copyWith(isSending: false));
     }
+  }
+
+  Future<void> setListeningMode(ListeningMode mode) async {
+    await _setListeningMode(mode);
+  }
+
+  Future<void> stopListening() async {
+    await _stopListening();
   }
 
   Future<void> _attachStreams() async {
@@ -419,8 +436,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       if (state.networkWarning) {
         _scheduleNetworkWarningClear();
       }
-      await _startListening()
-          .timeout(const Duration(seconds: 4));
+      await _startListening().timeout(const Duration(seconds: 4));
     } on TimeoutException {
       if (_disposed || isClosed || generation != _connectGeneration) {
         return;

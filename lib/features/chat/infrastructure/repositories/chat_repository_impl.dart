@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
+import '../../../../capabilities/protocol/protocol.dart';
 import '../../../../capabilities/voice/session_coordinator.dart';
 import '../../../../capabilities/voice/transport_client.dart';
 import '../../../../capabilities/voice/websocket_transport_client.dart';
@@ -176,13 +177,18 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   @override
-  Future<void> startListening() async {
-    await _sessionCoordinator.startListening();
+  Future<void> startListening({bool enableMic = true}) async {
+    await _sessionCoordinator.startListening(enableMic: enableMic);
   }
 
   @override
   Future<void> stopListening() async {
     await _sessionCoordinator.stopListening();
+  }
+
+  @override
+  Future<void> setListeningMode(ListeningMode mode) async {
+    _sessionCoordinator.setListeningMode(mode);
   }
 
   @override
