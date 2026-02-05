@@ -21,6 +21,9 @@ class UiSettingsStore {
   static const _carouselAnimKey = 'ui_carousel_anim_ms';
   static const _carouselViewportKey = 'ui_carousel_viewport';
   static const _carouselEnlargeKey = 'ui_carousel_enlarge';
+  static const _faceLandmarksKey = 'ui_face_landmarks';
+  static const _faceMeshKey = 'ui_face_mesh';
+  static const _eyeTrackingKey = 'ui_eye_tracking';
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _storage.read(key: _themeModeKey);
@@ -188,6 +191,51 @@ class UiSettingsStore {
   Future<void> writeCarouselEnlarge(bool enabled) async {
     await _storage.write(
       key: _carouselEnlargeKey,
+      value: enabled ? '1' : '0',
+    );
+  }
+
+  Future<bool?> readFaceLandmarksEnabled() async {
+    final value = await _storage.read(key: _faceLandmarksKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeFaceLandmarksEnabled(bool enabled) async {
+    await _storage.write(
+      key: _faceLandmarksKey,
+      value: enabled ? '1' : '0',
+    );
+  }
+
+  Future<bool?> readFaceMeshEnabled() async {
+    final value = await _storage.read(key: _faceMeshKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeFaceMeshEnabled(bool enabled) async {
+    await _storage.write(
+      key: _faceMeshKey,
+      value: enabled ? '1' : '0',
+    );
+  }
+
+  Future<bool?> readEyeTrackingEnabled() async {
+    final value = await _storage.read(key: _eyeTrackingKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeEyeTrackingEnabled(bool enabled) async {
+    await _storage.write(
+      key: _eyeTrackingKey,
       value: enabled ? '1' : '0',
     );
   }

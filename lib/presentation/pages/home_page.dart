@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -26,6 +27,7 @@ import '../app/listening_mode_cubit.dart';
 import '../app/carousel_settings_cubit.dart';
 import '../app/text_send_mode_cubit.dart';
 import '../app/connect_greeting_cubit.dart';
+import '../app/face_detection_settings_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
@@ -59,6 +61,12 @@ class _HomePageState extends State<HomePage> {
   bool _settingsSheetVisible = false;
   final ValueNotifier<bool> _cameraEnabled = ValueNotifier(false);
   final ValueNotifier<double> _cameraAspectRatio = ValueNotifier(4 / 3);
+  final ValueNotifier<bool> _detectFacesEnabled = ValueNotifier(true);
+  final ValueNotifier<double?> _faceConnectProgress =
+      ValueNotifier<double?>(null);
+  Timer? _faceConnectTimer;
+  bool _facePresent = false;
+  static const Duration _faceConnectDelay = Duration(seconds: 3);
 
   @override
   void initState() {
@@ -70,6 +78,7 @@ class _HomePageState extends State<HomePage> {
     context.read<ChatCubit>().setConnectGreeting(
       context.read<ConnectGreetingCubit>().state,
     );
+    _cameraEnabled.value = true;
     if (AppConfig.permissionsEnabled) {
       _schedulePermissionPrompt();
     }
@@ -82,6 +91,9 @@ class _HomePageState extends State<HomePage> {
     }
     _cameraEnabled.dispose();
     _cameraAspectRatio.dispose();
+    _detectFacesEnabled.dispose();
+    _faceConnectProgress.dispose();
+    _faceConnectTimer?.cancel();
     _chimePlayer.dispose();
     super.dispose();
   }
@@ -123,11 +135,19 @@ class _HomePageState extends State<HomePage> {
             if (state.isConnected) {
               _playChime();
             }
+            _detectFacesEnabled.value =
+                !state.isConnected && !state.isConnecting;
+            if (state.isConnected || state.isConnecting) {
+              _stopFaceCountdown();
+            } else if (_facePresent) {
+              _startFaceCountdown();
+            }
             final error = state.errorMessage;
             if (error != null && error.isNotEmpty) {
               showFToast(
                 context: context,
                 alignment: FToastAlignment.topRight,
+                duration: const Duration(seconds: 1),
                 icon: const Icon(FIcons.triangleAlert),
                 title: const Text('Không thể kết nối'),
                 description: Text(error),
@@ -269,30 +289,58 @@ class _HomePageState extends State<HomePage> {
                           CarouselSettings
                         >(
                           builder: (context, carouselSettings) {
-                            return ValueListenableBuilder<bool>(
-                              valueListenable: _cameraEnabled,
-                              builder: (context, cameraEnabled, _) {
-                                return ValueListenableBuilder<double>(
-                                  valueListenable: _cameraAspectRatio,
-                                  builder: (context, cameraAspectRatio, _) {
-                                    return HomeContent(
-                                      palette: palette,
-                                      connectionData: connectionData,
-                                      cameraEnabled: cameraEnabled,
-                                      cameraAspectRatio: cameraAspectRatio,
-                                      onCameraEnabledChanged: _setCameraEnabled,
-                                      carouselHeight:
-                                          carouselSettings.height,
-                                      carouselAutoPlay:
-                                          carouselSettings.autoPlay,
-                                      carouselAutoPlayInterval:
-                                          carouselSettings.autoPlayInterval,
-                                      carouselAnimationDuration:
-                                          carouselSettings.animationDuration,
-                                      carouselViewportFraction:
-                                          carouselSettings.viewportFraction,
-                                      carouselEnlargeCenter:
-                                          carouselSettings.enlargeCenter,
+                            return BlocBuilder<
+                              FaceDetectionSettingsCubit,
+                              FaceDetectionSettings
+                            >(
+                              builder: (context, faceSettings) {
+                                return ValueListenableBuilder<bool>(
+                                  valueListenable: _cameraEnabled,
+                                  builder: (context, cameraEnabled, _) {
+                                    return ValueListenableBuilder<double>(
+                                      valueListenable: _cameraAspectRatio,
+                                      builder: (context, cameraAspectRatio, _) {
+                                        return ValueListenableBuilder<bool>(
+                                          valueListenable:
+                                              _detectFacesEnabled,
+                                          builder: (context, detectFaces, _) {
+                                            return HomeContent(
+                                              palette: palette,
+                                              connectionData: connectionData,
+                                              cameraEnabled: cameraEnabled,
+                                              cameraAspectRatio:
+                                                  cameraAspectRatio,
+                                              onCameraEnabledChanged:
+                                                  _setCameraEnabled,
+                                              onFacePresenceChanged:
+                                                  _handleFacePresenceChanged,
+                                              detectFacesEnabled: detectFaces,
+                                              faceLandmarksEnabled:
+                                                  faceSettings.landmarksEnabled,
+                                              faceMeshEnabled:
+                                                  faceSettings.meshEnabled,
+                                              eyeTrackingEnabled:
+                                                  faceSettings
+                                                      .eyeTrackingEnabled,
+                                              carouselHeight:
+                                                  carouselSettings.height,
+                                              carouselAutoPlay:
+                                                  carouselSettings.autoPlay,
+                                              carouselAutoPlayInterval:
+                                                  carouselSettings
+                                                      .autoPlayInterval,
+                                              carouselAnimationDuration:
+                                                  carouselSettings
+                                                      .animationDuration,
+                                              carouselViewportFraction:
+                                                  carouselSettings
+                                                      .viewportFraction,
+                                              carouselEnlargeCenter:
+                                                  carouselSettings.enlargeCenter,
+                                            );
+                                          },
+                                        );
+                                      },
                                     );
                                   },
                                 );
@@ -353,25 +401,31 @@ class _HomePageState extends State<HomePage> {
                             ListeningMode
                           >(
                             builder: (context, listeningMode) {
-                              return HomeFooter(
-                                activation: homeData.activation,
-                                awaitingActivation:
-                                    homeData.awaitingActivation,
-                                activationProgress:
-                                    homeData.activationProgress,
-                                onConnect: _handleConnectChat,
-                                onDisconnect: _handleDisconnectChat,
-                                onManualSend: _handleManualSend,
-                                isConnecting: homeData.isConnecting,
-                                isConnected: homeData.isConnected,
-                                listeningMode: listeningMode,
-                                currentEmotion: chatData.emotion,
-                                lastMessage: chatData.message,
-                                lastTtsDurationMs: chatData.ttsDurationMs,
-                                lastTtsText: chatData.ttsText,
-                                incomingLevel: chatData.incoming,
-                                outgoingLevel: chatData.outgoing,
-                                isSpeaking: chatData.isSpeaking,
+                              return ValueListenableBuilder<double?>(
+                                valueListenable: _faceConnectProgress,
+                                builder: (context, progress, _) {
+                                  return HomeFooter(
+                                    activation: homeData.activation,
+                                    awaitingActivation:
+                                        homeData.awaitingActivation,
+                                    activationProgress:
+                                        homeData.activationProgress,
+                                    onConnect: _handleConnectChat,
+                                    onDisconnect: _handleDisconnectChat,
+                                    onManualSend: _handleManualSend,
+                                    isConnecting: homeData.isConnecting,
+                                    isConnected: homeData.isConnected,
+                                    listeningMode: listeningMode,
+                                    currentEmotion: chatData.emotion,
+                                    lastMessage: chatData.message,
+                                    lastTtsDurationMs: chatData.ttsDurationMs,
+                                    lastTtsText: chatData.ttsText,
+                                    faceConnectProgress: progress,
+                                    incomingLevel: chatData.incoming,
+                                    outgoingLevel: chatData.outgoing,
+                                    isSpeaking: chatData.isSpeaking,
+                                  );
+                                },
                               );
                             },
                           );
@@ -765,6 +819,11 @@ class _HomePageState extends State<HomePage> {
                                       CarouselSettings
                                     >(
                                       builder: (context, carouselSettings) {
+                                    return BlocBuilder<
+                                      FaceDetectionSettingsCubit,
+                                      FaceDetectionSettings
+                                    >(
+                                      builder: (context, faceSettings) {
                                     return BlocSelector<
                                       HomeCubit,
                                       HomeState,
@@ -830,6 +889,24 @@ class _HomePageState extends State<HomePage> {
                                                   cameraAspectRatio,
                                               onCameraAspectChanged:
                                                   _setCameraAspectRatio,
+                                              faceLandmarksEnabled:
+                                                  faceSettings.landmarksEnabled,
+                                              faceMeshEnabled:
+                                                  faceSettings.meshEnabled,
+                                              eyeTrackingEnabled:
+                                                  faceSettings.eyeTrackingEnabled,
+                                              onFaceLandmarksChanged: sheetContext
+                                                  .read<
+                                                      FaceDetectionSettingsCubit>()
+                                                  .setLandmarksEnabled,
+                                              onFaceMeshChanged: sheetContext
+                                                  .read<
+                                                      FaceDetectionSettingsCubit>()
+                                                  .setMeshEnabled,
+                                              onEyeTrackingChanged: sheetContext
+                                                  .read<
+                                                      FaceDetectionSettingsCubit>()
+                                                  .setEyeTrackingEnabled,
                                               themeMode: themeMode,
                                               themePalette: themePalette,
                                               onThemePaletteChanged: sheetContext
@@ -909,11 +986,13 @@ class _HomePageState extends State<HomePage> {
                                                 );
                                               },
                                             );
-                                          },
-                                        );
+                                      },
+                                    );
                                       },
                                     );
                                   },
+                                );
+                              },
                                 );
                               },
                             );
@@ -952,5 +1031,63 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     _cameraAspectRatio.value = next;
+  }
+
+  void _handleFacePresenceChanged(bool hasFace) {
+    _facePresent = hasFace;
+    if (!hasFace) {
+      _stopFaceCountdown();
+      return;
+    }
+    final state = context.read<HomeCubit>().state;
+    if (_shouldAutoConnect(state)) {
+      _startFaceCountdown();
+    }
+  }
+
+  bool _shouldAutoConnect(HomeState state) =>
+      !state.isConnected && !state.isConnecting;
+
+  void _startFaceCountdown() {
+    if (_faceConnectTimer != null || !_facePresent) {
+      return;
+    }
+    _faceConnectProgress.value = 0;
+    final startedAt = DateTime.now();
+    _faceConnectTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        if (!_facePresent) {
+          _stopFaceCountdown();
+          return;
+        }
+        final state = context.read<HomeCubit>().state;
+        if (!_shouldAutoConnect(state)) {
+          _stopFaceCountdown();
+          return;
+        }
+        final elapsed = DateTime.now().difference(startedAt);
+        final progress =
+            (elapsed.inMilliseconds / _faceConnectDelay.inMilliseconds)
+                .clamp(0.0, 1.0);
+        _faceConnectProgress.value = progress;
+        if (progress >= 1.0) {
+          _stopFaceCountdown();
+          if (_facePresent && _shouldAutoConnect(state)) {
+            _handleConnectChat();
+          }
+        }
+      },
+    );
+  }
+
+  void _stopFaceCountdown() {
+    _faceConnectTimer?.cancel();
+    _faceConnectTimer = null;
+    _faceConnectProgress.value = null;
   }
 }

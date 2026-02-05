@@ -171,4 +171,44 @@ List<TextSpan> highlightNumbers(
   return spans;
 }
 
+List<TextSpan> highlightTranscriptTokens(
+  String text,
+  TextStyle baseStyle,
+  TextStyle numberStyle,
+  TextStyle braceStyle,
+) {
+  final spans = <TextSpan>[];
+  final regex = RegExp(r'\*\*[^*]+\*\*|\{[^}]+\}');
+  var index = 0;
+  for (final match in regex.allMatches(text)) {
+    if (match.start > index) {
+      spans.addAll(
+        highlightNumbers(
+          text.substring(index, match.start),
+          baseStyle,
+          numberStyle,
+        ),
+      );
+    }
+    var segment = text.substring(match.start, match.end);
+    if (segment.startsWith('**') && segment.endsWith('**')) {
+      segment = segment.substring(2, segment.length - 2);
+    }
+    final boldNumberStyle =
+        numberStyle.copyWith(fontWeight: braceStyle.fontWeight);
+    spans.addAll(
+      highlightNumbers(
+        segment,
+        braceStyle,
+        boldNumberStyle,
+      ),
+    );
+    index = match.end;
+  }
+  if (index < text.length) {
+    spans.addAll(highlightNumbers(text.substring(index), baseStyle, numberStyle));
+  }
+  return spans;
+}
+
 String _two(int value) => value.toString().padLeft(2, '0');

@@ -33,6 +33,12 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onCameraEnabledChanged,
     required this.cameraAspectRatio,
     required this.onCameraAspectChanged,
+    required this.faceLandmarksEnabled,
+    required this.faceMeshEnabled,
+    required this.eyeTrackingEnabled,
+    required this.onFaceLandmarksChanged,
+    required this.onFaceMeshChanged,
+    required this.onEyeTrackingChanged,
     required this.themeMode,
     required this.themePalette,
     required this.onThemePaletteChanged,
@@ -78,6 +84,12 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<bool> onCameraEnabledChanged;
   final double cameraAspectRatio;
   final ValueChanged<double> onCameraAspectChanged;
+  final bool faceLandmarksEnabled;
+  final bool faceMeshEnabled;
+  final bool eyeTrackingEnabled;
+  final ValueChanged<bool> onFaceLandmarksChanged;
+  final ValueChanged<bool> onFaceMeshChanged;
+  final ValueChanged<bool> onEyeTrackingChanged;
   final ThemeMode themeMode;
   final AppThemePalette themePalette;
   final ValueChanged<AppThemePalette> onThemePaletteChanged;
@@ -189,6 +201,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
   late int _paletteIndex;
   late int _cameraAspectIndex;
   late bool _cameraEnabledLocal;
+  late bool _faceLandmarksLocal;
+  late bool _faceMeshLocal;
+  late bool _eyeTrackingLocal;
   late int _listeningModeIndex;
   late int _textSendModeIndex;
   late int _carouselHeightIndex;
@@ -206,6 +221,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _paletteIndex = _paletteToIndex(widget.themePalette);
     _cameraAspectIndex = _cameraAspectToIndex(widget.cameraAspectRatio);
     _cameraEnabledLocal = widget.cameraEnabled;
+    _faceLandmarksLocal = widget.faceLandmarksEnabled;
+    _faceMeshLocal = widget.faceMeshEnabled;
+    _eyeTrackingLocal = widget.eyeTrackingEnabled;
     _listeningModeIndex = _listeningModeToIndex(widget.listeningMode);
     _textSendModeIndex = _textSendModeToIndex(widget.textSendMode);
     _greetingText = widget.connectGreeting;
@@ -290,6 +308,21 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     if (_cameraEnabledLocal != widget.cameraEnabled) {
       setState(() {
         _cameraEnabledLocal = widget.cameraEnabled;
+      });
+    }
+    if (_faceLandmarksLocal != widget.faceLandmarksEnabled) {
+      setState(() {
+        _faceLandmarksLocal = widget.faceLandmarksEnabled;
+      });
+    }
+    if (_faceMeshLocal != widget.faceMeshEnabled) {
+      setState(() {
+        _faceMeshLocal = widget.faceMeshEnabled;
+      });
+    }
+    if (_eyeTrackingLocal != widget.eyeTrackingEnabled) {
+      setState(() {
+        _eyeTrackingLocal = widget.eyeTrackingEnabled;
       });
     }
     final nextCarouselHeight = _carouselHeightToIndex(widget.carouselHeight);
@@ -878,6 +911,114 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                           label: Text('16:9'),
                           child: SizedBox.shrink(),
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(Icons.center_focus_strong_outlined, size: iconSize),
+                  title: const Text('Mốc khuôn mặt'),
+                  suffix: Text(
+                    _faceLandmarksLocal ? 'Bật' : 'Tắt',
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _faceLandmarksLocal ? 1 : 0,
+                        onChange: (index) {
+                          final enabled = index == 1;
+                          setState(() {
+                            _faceLandmarksLocal = enabled;
+                          });
+                          widget.onFaceLandmarksChanged(enabled);
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      children: const [
+                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
+                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(Icons.grid_view_outlined, size: iconSize),
+                  title: const Text('Facial Mesh'),
+                  suffix: Text(
+                    _faceMeshLocal ? 'Bật' : 'Tắt',
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _faceMeshLocal ? 1 : 0,
+                        onChange: (index) {
+                          final enabled = index == 1;
+                          setState(() {
+                            _faceMeshLocal = enabled;
+                          });
+                          widget.onFaceMeshChanged(enabled);
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      children: const [
+                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
+                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
+                      ],
+                    ),
+                  ),
+                ),
+                FItem(
+                  prefix: Icon(Icons.visibility_outlined, size: iconSize),
+                  title: const Text('Eye Tracking'),
+                  suffix: Text(
+                    _eyeTrackingLocal ? 'Bật' : 'Tắt',
+                    style: context.theme.typography.base.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: context.theme.colors.foreground,
+                    ),
+                  ),
+                ),
+                FItem.raw(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
+                    child: FTabs(
+                      control: FTabControl.lifted(
+                        index: _eyeTrackingLocal ? 1 : 0,
+                        onChange: (index) {
+                          final enabled = index == 1;
+                          setState(() {
+                            _eyeTrackingLocal = enabled;
+                          });
+                          widget.onEyeTrackingChanged(enabled);
+                        },
+                      ),
+                      style: (style) => style.copyWith(
+                        spacing: 0,
+                        height: tabHeight,
+                      ),
+                      children: const [
+                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
+                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
                       ],
                     ),
                   ),

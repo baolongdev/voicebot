@@ -15,6 +15,7 @@ import '../presentation/app/listening_mode_cubit.dart';
 import '../presentation/app/carousel_settings_cubit.dart';
 import '../presentation/app/text_send_mode_cubit.dart';
 import '../presentation/app/connect_greeting_cubit.dart';
+import '../presentation/app/face_detection_settings_cubit.dart';
 import '../presentation/app/theme_mode_cubit.dart';
 import '../presentation/app/theme_palette_cubit.dart';
 import '../presentation/app/text_scale_cubit.dart';
@@ -81,6 +82,12 @@ Future<void> configureDependencies() async {
   if (!getIt.isRegistered<ConnectGreetingCubit>()) {
     getIt.registerLazySingleton<ConnectGreetingCubit>(
       () => ConnectGreetingCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<FaceDetectionSettingsCubit>()) {
+    getIt.registerLazySingleton<FaceDetectionSettingsCubit>(
+      () => FaceDetectionSettingsCubit(getIt<UiSettingsStore>()),
     );
   }
 

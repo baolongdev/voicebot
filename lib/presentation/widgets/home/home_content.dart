@@ -15,6 +15,11 @@ class HomeContent extends StatelessWidget {
     required this.cameraEnabled,
     required this.cameraAspectRatio,
     required this.onCameraEnabledChanged,
+    required this.onFacePresenceChanged,
+    required this.detectFacesEnabled,
+    required this.faceLandmarksEnabled,
+    required this.faceMeshEnabled,
+    required this.eyeTrackingEnabled,
     required this.carouselHeight,
     required this.carouselAutoPlay,
     required this.carouselAutoPlayInterval,
@@ -28,6 +33,11 @@ class HomeContent extends StatelessWidget {
   final bool cameraEnabled;
   final double cameraAspectRatio;
   final ValueChanged<bool> onCameraEnabledChanged;
+  final ValueChanged<bool> onFacePresenceChanged;
+  final bool detectFacesEnabled;
+  final bool faceLandmarksEnabled;
+  final bool faceMeshEnabled;
+  final bool eyeTrackingEnabled;
   final double carouselHeight;
   final bool carouselAutoPlay;
   final Duration carouselAutoPlayInterval;
@@ -105,7 +115,12 @@ class HomeContent extends StatelessWidget {
                   areaSize: Size(constraints.maxWidth, constraints.maxHeight),
                   enabled: cameraEnabled,
                   onEnabledChanged: onCameraEnabledChanged,
+                  onFacePresenceChanged: onFacePresenceChanged,
+                  detectFacesEnabled: detectFacesEnabled,
                   aspectRatio: cameraAspectRatio,
+                  faceLandmarksEnabled: faceLandmarksEnabled,
+                  faceMeshEnabled: faceMeshEnabled,
+                  eyeTrackingEnabled: eyeTrackingEnabled,
                 ),
               ],
             );

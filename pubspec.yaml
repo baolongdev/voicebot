@@ -43,6 +43,8 @@ dependencies:
   url_launcher: ^6.3.0
   camera: ^0.10.5+9
   carousel_slider: ^5.0.0
+  face_detection_tflite: ^4.4.1
+  image: ^4.2.0
 
 dev_dependencies:
   flutter_test:

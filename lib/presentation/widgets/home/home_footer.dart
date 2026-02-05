@@ -28,6 +28,7 @@ class HomeFooter extends StatelessWidget {
     required this.lastMessage,
     required this.lastTtsDurationMs,
     required this.lastTtsText,
+    required this.faceConnectProgress,
     required this.incomingLevel,
     required this.outgoingLevel,
     required this.isSpeaking,
@@ -46,6 +47,7 @@ class HomeFooter extends StatelessWidget {
   final ChatMessage? lastMessage;
   final int? lastTtsDurationMs;
   final String? lastTtsText;
+  final double? faceConnectProgress;
   final double incomingLevel;
   final double outgoingLevel;
   final bool isSpeaking;
@@ -122,7 +124,10 @@ class HomeFooter extends StatelessWidget {
                 semanticsLabel: 'Activation progress',
               ),
           ] else ...[
-            _TranscriptPanel(message: lastTranscript),
+            _TranscriptPanel(
+              message: lastTranscript,
+              faceConnectProgress: faceConnectProgress,
+            ),
           ],
           const SizedBox(height: ThemeTokens.spaceSm),
           _AudioLevelBar(
@@ -303,9 +308,13 @@ class AuthorLink extends StatelessWidget {
 }
 
 class _TranscriptPanel extends StatefulWidget {
-  const _TranscriptPanel({required this.message});
+  const _TranscriptPanel({
+    required this.message,
+    required this.faceConnectProgress,
+  });
 
   final ChatMessage? message;
+  final double? faceConnectProgress;
 
   @override
   State<_TranscriptPanel> createState() => _TranscriptPanelState();
@@ -320,14 +329,27 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
   @override
   Widget build(BuildContext context) {
     final message = widget.message;
+    final progress = widget.faceConnectProgress;
     if (message == null) {
-      return Text(
-        'Transcript / lời thoại',
-        textAlign: TextAlign.left,
-        style: context.theme.typography.xl.copyWith(
-          color: context.theme.colors.mutedForeground,
-          fontWeight: FontWeight.w600,
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (progress != null)
+            FDeterminateProgress(
+              value: progress.clamp(0.0, 1.0),
+              semanticsLabel: 'Face connect progress',
+            ),
+          if (progress != null)
+            const SizedBox(height: ThemeTokens.spaceXs),
+          Text(
+            'Transcript / lời thoại',
+            textAlign: TextAlign.left,
+            style: context.theme.typography.xl.copyWith(
+              color: context.theme.colors.mutedForeground,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
       );
     }
 
@@ -339,11 +361,17 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
       fontWeight: FontWeight.w600,
     );
     final prefixStyle = readStyle.copyWith(fontWeight: FontWeight.w700);
+    final braceStyle = readStyle.copyWith(fontWeight: FontWeight.w800);
     final numberReadStyle = TextStyle(
       color: context.theme.colors.destructive,
       fontWeight: FontWeight.w700,
     );
-    final styleHash = Object.hash(readStyle, numberReadStyle, prefixStyle);
+    final styleHash = Object.hash(
+      readStyle,
+      numberReadStyle,
+      prefixStyle,
+      braceStyle,
+    );
 
     if (_lastText != text ||
         _lastIsUser != isUser ||
@@ -351,7 +379,12 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
       final prefix = isUser ? 'USER: ' : 'AGENT: ';
       _spans = [
         TextSpan(text: prefix, style: prefixStyle),
-        ...highlightNumbers(text, readStyle, numberReadStyle),
+        ...highlightTranscriptTokens(
+          text,
+          readStyle,
+          numberReadStyle,
+          braceStyle,
+        ),
       ];
       _lastText = text;
       _lastIsUser = isUser;
@@ -360,12 +393,24 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
 
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 84),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text.rich(
-          TextSpan(children: _spans),
-          textAlign: TextAlign.left,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (progress != null)
+            FDeterminateProgress(
+              value: progress.clamp(0.0, 1.0),
+              semanticsLabel: 'Face connect progress',
+            ),
+          if (progress != null)
+            const SizedBox(height: ThemeTokens.spaceXs),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text.rich(
+              TextSpan(children: _spans),
+              textAlign: TextAlign.left,
+            ),
+          ),
+        ],
       ),
     );
   }
