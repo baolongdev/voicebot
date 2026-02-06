@@ -62,6 +62,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onCarouselAnimationChanged,
     required this.onCarouselViewportChanged,
     required this.onCarouselEnlargeChanged,
+    required this.onOpenMcpFlow,
   });
 
   final double? volume;
@@ -113,6 +114,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<Duration> onCarouselAnimationChanged;
   final ValueChanged<double> onCarouselViewportChanged;
   final ValueChanged<bool> onCarouselEnlargeChanged;
+  final VoidCallback onOpenMcpFlow;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
@@ -125,6 +127,7 @@ enum _SettingsSection {
   appearance,
   text,
   carousel,
+  mcp,
 }
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet>
@@ -243,6 +246,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
       _SettingsSection.appearance: false,
       _SettingsSection.text: false,
       _SettingsSection.carousel: false,
+      _SettingsSection.mcp: false,
     };
     _sectionControllers = {
       for (final section in _SettingsSection.values)
@@ -1410,6 +1414,42 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                     ),
                   ),
                 ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('MCP', _SettingsSection.mcp),
+              sectionBody(
+                _SettingsSection.mcp,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                    FItem(
+                      prefix: Icon(Icons.extension_outlined, size: iconSize),
+                      title: const Text('MCP Server Flow'),
+                      details: Text(
+                        'Quản lý tools và JSON‑RPC',
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: widget.onOpenMcpFlow,
+                            child: const Text('Mở MCP Manager'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
           ],

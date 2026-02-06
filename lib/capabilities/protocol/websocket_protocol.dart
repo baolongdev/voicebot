@@ -106,6 +106,9 @@ class WebsocketProtocol extends Protocol {
       'type': 'hello',
       'version': 1,
       'transport': 'websocket',
+      'features': <String, dynamic>{
+        'mcp': true,
+      },
       'audio_params': <String, dynamic>{
         'format': 'opus',
         'sample_rate': AudioConfig.sampleRate,

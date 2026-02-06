@@ -168,6 +168,10 @@ class _ServerFormViewState extends State<_ServerFormView> {
                   uiState: state.uiState,
                   lastResult: state.lastResult,
                 ),
+                SizedBox(height: sectionGap),
+                _McpFlowCard(
+                  onOpen: () => context.go(Routes.mcpFlow),
+                ),
               ],
             ),
           ),
@@ -364,6 +368,47 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _McpFlowCard extends StatelessWidget {
+  const _McpFlowCard({required this.onOpen});
+
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return FCard(
+      child: Padding(
+        padding: const EdgeInsets.all(ThemeTokens.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'MCP Server Flow',
+              style: context.theme.typography.base.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: ThemeTokens.spaceSm),
+            Text(
+              'Xem chi tiết luồng JSON‑RPC 2.0 và danh sách tools.',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+            const SizedBox(height: ThemeTokens.spaceMd),
+            SizedBox(
+              height: ThemeTokens.buttonHeight,
+              child: FButton(
+                onPress: onOpen,
+                child: const Text('Mở MCP Server Flow'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

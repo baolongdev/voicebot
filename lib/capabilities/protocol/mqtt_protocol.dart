@@ -167,6 +167,9 @@ class MqttProtocol extends Protocol {
       'type': 'hello',
       'version': 3,
       'transport': 'udp',
+      'features': <String, dynamic>{
+        'mcp': true,
+      },
       'audio_params': <String, dynamic>{
         'format': 'opus',
         'sample_rate': AudioConfig.sampleRate,

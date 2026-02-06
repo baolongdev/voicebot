@@ -5,6 +5,7 @@ class Routes {
   static const String home = '/home';
   static const String form = '/form';
   static const String chat = '/chat';
+  static const String mcpFlow = '/mcp-flow';
   static const String root = '/';
 }
 
@@ -15,6 +16,7 @@ class RouteNames {
   static const String home = 'home';
   static const String form = 'form';
   static const String chat = 'chat';
+  static const String mcpFlow = 'mcpFlow';
   static const String root = 'root';
 }
 
@@ -24,6 +26,7 @@ class RouteMeta {
   static const Set<String> publicRoutes = <String>{
     Routes.splash,
     Routes.form,
+    Routes.mcpFlow,
   };
 
   static const Set<String> protectedRoutes = <String>{
