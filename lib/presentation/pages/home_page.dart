@@ -7,6 +7,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../capabilities/protocol/protocol.dart';
 import '../../core/config/app_config.dart';
@@ -40,6 +41,7 @@ import '../widgets/home/home_header.dart';
 import '../widgets/home/home_settings_sheet.dart';
 import '../widgets/home/wifi_password_sheet.dart';
 import 'permission_sheet_content.dart';
+import '../../routing/routes.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -981,6 +983,11 @@ class _HomePageState extends State<HomePage> {
                                                       .read<
                                                           CarouselSettingsCubit>()
                                                       .setEnlargeCenter,
+                                              onOpenMcpFlow: () =>
+                                                  _openMcpFlow(
+                                                    controller,
+                                                    sheetContext,
+                                                  ),
                                                 );
                                               },
                                                 );
@@ -1016,6 +1023,21 @@ class _HomePageState extends State<HomePage> {
       _settingsSheetVisible = !isOpen;
     });
     controller.toggle();
+  }
+
+  void _openMcpFlow(
+    FPersistentSheetController controller,
+    BuildContext sheetContext,
+  ) {
+    final isOpen = controller.status == AnimationStatus.completed ||
+        controller.status == AnimationStatus.forward;
+    if (isOpen) {
+      controller.toggle();
+    }
+    if (!mounted || !sheetContext.mounted) {
+      return;
+    }
+    sheetContext.go(Routes.mcpFlow);
   }
 
   void _setCameraEnabled(bool enabled) {

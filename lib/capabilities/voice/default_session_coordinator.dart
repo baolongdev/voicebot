@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -8,6 +9,7 @@ import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import '../../core/audio/audio_config.dart';
 import '../../core/logging/app_logger.dart';
 import '../../core/utils/throttle.dart';
+import '../mcp/mcp_server.dart';
 import '../protocol/protocol.dart';
 import 'audio_input.dart';
 import 'audio_output.dart';
@@ -37,6 +39,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   final StreamController<bool> _speakingController =
       StreamController<bool>.broadcast();
 
+  final McpServer _mcpServer = McpServer();
   TransportClient? _transport;
   StreamSubscription<Map<String, dynamic>>? _jsonSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -359,6 +362,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
   void _handleIncomingJson(Map<String, dynamic> json) {
     final type = json['type'] as String? ?? '';
+    if (type == 'mcp') {
+      unawaited(_handleMcpMessage(json));
+      return;
+    }
     if (type == 'tts') {
       final state = json['state'] as String? ?? '';
       if (state == 'start' || state == 'sentence_start') {
@@ -368,6 +375,38 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       }
     }
     _jsonController.add(json);
+  }
+
+  Future<void> _handleMcpMessage(Map<String, dynamic> json) async {
+    final payload = json['payload'];
+    if (payload is! Map<String, dynamic>) {
+      return;
+    }
+    AppLogger.log(
+      'MCP',
+      'request=${jsonEncode(payload)}',
+      level: 'D',
+    );
+    final response = await _mcpServer.handleMessage(payload);
+    if (response == null) {
+      return;
+    }
+    final sessionId =
+        _transport?.sessionId ?? (json['session_id'] as String? ?? '');
+    if (sessionId.isEmpty) {
+      return;
+    }
+    final envelope = <String, dynamic>{
+      'session_id': sessionId,
+      'type': 'mcp',
+      'payload': response,
+    };
+    await sendText(jsonEncode(envelope));
+    AppLogger.log(
+      'MCP',
+      'response=${jsonEncode(response)}',
+      level: 'D',
+    );
   }
 
   void _handleIncomingAudio(Uint8List data) {
