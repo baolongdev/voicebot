@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:camera/camera.dart';
 import 'package:face_detection_tflite/face_detection_tflite.dart';
@@ -36,7 +37,8 @@ class HomeCameraOverlay extends StatefulWidget {
   State<HomeCameraOverlay> createState() => _HomeCameraOverlayState();
 }
 
-class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
+class _HomeCameraOverlayState extends State<HomeCameraOverlay>
+    with WidgetsBindingObserver {
   static const Size _defaultBoxSize = Size(200, 130);
   static const double _edgePadding = 12;
   bool _initialized = false;
@@ -44,6 +46,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
   bool _isDragging = false;
   bool _cameraEnabled = false;
   bool _cameraInitializing = false;
+  bool _cameraPausedByLifecycle = false;
   CameraController? _controller;
   Size _boxSize = _defaultBoxSize;
   final FaceDetectionEngine _faceEngine = FaceDetectionEngine();
@@ -55,6 +58,12 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
   List<Face> _faces = const [];
   int _rotationDegrees = 0;
   bool _hadFace = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didUpdateWidget(covariant HomeCameraOverlay oldWidget) {
@@ -77,15 +86,47 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
     }
     if (oldWidget.enabled != widget.enabled) {
       if (widget.enabled) {
-        _startCamera();
+        if (!_cameraPausedByLifecycle) {
+          unawaited(_startCamera());
+        }
       } else {
+        _cameraPausedByLifecycle = false;
         _stopCamera();
       }
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (_cameraPausedByLifecycle &&
+            widget.enabled &&
+            !_cameraInitializing &&
+            !_cameraEnabled) {
+          _cameraPausedByLifecycle = false;
+          unawaited(_startCamera(fromLifecycle: true));
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        if (widget.enabled &&
+            (_cameraEnabled || _cameraInitializing || _controller != null)) {
+          _cameraPausedByLifecycle = true;
+          unawaited(_pauseCameraForLifecycle());
+        }
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _disposeCamera();
     _faceEngine.dispose();
     super.dispose();
@@ -96,10 +137,13 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
     if (widget.areaSize.width <= 0 || widget.areaSize.height <= 0) {
       return const SizedBox.shrink();
     }
-    if (widget.enabled && !_cameraEnabled && !_cameraInitializing) {
+    if (widget.enabled &&
+        !_cameraEnabled &&
+        !_cameraInitializing &&
+        !_cameraPausedByLifecycle) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _startCamera();
+          unawaited(_startCamera());
         }
       });
     }
@@ -108,14 +152,11 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
       _boxSize = nextBoxSize;
       _offset = _clampOffset(_offset);
     }
-    final facesForOverlay =
-        widget.detectFacesEnabled ? _faces : const <Face>[];
+    final facesForOverlay = widget.detectFacesEnabled ? _faces : const <Face>[];
     return AnimatedPositioned(
       left: _offset.dx,
       top: _offset.dy,
-      duration: _isDragging
-          ? Duration.zero
-          : const Duration(milliseconds: 220),
+      duration: _isDragging ? Duration.zero : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       child: GestureDetector(
         onPanStart: (_) {
@@ -139,7 +180,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
             border: Border.all(color: context.theme.colors.border),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withAlpha(40),
+                color: context.theme.colors.foreground.withAlpha(40),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -160,9 +201,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
                     color: context.theme.colors.primary,
                   )
                 else
-                  Container(
-                    color: context.theme.colors.background,
-                  ),
+                  Container(color: context.theme.colors.background),
                 if (!_cameraEnabled)
                   Center(
                     child: Container(
@@ -251,30 +290,57 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
     });
   }
 
-  Future<void> _startCamera() async {
+  Future<void> _startCamera({bool fromLifecycle = false}) async {
+    if (!widget.enabled) {
+      return;
+    }
+    if (_cameraInitializing) {
+      return;
+    }
+    if (_cameraEnabled && _controller?.value.isInitialized == true) {
+      return;
+    }
+    if (_cameraPausedByLifecycle && !fromLifecycle) {
+      return;
+    }
+
     setState(() {
       _cameraInitializing = true;
     });
-    final status = await Permission.camera.request();
+    PermissionStatus status;
+    try {
+      status = await Permission.camera.request();
+    } catch (_) {
+      status = PermissionStatus.denied;
+    }
     if (!mounted) {
       return;
     }
     if (!status.isGranted) {
       setState(() {
         _cameraInitializing = false;
+        _cameraPausedByLifecycle = fromLifecycle;
       });
-      widget.onEnabledChanged(false);
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 1),
-        icon: const Icon(FIcons.cameraOff),
-        title: const Text('Cần quyền camera'),
-        description: const Text('Hãy cấp quyền camera để bật xem trước.'),
-      );
+      if (!fromLifecycle) {
+        widget.onEnabledChanged(false);
+        showFToast(
+          context: context,
+          alignment: FToastAlignment.topRight,
+          duration: const Duration(seconds: 1),
+          icon: const Icon(FIcons.cameraOff),
+          title: const Text('Cần quyền camera'),
+          description: const Text('Hãy cấp quyền camera để bật xem trước.'),
+        );
+      }
       return;
     }
-    final cameras = await availableCameras();
+
+    List<CameraDescription> cameras;
+    try {
+      cameras = await availableCameras();
+    } catch (_) {
+      cameras = const <CameraDescription>[];
+    }
     if (!mounted) {
       return;
     }
@@ -289,16 +355,19 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
     if (frontCamera == null) {
       setState(() {
         _cameraInitializing = false;
+        _cameraPausedByLifecycle = fromLifecycle;
       });
-      widget.onEnabledChanged(false);
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 1),
-        icon: const Icon(FIcons.cameraOff),
-        title: const Text('Không tìm thấy camera'),
-        description: const Text('Thiết bị không có camera trước.'),
-      );
+      if (!fromLifecycle) {
+        widget.onEnabledChanged(false);
+        showFToast(
+          context: context,
+          alignment: FToastAlignment.topRight,
+          duration: const Duration(seconds: 1),
+          icon: const Icon(FIcons.cameraOff),
+          title: const Text('Không tìm thấy camera'),
+          description: const Text('Thiết bị không có camera trước.'),
+        );
+      }
       return;
     }
     final controller = CameraController(
@@ -313,47 +382,56 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
       await _initializeFaceDetector();
       await controller.startImageStream(_processCameraImage);
       if (!mounted) {
-        await controller.stopImageStream();
-        await controller.dispose();
+        await _disposeCameraController(controller);
         return;
       }
+      final previousController = _controller;
       setState(() {
-        _controller?.dispose();
         _controller = controller;
         _cameraEnabled = true;
         _cameraInitializing = false;
+        _cameraPausedByLifecycle = false;
       });
+      if (previousController != null && previousController != controller) {
+        unawaited(_disposeCameraController(previousController));
+      }
       widget.onEnabledChanged(true);
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 1),
-        icon: const Icon(FIcons.camera),
-        title: const Text('Bật camera'),
-        description: const Text('Nhấn lần nữa để tắt camera.'),
-      );
+      if (!fromLifecycle) {
+        showFToast(
+          context: context,
+          alignment: FToastAlignment.topRight,
+          duration: const Duration(seconds: 1),
+          icon: const Icon(FIcons.camera),
+          title: const Text('Bật camera'),
+          description: const Text('Nhấn lần nữa để tắt camera.'),
+        );
+      }
     } catch (_) {
-      await controller.dispose();
+      await _disposeCameraController(controller);
       if (!mounted) {
         return;
       }
       setState(() {
         _cameraEnabled = false;
         _cameraInitializing = false;
+        _cameraPausedByLifecycle = fromLifecycle;
       });
-      widget.onEnabledChanged(false);
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 1),
-        icon: const Icon(FIcons.cameraOff),
-        title: const Text('Không bật được camera'),
-        description: const Text('Vui lòng thử lại.'),
-      );
+      if (!fromLifecycle) {
+        widget.onEnabledChanged(false);
+        showFToast(
+          context: context,
+          alignment: FToastAlignment.topRight,
+          duration: const Duration(seconds: 1),
+          icon: const Icon(FIcons.cameraOff),
+          title: const Text('Không bật được camera'),
+          description: const Text('Vui lòng thử lại.'),
+        );
+      }
     }
   }
 
   void _stopCamera() {
+    _cameraPausedByLifecycle = false;
     _disposeCamera();
     if (!mounted) {
       return;
@@ -366,20 +444,46 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
   }
 
   void _disposeCamera() {
-    if (_controller?.value.isStreamingImages == true) {
-      _controller?.stopImageStream();
-    }
-    _controller?.dispose();
+    final controller = _controller;
     _controller = null;
+    if (controller != null) {
+      unawaited(_disposeCameraController(controller));
+    }
+  }
+
+  Future<void> _pauseCameraForLifecycle() async {
+    final controller = _controller;
+    _controller = null;
+    _faceProcessing = false;
+    if (mounted) {
+      setState(() {
+        _cameraEnabled = false;
+        _cameraInitializing = false;
+      });
+    }
+    _clearFaceState(clearPreview: true);
+    await _disposeCameraController(controller);
+  }
+
+  Future<void> _disposeCameraController(CameraController? controller) async {
+    if (controller == null) {
+      return;
+    }
+    try {
+      if (controller.value.isStreamingImages) {
+        await controller.stopImageStream();
+      }
+    } catch (_) {}
+    try {
+      await controller.dispose();
+    } catch (_) {}
   }
 
   Future<void> _initializeFaceDetector() async {
     if (_faceReady) {
       return;
     }
-    await _faceEngine.initialize(
-      model: FaceDetectionModel.frontCamera,
-    );
+    await _faceEngine.initialize(model: FaceDetectionModel.frontCamera);
     _faceReady = true;
   }
 
@@ -424,10 +528,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay> {
         if (hasFace) {
           _faces = faces;
         }
-        _lastImageSize = Size(
-          image.width.toDouble(),
-          image.height.toDouble(),
-        );
+        _lastImageSize = Size(image.width.toDouble(), image.height.toDouble());
       });
     } catch (_) {
       // Ignore frame failures.
@@ -522,14 +623,12 @@ class _CameraPreviewLayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final preview = previewSize ??
-        controller.value.previewSize ??
-        const Size(1, 1);
+    final preview =
+        previewSize ?? controller.value.previewSize ?? const Size(1, 1);
     return LayoutBuilder(
       builder: (context, constraints) {
         final boxSize = constraints.biggest;
-        final isQuarterTurn =
-            rotationDegrees == 90 || rotationDegrees == 270;
+        final isQuarterTurn = rotationDegrees == 90 || rotationDegrees == 270;
         final effectivePreview = isQuarterTurn
             ? Size(preview.height, preview.width)
             : preview;
@@ -632,8 +731,8 @@ class _FaceOverlayPainter extends CustomPainter {
     final previewSource = previewSize == null
         ? sourceSize
         : (isQuarterTurn
-            ? Size(previewSize!.height, previewSize!.width)
-            : previewSize!);
+              ? Size(previewSize!.height, previewSize!.width)
+              : previewSize!);
 
     final transformed = corners.map((point) {
       var result = _rotatePoint(point);
@@ -671,17 +770,15 @@ class _FaceOverlayPainter extends CustomPainter {
     return Rect.fromLTRB(rect.left, rect.top, rect.right, rect.bottom);
   }
 
-  Offset _toOffset(Point point) => Offset(point.x.toDouble(), point.y.toDouble());
+  Offset _toOffset(Point point) =>
+      Offset(point.x.toDouble(), point.y.toDouble());
 
   Offset _rotatePoint(Offset point) {
     switch (rotationDegrees) {
       case 90:
         return Offset(point.dy, imageSize.width - point.dx);
       case 180:
-        return Offset(
-          imageSize.width - point.dx,
-          imageSize.height - point.dy,
-        );
+        return Offset(imageSize.width - point.dx, imageSize.height - point.dy);
       case 270:
         return Offset(imageSize.height - point.dy, point.dx);
       default:

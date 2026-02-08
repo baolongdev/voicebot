@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../capabilities/protocol/protocol.dart';
 import '../../../core/system/ota/model/ota_result.dart';
@@ -144,8 +143,9 @@ class HomeFooter extends StatelessWidget {
               builder: (context, constraints) {
                 final maxWidth = constraints.maxWidth;
                 const gap = ThemeTokens.spaceSm;
-                final available =
-                    (maxWidth - gap * 2).clamp(0.0, maxWidth).toDouble();
+                final available = (maxWidth - gap * 2)
+                    .clamp(0.0, maxWidth)
+                    .toDouble();
                 final connectWidth = available * 0.6;
                 final manualWidth = available * 0.2;
                 return SizedBox(
@@ -161,8 +161,8 @@ class HomeFooter extends StatelessWidget {
                           onPress: isConnected
                               ? onDisconnect
                               : isConnecting
-                                  ? null
-                                  : onConnect,
+                              ? null
+                              : onConnect,
                           style: isConnected
                               ? FButtonStyle.secondary(
                                   (style) => style.copyWith(
@@ -190,8 +190,8 @@ class HomeFooter extends StatelessWidget {
                                         color: headerBackground,
                                         foregroundColor: headerForeground,
                                       ).copyWith(
-                                        contentStyle: (content) => content
-                                            .copyWith(
+                                        contentStyle: (content) =>
+                                            content.copyWith(
                                               textStyle: content.textStyle.map(
                                                 (style) => style.copyWith(
                                                   fontWeight: FontWeight.w700,
@@ -199,11 +199,11 @@ class HomeFooter extends StatelessWidget {
                                               ),
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                horizontal: ThemeTokens
-                                                    .buttonPaddingHorizontal,
-                                                vertical: ThemeTokens
-                                                    .buttonPaddingVertical,
-                                              ),
+                                                    horizontal: ThemeTokens
+                                                        .buttonPaddingHorizontal,
+                                                    vertical: ThemeTokens
+                                                        .buttonPaddingVertical,
+                                                  ),
                                             ),
                                       ),
                                 ),
@@ -212,8 +212,8 @@ class HomeFooter extends StatelessWidget {
                             isConnected
                                 ? 'Ngắt kết nối'
                                 : isConnecting
-                                    ? 'Đang kết nối'
-                                    : 'Kết nối',
+                                ? 'Đang kết nối'
+                                : 'Kết nối',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -231,20 +231,19 @@ class HomeFooter extends StatelessWidget {
                                   : null,
                               style: FButtonStyle.secondary(
                                 (style) => style.copyWith(
-                                  contentStyle: (content) =>
-                                      content.copyWith(
-                                        textStyle: content.textStyle.map(
-                                          (style) => style.copyWith(
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal:
-                                              ThemeTokens.buttonPaddingHorizontal,
-                                          vertical:
-                                              ThemeTokens.buttonPaddingVertical,
-                                        ),
+                                  contentStyle: (content) => content.copyWith(
+                                    textStyle: content.textStyle.map(
+                                      (style) => style.copyWith(
+                                        fontWeight: FontWeight.w700,
                                       ),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal:
+                                          ThemeTokens.buttonPaddingHorizontal,
+                                      vertical:
+                                          ThemeTokens.buttonPaddingVertical,
+                                    ),
+                                  ),
                                 ),
                               ),
                               child: const Text('Gửi'),
@@ -258,7 +257,6 @@ class HomeFooter extends StatelessWidget {
             ),
           ),
           const SizedBox(height: ThemeTokens.spaceXs),
-          const Align(alignment: Alignment.center, child: AuthorLink()),
         ],
       ),
     );
@@ -274,36 +272,6 @@ class HomeFooter extends StatelessWidget {
       return 0;
     }
     return index;
-  }
-}
-
-class AuthorLink extends StatelessWidget {
-  const AuthorLink({super.key});
-
-  static final Uri _authorUri = Uri.parse('https://github.com/baolongdev');
-
-  @override
-  Widget build(BuildContext context) {
-    final style = context.theme.typography.sm.copyWith(
-      color: const Color(0xFF2F6BFF),
-      fontWeight: FontWeight.w900,
-      decoration: TextDecoration.underline,
-    );
-    return Semantics(
-      link: true,
-      button: true,
-      label: 'baolongdev',
-      child: GestureDetector(
-        onTap: () {
-          launchUrl(_authorUri, mode: LaunchMode.externalApplication);
-        },
-        child: Text(
-          'Author: baolongdev + ACLAB',
-          style: style,
-          textAlign: TextAlign.center,
-        ),
-      ),
-    );
   }
 }
 
@@ -339,8 +307,7 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
               value: progress.clamp(0.0, 1.0),
               semanticsLabel: 'Face connect progress',
             ),
-          if (progress != null)
-            const SizedBox(height: ThemeTokens.spaceXs),
+          if (progress != null) const SizedBox(height: ThemeTokens.spaceXs),
           Text(
             'Transcript / lời thoại',
             textAlign: TextAlign.left,
@@ -401,8 +368,7 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
               value: progress.clamp(0.0, 1.0),
               semanticsLabel: 'Face connect progress',
             ),
-          if (progress != null)
-            const SizedBox(height: ThemeTokens.spaceXs),
+          if (progress != null) const SizedBox(height: ThemeTokens.spaceXs),
           Align(
             alignment: Alignment.centerLeft,
             child: Text.rich(
@@ -440,16 +406,13 @@ class _AudioLevelBar extends StatelessWidget {
     final color = isServerSpeaking
         ? context.theme.colors.destructive
         : isUserSpeaking
-            ? context.theme.colors.primary
-            : context.theme.colors.mutedForeground;
-    final level =
-        isServerSpeaking ? serverLevel : (isUserSpeaking ? userLevel : 0.0);
+        ? context.theme.colors.primary
+        : context.theme.colors.mutedForeground;
+    final level = isServerSpeaking
+        ? serverLevel
+        : (isUserSpeaking ? userLevel : 0.0);
     return RepaintBoundary(
-      child: AudioWaveIndicator(
-        level: level,
-        color: color,
-        idle: !isConnected,
-      ),
+      child: AudioWaveIndicator(level: level, color: color, idle: !isConnected),
     );
   }
 }

@@ -83,7 +83,13 @@ class WebsocketProtocol extends Protocol {
 
     try {
       _websocket = await WebSocket.connect(url, headers: headers);
-    } catch (_) {
+    } catch (error) {
+      AppLogger.event(
+        'WS',
+        'connect_failed',
+        fields: <String, Object?>{'url': url, 'error': error.toString()},
+        level: 'E',
+      );
       if (!networkErrorStream.isClosed) {
         networkErrorStream.add('Server not found');
       }
@@ -93,9 +99,7 @@ class WebsocketProtocol extends Protocol {
     AppLogger.event(
       'WS',
       'connect_success',
-      fields: <String, Object?>{
-        'url': url,
-      },
+      fields: <String, Object?>{'url': url},
     );
     _isOpen = true;
     if (!audioChannelStateStream.isClosed) {
@@ -106,9 +110,7 @@ class WebsocketProtocol extends Protocol {
       'type': 'hello',
       'version': 1,
       'transport': 'websocket',
-      'features': <String, dynamic>{
-        'mcp': true,
-      },
+      'features': <String, dynamic>{'mcp': true},
       'audio_params': <String, dynamic>{
         'format': 'opus',
         'sample_rate': AudioConfig.sampleRate,
@@ -142,7 +144,13 @@ class WebsocketProtocol extends Protocol {
             if (decoded is Map<String, dynamic>) {
               json = decoded;
             }
-          } catch (_) {
+          } catch (error) {
+            AppLogger.event(
+              'WS',
+              'invalid_json',
+              fields: <String, Object?>{'error': error.toString()},
+              level: 'W',
+            );
             // Emit error instead of throwing inside listener.
             if (!networkErrorStream.isClosed) {
               networkErrorStream.add('Invalid JSON');
@@ -175,7 +183,12 @@ class WebsocketProtocol extends Protocol {
           return;
         }
         _isOpen = false;
-        _logMessage('socket error');
+        AppLogger.event(
+          'WS',
+          'socket_error',
+          fields: <String, Object?>{'error': error.toString()},
+          level: 'E',
+        );
         if (!networkErrorStream.isClosed) {
           networkErrorStream.add('Server not found');
         }
@@ -194,10 +207,7 @@ class WebsocketProtocol extends Protocol {
         AppLogger.event(
           'WS',
           'socket_closed',
-          fields: <String, Object?>{
-            'code': code?.toString(),
-            'reason': reason,
-          },
+          fields: <String, Object?>{'code': code?.toString(), 'reason': reason},
         );
         if (!networkErrorStream.isClosed) {
           networkErrorStream.add('Socket closed');
@@ -229,8 +239,13 @@ class WebsocketProtocol extends Protocol {
           return false;
         },
       );
-    } catch (_) {
-      AppLogger.event('WS', 'hello_timeout');
+    } catch (error) {
+      AppLogger.event(
+        'WS',
+        'hello_timeout',
+        fields: <String, Object?>{'error': error.toString()},
+        level: 'W',
+      );
       if (!networkErrorStream.isClosed) {
         networkErrorStream.add('Server timeout');
       }

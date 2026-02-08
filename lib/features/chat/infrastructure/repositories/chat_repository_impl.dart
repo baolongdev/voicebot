@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 import '../../../../capabilities/protocol/protocol.dart';
+import '../../../../capabilities/mcp/mcp_server.dart';
 import '../../../../capabilities/voice/session_coordinator.dart';
 import '../../../../capabilities/voice/transport_client.dart';
 import '../../../../capabilities/voice/websocket_transport_client.dart';
@@ -16,13 +18,12 @@ import '../../../../core/utils/throttle.dart';
 import '../services/xiaozhi_text_service.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
-  ChatRepositoryImpl({
-    required SessionCoordinator sessionCoordinator,
-  })  : _sessionCoordinator = sessionCoordinator,
-        _responsesController = StreamController<ChatResponse>.broadcast(),
-        _audioController = StreamController<List<int>>.broadcast(),
-        _errorController = StreamController<Failure>.broadcast(),
-        _speakingController = StreamController<bool>.broadcast() {
+  ChatRepositoryImpl({required SessionCoordinator sessionCoordinator})
+    : _sessionCoordinator = sessionCoordinator,
+      _responsesController = StreamController<ChatResponse>.broadcast(),
+      _audioController = StreamController<List<int>>.broadcast(),
+      _errorController = StreamController<Failure>.broadcast(),
+      _speakingController = StreamController<bool>.broadcast() {
     _textService = XiaozhiTextService(
       sessionCoordinator: _sessionCoordinator,
       sessionIdProvider: () => _transport?.sessionId ?? '',
@@ -44,9 +45,63 @@ class ChatRepositoryImpl implements ChatRepository {
   late final XiaozhiTextService _textService;
   bool _isConnected = false;
   bool _isSpeaking = false;
+  int _mcpRequestId = 30000;
+  bool _knowledgeVoiceInFlight = false;
+  String? _lastKnowledgeVoiceQuery;
+  DateTime _lastKnowledgeVoiceAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastLocalVolumeAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _suppressVolumeFailureUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _suppressBlockedTopicUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  int? _lastLocalVolumeTarget;
+  DateTime _lastBlockedReplyAt = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _lastBlockedInput;
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
   static const Duration _recentTextWindow = Duration(seconds: 10);
+  static const Duration _knowledgeVoiceCooldown = Duration(seconds: 6);
+  static const String _knowledgeMarker = '__KBCTX__';
   static const String _missingMqttCode = 'missing_mqtt';
+  static const bool _forceKnowledgeModeEnabled = true;
+  static const Set<String> _knowledgeKeywords = <String>{
+    'san pham',
+    'thong tin',
+    'xuat xu',
+    'thanh phan',
+    'han su dung',
+    'bao quan',
+    'huong dan',
+    'uu diem',
+    'cong dung',
+    'gia',
+    'quy cach',
+    'bot chanh',
+    'nuoc cot chanh',
+    'muoi ot xanh',
+    'tinh dau chanh',
+    'tinh dau',
+    'syrup chanh',
+    'chanh gung mat ong',
+    'chanh mat ong',
+    'tra mang cau',
+    'chavi',
+    'cha vi',
+    'chai vi',
+    'chanh viet',
+    'chanhviet',
+  };
+  static const Set<String> _smallTalkKeywords = <String>{
+    'xin chao',
+    'hello',
+    'hi',
+    'cam on',
+    'tam biet',
+    'hen gap lai',
+    'subscribe',
+    'la la school',
+    'bai hat',
+    'am nhac',
+    'nhac',
+    'video',
+  };
   final Throttler _errorLogThrottle = Throttler(25000);
 
   @override
@@ -91,16 +146,12 @@ class ChatRepositoryImpl implements ChatRepository {
     AppLogger.event(
       'ChatRepository',
       'connect_start',
-      fields: <String, Object?>{
-        'transport': config.transportType.name,
-      },
+      fields: <String, Object?>{'transport': config.transportType.name},
     );
 
     _transport = _buildTransport(config);
     if (_transport == null) {
-      return Result.failure(
-        const Failure(message: 'Không thể chọn transport'),
-      );
+      return Result.failure(const Failure(message: 'Không thể chọn transport'));
     }
 
     final opened = await _sessionCoordinator.connect(_transport!);
@@ -126,9 +177,7 @@ class ChatRepositoryImpl implements ChatRepository {
     AppLogger.event(
       'ChatRepository',
       'connect_success',
-      fields: <String, Object?>{
-        'transport': config.transportType.name,
-      },
+      fields: <String, Object?>{'transport': config.transportType.name},
     );
     _isConnected = true;
 
@@ -144,20 +193,18 @@ class ChatRepositoryImpl implements ChatRepository {
         _errorController.add(const Failure(message: 'Lỗi nhận âm thanh'));
       },
     );
-    _errorSubscription = _sessionCoordinator.errors.listen(
-      (error) {
-        if (_errorLogThrottle.shouldRun()) {
-          AppLogger.event(
-            'ChatRepository',
-            'network_error',
-            fields: <String, Object?>{'message': error},
-            level: 'D',
-          );
-        }
-        _isConnected = false;
-        _errorController.add(Failure(message: error));
-      },
-    );
+    _errorSubscription = _sessionCoordinator.errors.listen((error) {
+      if (_errorLogThrottle.shouldRun()) {
+        AppLogger.event(
+          'ChatRepository',
+          'network_error',
+          fields: <String, Object?>{'message': error},
+          level: 'D',
+        );
+      }
+      _isConnected = false;
+      _errorController.add(Failure(message: error));
+    });
     _speakingSubscription = _sessionCoordinator.speaking.listen(_setSpeaking);
 
     return Result.success(true);
@@ -175,9 +222,9 @@ class ChatRepositoryImpl implements ChatRepository {
     _errorSubscription = null;
     _speakingSubscription = null;
     try {
-      await _sessionCoordinator
-          .disconnect()
-          .timeout(const Duration(seconds: 1));
+      await _sessionCoordinator.disconnect().timeout(
+        const Duration(seconds: 1),
+      );
     } catch (_) {}
     _transport = null;
   }
@@ -206,9 +253,7 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<Result<bool>> sendGreeting(String text) async {
     if (!_isConnected) {
       if (_lastConfig == null) {
-        return Result.failure(
-          const Failure(message: 'Chưa cấu hình kết nối'),
-        );
+        return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
       }
       final result = await connect(_lastConfig!);
       if (!result.isSuccess) {
@@ -222,18 +267,18 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<Result<bool>> sendMessage(String text) async {
     if (!_isConnected) {
       if (_lastConfig == null) {
-        return Result.failure(
-          const Failure(message: 'Chưa cấu hình kết nối'),
-        );
+        return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
       }
       final result = await connect(_lastConfig!);
       if (!result.isSuccess) {
         return result;
       }
     }
-    return _textService.sendTextRequest(text);
+    final textWithKnowledge = _shouldUseKnowledgeContext(text)
+        ? await _buildKnowledgeContextPrompt(text)
+        : text;
+    return _textService.sendTextRequest(textWithKnowledge);
   }
-
 
   @override
   Future<void> sendAudio(List<int> data) async {
@@ -247,6 +292,24 @@ class ChatRepositoryImpl implements ChatRepository {
       if (state == 'sentence_start') {
         final text = json['text'] as String? ?? '';
         if (text.isNotEmpty) {
+          if (_shouldSuppressBlockedTopicText(text)) {
+            AppLogger.event(
+              'ChatRepository',
+              'suppress_blocked_topic_server_text',
+              fields: <String, Object?>{'text': text},
+              level: 'D',
+            );
+            return;
+          }
+          if (_shouldSuppressVolumeFailureText(text)) {
+            AppLogger.event(
+              'ChatRepository',
+              'suppress_server_volume_failure_text',
+              fields: <String, Object?>{'text': text},
+              level: 'D',
+            );
+            return;
+          }
           _rememberBotText(text);
           _responsesController.add(ChatResponse(text: text, isUser: false));
         }
@@ -258,11 +321,7 @@ class ChatRepositoryImpl implements ChatRepository {
       final emotion = json['emotion'] as String?;
       if (emotion != null && emotion.isNotEmpty) {
         _responsesController.add(
-          ChatResponse(
-            text: '',
-            isUser: false,
-            emotion: emotion,
-          ),
+          ChatResponse(text: '', isUser: false, emotion: emotion),
         );
       }
       return;
@@ -271,10 +330,19 @@ class ChatRepositoryImpl implements ChatRepository {
     if (type == 'stt') {
       final text = json['text'] as String? ?? '';
       if (text.isNotEmpty) {
+        if (text.contains(_knowledgeMarker) ||
+            text.contains('[NGU_CANH_TAI_LIEU_NOI_BO]')) {
+          return;
+        }
         if (_isSpeaking && _isLikelyEcho(text)) {
           return;
         }
         _responsesController.add(ChatResponse(text: text, isUser: true));
+        unawaited(_tryHandleBlockedPhrase(text));
+        unawaited(_tryHandleLocalVolumeCommand(text));
+        if (_shouldUseKnowledgeContext(text)) {
+          unawaited(_injectKnowledgeForVoice(text));
+        }
       }
       return;
     }
@@ -316,7 +384,9 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   void _rememberBotText(String text) {
-    _recentBotTexts.add(_RecentText(text: _normalize(text), at: DateTime.now()));
+    _recentBotTexts.add(
+      _RecentText(text: _normalize(text), at: DateTime.now()),
+    );
     _pruneRecentTexts();
   }
 
@@ -345,6 +415,849 @@ class ChatRepositoryImpl implements ChatRepository {
     return cleaned.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 
+  Future<String> _buildKnowledgeContextPrompt(String input) async {
+    final query = input.trim();
+    if (query.isEmpty || !_shouldUseKnowledgeContext(query)) {
+      return input;
+    }
+
+    try {
+      final snippets = await _searchKnowledgeSnippets(
+        query,
+        topK: _forceKnowledgeModeEnabled ? 1 : 3,
+        maxSnippetChars: 1400,
+        includeFullContent: true,
+      );
+      final normalizedQuestion = _normalizeQuestionForAgent(query);
+      if (snippets.isNotEmpty) {
+        AppLogger.event(
+          'ChatRepository',
+          'knowledge_context_attached',
+          fields: <String, Object?>{'matches': snippets.length},
+          level: 'D',
+        );
+
+        final contextBlock = snippets.join('\n');
+        return '''
+$input
+
+[NGU_CANH_TAI_LIEU_NOI_BO]
+$contextBlock
+[/NGU_CANH_TAI_LIEU_NOI_BO]
+
+THONG_TIN_BO_SUNG:
+- Cau hoi goc: "$query"
+- Cau hoi chuan hoa: "$normalizedQuestion"
+- Quy uoc alias: "cha vi", "chai vi", "tra vi", "cha vi", "chá vi" deu la "Chavi".
+
+YEU_CAU_TRA_LOI:
+- Neu NGU_CANH_TAI_LIEU_NOI_BO co thong tin lien quan, bat buoc tra loi theo noi dung do.
+- KHONG duoc noi "khong tim thay", "khong co thong tin", hoac "co the ban nham ten" khi da co du lieu lien quan.
+- Neu du lieu chua du, tra loi phan da co truoc, sau do moi hoi them.
+- Phai bat dau cau dau tien bang: "Theo du lieu noi bo cua Chanh Viet,".
+''';
+      }
+
+      final suggestions = await _listKnowledgeDocumentNames(limit: 5);
+      if (suggestions.isEmpty) {
+        return input;
+      }
+
+      return '''
+$input
+
+[GOI_Y_TAI_LIEU_NOI_BO]
+${suggestions.map((name) => '- $name').join('\n')}
+[/GOI_Y_TAI_LIEU_NOI_BO]
+
+YEU_CAU_TRA_LOI:
+- Neu chua co ket qua khop truc tiep, hay goi y nguoi dung chon san pham/chu de gan nhat tu GOI_Y_TAI_LIEU_NOI_BO.
+- Khong ket luan "he thong khong co thong tin" khi GOI_Y_TAI_LIEU_NOI_BO khong rong.
+''';
+    } catch (_) {
+      return input;
+    }
+  }
+
+  Object? _decodeToolPayload(Map<String, dynamic>? result) {
+    if (result == null) {
+      return null;
+    }
+    final content = result['content'];
+    if (content is! List || content.isEmpty) {
+      return null;
+    }
+    for (final item in content) {
+      if (item is! Map) {
+        continue;
+      }
+      final text = item['text'];
+      if (text is! String) {
+        continue;
+      }
+      final trimmed = text.trim();
+      if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          return jsonDecode(trimmed);
+        } catch (_) {
+          return null;
+        }
+      }
+      return trimmed;
+    }
+    return null;
+  }
+
+  Future<void> _injectKnowledgeForVoice(String text) async {
+    if (!_isConnected ||
+        _knowledgeVoiceInFlight ||
+        !_shouldUseKnowledgeContext(text)) {
+      return;
+    }
+    final normalized = _normalize(text);
+    if (normalized.length < 3 || normalized.length > 280) {
+      return;
+    }
+    final now = DateTime.now();
+    if (_lastKnowledgeVoiceQuery == normalized &&
+        now.difference(_lastKnowledgeVoiceAt) < _knowledgeVoiceCooldown) {
+      return;
+    }
+
+    _knowledgeVoiceInFlight = true;
+    _lastKnowledgeVoiceQuery = normalized;
+    _lastKnowledgeVoiceAt = now;
+    try {
+      final snippets = await _searchKnowledgeSnippets(
+        text,
+        topK: _forceKnowledgeModeEnabled ? 1 : 3,
+        maxSnippetChars: 1400,
+        includeFullContent: true,
+      );
+      final normalizedQuestion = _normalizeQuestionForAgent(text);
+      var knowledgeBlock = '';
+      var hasDirectMatch = false;
+      if (snippets.isNotEmpty) {
+        knowledgeBlock = snippets.join('\n');
+        hasDirectMatch = true;
+      } else {
+        final suggestions = await _listKnowledgeDocumentNames(limit: 5);
+        if (suggestions.isEmpty) {
+          return;
+        }
+        knowledgeBlock = suggestions.map((name) => '- $name').join('\n');
+      }
+
+      if (knowledgeBlock.isEmpty) {
+        return;
+      }
+
+      final assistPrompt =
+          '''
+$_knowledgeMarker
+Cau hoi nguoi dung: "$text"
+ Cau hoi chuan hoa: "$normalizedQuestion"
+ Quy uoc alias: "cha vi", "chai vi", "tra vi", "cha vi", "chá vi" deu la "Chavi".
+${hasDirectMatch ? 'Du lieu noi bo lien quan:' : 'Danh sach tai lieu hien co (goi y):'}
+$knowledgeBlock
+YEU_CAU_TRA_LOI:
+- Neu co du lieu lien quan, bat buoc uu tien du lieu noi bo o tren.
+- KHONG duoc noi "khong tim thay", "khong co thong tin", hoac "co the ban nham ten" khi da co du lieu lien quan.
+- Neu chua khop truc tiep, goi y nguoi dung chon san pham/chu de gan nhat trong danh sach tai lieu.
+- Khong tra loi "khong tim thay thong tin" khi danh sach tai lieu khong rong.
+- Neu da co du lieu lien quan, phai bat dau cau dau tien bang: "Theo du lieu noi bo cua Chanh Viet,".
+''';
+      await _textService.sendTextRequest(assistPrompt, useTextType: true);
+      AppLogger.event(
+        'ChatRepository',
+        'knowledge_voice_context_sent',
+        fields: <String, Object?>{
+          'matches': snippets.length,
+          'mode': hasDirectMatch ? 'direct' : 'suggestion',
+        },
+        level: 'D',
+      );
+    } catch (_) {
+      // Ignore knowledge assist failures to keep voice flow uninterrupted.
+    } finally {
+      _knowledgeVoiceInFlight = false;
+    }
+  }
+
+  Future<List<String>> _searchKnowledgeSnippets(
+    String query, {
+    required int topK,
+    required int maxSnippetChars,
+    bool includeFullContent = false,
+  }) async {
+    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+      'jsonrpc': '2.0',
+      'id': _mcpRequestId++,
+      'method': 'tools/call',
+      'params': <String, dynamic>{
+        'name': 'self.knowledge.search',
+        'arguments': <String, dynamic>{'query': query, 'top_k': topK},
+      },
+    });
+    if (response == null) {
+      return const <String>[];
+    }
+
+    final error = response['error'];
+    if (error is Map && error['message'] is String) {
+      return const <String>[];
+    }
+
+    final result = response['result'];
+    final payload = _decodeToolPayload(
+      result is Map<String, dynamic>
+          ? result
+          : result is Map
+          ? Map<String, dynamic>.from(result)
+          : null,
+    );
+    if (payload is! Map) {
+      return const <String>[];
+    }
+
+    final rows = payload['results'];
+    if (rows is! List || rows.isEmpty) {
+      return const <String>[];
+    }
+
+    final snippets = <String>[];
+    for (final row in rows) {
+      if (row is! Map) {
+        continue;
+      }
+      final name = (row['name'] ?? '').toString().trim();
+      final title = (row['title'] ?? '').toString().trim();
+      final docType = (row['doc_type'] ?? '').toString().trim();
+      final summary = (row['summary'] ?? '').toString().trim();
+      final usage = (row['usage'] ?? '').toString().trim();
+      final safetyNote = (row['safety_note'] ?? '').toString().trim();
+      final fieldHitsRaw = row['field_hits'];
+      final fieldHits = fieldHitsRaw is List
+          ? fieldHitsRaw.map((item) => item.toString()).toList()
+          : const <String>[];
+      final snippet = (row['snippet'] ?? '').toString().trim();
+      final content = (row['content'] ?? '').toString().trim();
+      final selected = includeFullContent && content.isNotEmpty
+          ? _extractRelevantContext(content: content, query: query)
+          : snippet;
+      if (selected.isEmpty) {
+        continue;
+      }
+      final reduced = selected.length > maxSnippetChars
+          ? '${selected.substring(0, maxSnippetChars)}...'
+          : selected;
+      final label = name.isEmpty ? 'tai_lieu' : name;
+      final buffer = StringBuffer();
+      buffer.writeln('[TAI_LIEU] $label');
+      if (title.isNotEmpty) {
+        buffer.writeln('[TITLE] $title');
+      }
+      if (docType.isNotEmpty) {
+        buffer.writeln('[DOC_TYPE] $docType');
+      }
+      if (fieldHits.isNotEmpty) {
+        buffer.writeln('[FIELD_HITS] ${fieldHits.join(', ')}');
+      }
+      if (summary.isNotEmpty) {
+        buffer.writeln('[SUMMARY] $summary');
+      }
+      buffer.writeln('[CONTENT] $reduced');
+      if (usage.isNotEmpty) {
+        buffer.writeln('[USAGE] $usage');
+      }
+      if (safetyNote.isNotEmpty) {
+        buffer.writeln('[SAFETY_NOTE] $safetyNote');
+      }
+      snippets.add(buffer.toString().trim());
+    }
+    return snippets;
+  }
+
+  String _extractRelevantContext({
+    required String content,
+    required String query,
+  }) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+
+    final kdocSections = _parseKdocSections(trimmed);
+    if (kdocSections != null) {
+      final summary = (kdocSections['SUMMARY'] ?? '').trim();
+      final body = (kdocSections['CONTENT'] ?? '').trim();
+      final usage = (kdocSections['USAGE'] ?? '').trim();
+      final safeNote = (kdocSections['SAFETY_NOTE'] ?? '').trim();
+      final title = (kdocSections['TITLE'] ?? '').trim();
+      final block = StringBuffer();
+      if (title.isNotEmpty) {
+        block.writeln(title);
+      }
+      if (summary.isNotEmpty) {
+        block.writeln(summary);
+      }
+      if (body.isNotEmpty) {
+        block.writeln(body);
+      }
+      if (usage.isNotEmpty) {
+        block.writeln('Hướng dẫn: $usage');
+      }
+      if (safeNote.isNotEmpty) {
+        block.writeln('Lưu ý: $safeNote');
+      }
+      final extracted = block.toString().trim();
+      if (extracted.isNotEmpty) {
+        return extracted;
+      }
+    }
+
+    final lines = trimmed.split('\n');
+    if (lines.length <= 20) {
+      return trimmed;
+    }
+
+    final foldedQuery = _normalizeForKnowledge(query);
+    final tokens = foldedQuery
+        .split(RegExp(r'\s+'))
+        .where((token) => token.length >= 2)
+        .toSet();
+    if (tokens.isEmpty) {
+      return trimmed;
+    }
+
+    var bestIndex = -1;
+    var bestScore = -1;
+    for (var i = 0; i < lines.length; i++) {
+      final foldedLine = _normalizeForKnowledge(lines[i]);
+      if (foldedLine.isEmpty) {
+        continue;
+      }
+      var score = 0;
+      if (foldedLine.contains(foldedQuery)) {
+        score += 16;
+      }
+      for (final token in tokens) {
+        if (foldedLine.contains(token)) {
+          score += 2;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex < 0) {
+      return trimmed;
+    }
+
+    // Try extracting one clean product section delimited by separator lines.
+    final section = _extractDelimitedSection(
+      lines: lines,
+      anchorIndex: bestIndex,
+    );
+    if (section != null && section.trim().isNotEmpty) {
+      return section.trim();
+    }
+
+    // Fallback: local block around the strongest line.
+    final start = (bestIndex - 2).clamp(0, lines.length - 1);
+    final end = (bestIndex + 20).clamp(0, lines.length - 1);
+    final block = lines.sublist(start, end + 1).join('\n').trim();
+    return block.isEmpty ? trimmed : block;
+  }
+
+  String? _extractDelimitedSection({
+    required List<String> lines,
+    required int anchorIndex,
+  }) {
+    if (lines.isEmpty || anchorIndex < 0 || anchorIndex >= lines.length) {
+      return null;
+    }
+
+    final separators = <int>[];
+    for (var i = 0; i < lines.length; i++) {
+      if (_isSeparatorLine(lines[i])) {
+        separators.add(i);
+      }
+    }
+    if (separators.length < 2) {
+      return null;
+    }
+
+    int? prevSep;
+    for (final sep in separators) {
+      if (sep <= anchorIndex) {
+        prevSep = sep;
+      } else {
+        break;
+      }
+    }
+    if (prevSep == null) {
+      return null;
+    }
+
+    var start = prevSep;
+    final prevSepPos = separators.indexOf(prevSep);
+    if (prevSepPos > 0 && prevSep - separators[prevSepPos - 1] <= 4) {
+      start = separators[prevSepPos - 1];
+    }
+
+    int? firstAfterStart;
+    int? secondAfterStart;
+    for (final sep in separators) {
+      if (sep <= start) {
+        continue;
+      }
+      if (firstAfterStart == null) {
+        firstAfterStart = sep;
+        continue;
+      }
+      secondAfterStart = sep;
+      break;
+    }
+
+    if (firstAfterStart == null) {
+      return null;
+    }
+    final end = (secondAfterStart ?? lines.length) - 1;
+    if (end <= start) {
+      return null;
+    }
+
+    return lines.sublist(start, end + 1).join('\n');
+  }
+
+  bool _isSeparatorLine(String line) {
+    final trimmed = line.trim();
+    return trimmed.length >= 10 && trimmed.replaceAll('-', '').isEmpty;
+  }
+
+  Map<String, String>? _parseKdocSections(String content) {
+    final normalized = content.replaceAll('\r\n', '\n').trim();
+    final lines = normalized.split('\n');
+    final start = lines.indexWhere((line) => line.trim() == '=== KDOC:v1 ===');
+    final end = lines.lastIndexWhere((line) => line.trim() == '=== END_KDOC ===');
+    if (start < 0 || end <= start) {
+      return null;
+    }
+
+    final sections = <String, String>{};
+    String? currentKey;
+    final buffer = <String>[];
+    final sectionPattern = RegExp(r'^\s*\[([A-Z_]+)\]\s*$');
+
+    void flush() {
+      if (currentKey == null) {
+        return;
+      }
+      final key = currentKey;
+      sections[key] = buffer.join('\n').trim();
+      buffer.clear();
+    }
+
+    for (var i = start + 1; i < end; i++) {
+      final line = lines[i];
+      final match = sectionPattern.firstMatch(line);
+      if (match != null) {
+        flush();
+        currentKey = match.group(1);
+        continue;
+      }
+      if (currentKey != null) {
+        buffer.add(line);
+      }
+    }
+    flush();
+    return sections;
+  }
+
+  Future<List<String>> _listKnowledgeDocumentNames({required int limit}) async {
+    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+      'jsonrpc': '2.0',
+      'id': _mcpRequestId++,
+      'method': 'tools/call',
+      'params': <String, dynamic>{
+        'name': 'self.knowledge.list_documents',
+        'arguments': <String, dynamic>{},
+      },
+    });
+    if (response == null) {
+      return const <String>[];
+    }
+
+    final error = response['error'];
+    if (error is Map && error['message'] is String) {
+      return const <String>[];
+    }
+
+    final result = response['result'];
+    final payload = _decodeToolPayload(
+      result is Map<String, dynamic>
+          ? result
+          : result is Map
+          ? Map<String, dynamic>.from(result)
+          : null,
+    );
+    if (payload is! Map) {
+      return const <String>[];
+    }
+
+    final rows = payload['documents'];
+    if (rows is! List || rows.isEmpty) {
+      return const <String>[];
+    }
+
+    final names = <String>[];
+    for (final row in rows) {
+      if (row is! Map) {
+        continue;
+      }
+      final name = (row['name'] ?? '').toString().trim();
+      if (name.isEmpty) {
+        continue;
+      }
+      names.add(name);
+      if (names.length >= limit) {
+        break;
+      }
+    }
+    return names;
+  }
+
+  Future<void> _tryHandleLocalVolumeCommand(String text) async {
+    final target = _extractVolumeTarget(text);
+    if (target == null) {
+      return;
+    }
+    AppLogger.event(
+      'ChatRepository',
+      'local_volume_detected',
+      fields: <String, Object?>{'target': target},
+      level: 'D',
+    );
+
+    final now = DateTime.now();
+    if (_lastLocalVolumeTarget == target &&
+        now.difference(_lastLocalVolumeAt) < const Duration(seconds: 3)) {
+      return;
+    }
+    _lastLocalVolumeAt = now;
+    _lastLocalVolumeTarget = target;
+
+    try {
+      final setResult = await _callMcpTool(
+        name: 'self.audio_speaker.set_volume',
+        arguments: <String, dynamic>{'volume': target},
+      );
+      if (!_isToolSuccess(setResult)) {
+        return;
+      }
+      final statusResult = await _callMcpTool(name: 'self.get_device_status');
+      final currentVolume = _extractCurrentVolume(statusResult);
+      final shownVolume = currentVolume ?? target;
+      _suppressVolumeFailureUntil = DateTime.now().add(
+        const Duration(seconds: 10),
+      );
+      _responsesController.add(
+        ChatResponse(
+          text: 'Đã chỉnh âm lượng thiết bị về $shownVolume%.',
+          isUser: false,
+        ),
+      );
+      AppLogger.event(
+        'ChatRepository',
+        'local_volume_set',
+        fields: <String, Object?>{'target': target, 'reported': currentVolume},
+      );
+    } catch (_) {
+      // Ignore local volume fallback failures.
+    }
+  }
+
+  Future<void> _tryHandleBlockedPhrase(String text) async {
+    final response = await _callMcpTool(
+      name: 'self.guard.blocked_phrase_check',
+      arguments: <String, dynamic>{'text': text},
+    );
+    final payload = _decodeToolPayload(response);
+    if (payload is! Map) {
+      return;
+    }
+    final blocked = payload['blocked'] == true;
+    if (!blocked) {
+      return;
+    }
+
+    final normalizedInput = _normalizeForKnowledge(text);
+    final now = DateTime.now();
+    if (_lastBlockedInput == normalizedInput &&
+        now.difference(_lastBlockedReplyAt) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastBlockedInput = normalizedInput;
+    _lastBlockedReplyAt = now;
+    _suppressBlockedTopicUntil = now.add(const Duration(seconds: 10));
+
+    final safeReply = (payload['response'] as String?)?.trim();
+    final fallback =
+        'Xin loi, minh chua nghe ro noi dung. Ban vui long dat lai cau hoi ngan gon de minh ho tro chinh xac hon.';
+    _responsesController.add(
+      ChatResponse(text: safeReply?.isNotEmpty == true ? safeReply! : fallback),
+    );
+    AppLogger.event(
+      'ChatRepository',
+      'blocked_phrase_handled',
+      fields: <String, Object?>{'input': text},
+    );
+  }
+
+  int? _extractVolumeTarget(String text) {
+    final normalized = _normalizeForKnowledge(text);
+    final isVolumeIntent =
+        normalized.contains('am luong') ||
+        normalized.contains('volume') ||
+        normalized.contains('vol ');
+    if (!isVolumeIntent) {
+      return null;
+    }
+
+    final number = RegExp(r'(\d{1,3})').firstMatch(normalized)?.group(1);
+    if (number != null) {
+      final parsed = int.tryParse(number);
+      if (parsed != null) {
+        return parsed.clamp(0, 100);
+      }
+    }
+
+    if (normalized.contains('toi da') ||
+        normalized.contains('max') ||
+        normalized.contains('lon nhat')) {
+      return 100;
+    }
+    if (normalized.contains('toi thieu') ||
+        normalized.contains('min') ||
+        normalized.contains('nho nhat')) {
+      return 0;
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _callMcpTool({
+    required String name,
+    Map<String, dynamic> arguments = const <String, dynamic>{},
+  }) async {
+    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+      'jsonrpc': '2.0',
+      'id': _mcpRequestId++,
+      'method': 'tools/call',
+      'params': <String, dynamic>{'name': name, 'arguments': arguments},
+    });
+    if (response == null) {
+      return null;
+    }
+    final error = response['error'];
+    if (error is Map && error['message'] is String) {
+      return null;
+    }
+    final result = response['result'];
+    if (result is Map<String, dynamic>) {
+      return result;
+    }
+    if (result is Map) {
+      return Map<String, dynamic>.from(result);
+    }
+    return null;
+  }
+
+  bool _isToolSuccess(Map<String, dynamic>? result) {
+    final payload = _decodeToolPayload(result);
+    if (payload is String) {
+      return payload.trim().toLowerCase() == 'true';
+    }
+    return false;
+  }
+
+  int? _extractCurrentVolume(Map<String, dynamic>? result) {
+    final payload = _decodeToolPayload(result);
+    if (payload is! Map) {
+      return null;
+    }
+    final audio = payload['audio_speaker'];
+    if (audio is! Map) {
+      return null;
+    }
+    final volume = audio['volume'];
+    if (volume is num) {
+      return volume.toInt().clamp(0, 100);
+    }
+    return null;
+  }
+
+  bool _shouldSuppressVolumeFailureText(String text) {
+    if (DateTime.now().isAfter(_suppressVolumeFailureUntil)) {
+      return false;
+    }
+    final normalized = _normalizeForKnowledge(text);
+    final isVolumeTopic =
+        normalized.contains('am luong') || normalized.contains('volume');
+    final isFailureOrDeflect =
+        normalized.contains('khong the') ||
+        normalized.contains('chua the') ||
+        normalized.contains('khong dieu chinh duoc') ||
+        normalized.contains('chua kha dung') ||
+        normalized.contains('xin loi');
+    return isVolumeTopic && isFailureOrDeflect;
+  }
+
+  bool _shouldSuppressBlockedTopicText(String text) {
+    if (DateTime.now().isAfter(_suppressBlockedTopicUntil)) {
+      return false;
+    }
+    final normalized = _normalizeForKnowledge(text);
+    return normalized.contains('la la school') ||
+        normalized.contains('lalaschool') ||
+        normalized.contains('subscribe') ||
+        normalized.contains('dang ky kenh') ||
+        normalized.contains('dang ky');
+  }
+
+  bool _shouldUseKnowledgeContext(String text) {
+    final normalized = _foldForIntent(_normalize(text));
+    if (normalized.length < 4) {
+      return false;
+    }
+
+    for (final keyword in _smallTalkKeywords) {
+      if (normalized.contains(keyword)) {
+        return false;
+      }
+    }
+
+    for (final keyword in _knowledgeKeywords) {
+      if (normalized.contains(keyword)) {
+        return true;
+      }
+    }
+
+    final words = normalized.split(' ').where((item) => item.isNotEmpty).length;
+    final hasQuestionIntent =
+        normalized.contains('cho toi') ||
+        normalized.contains('toi muon') ||
+        normalized.contains('toi can') ||
+        normalized.contains('co the') ||
+        normalized.contains('?');
+    return hasQuestionIntent && words >= 5;
+  }
+
+  String _foldForIntent(String input) {
+    return _normalizeForKnowledge(input);
+  }
+
+  String _normalizeForKnowledge(String input) {
+    var output = input
+        .toLowerCase()
+        .replaceAll('à', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('ạ', 'a')
+        .replaceAll('ả', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ầ', 'a')
+        .replaceAll('ấ', 'a')
+        .replaceAll('ậ', 'a')
+        .replaceAll('ẩ', 'a')
+        .replaceAll('ẫ', 'a')
+        .replaceAll('ă', 'a')
+        .replaceAll('ằ', 'a')
+        .replaceAll('ắ', 'a')
+        .replaceAll('ặ', 'a')
+        .replaceAll('ẳ', 'a')
+        .replaceAll('ẵ', 'a')
+        .replaceAll('è', 'e')
+        .replaceAll('é', 'e')
+        .replaceAll('ẹ', 'e')
+        .replaceAll('ẻ', 'e')
+        .replaceAll('ẽ', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ề', 'e')
+        .replaceAll('ế', 'e')
+        .replaceAll('ệ', 'e')
+        .replaceAll('ể', 'e')
+        .replaceAll('ễ', 'e')
+        .replaceAll('ì', 'i')
+        .replaceAll('í', 'i')
+        .replaceAll('ị', 'i')
+        .replaceAll('ỉ', 'i')
+        .replaceAll('ĩ', 'i')
+        .replaceAll('ò', 'o')
+        .replaceAll('ó', 'o')
+        .replaceAll('ọ', 'o')
+        .replaceAll('ỏ', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('ồ', 'o')
+        .replaceAll('ố', 'o')
+        .replaceAll('ộ', 'o')
+        .replaceAll('ổ', 'o')
+        .replaceAll('ỗ', 'o')
+        .replaceAll('ơ', 'o')
+        .replaceAll('ờ', 'o')
+        .replaceAll('ớ', 'o')
+        .replaceAll('ợ', 'o')
+        .replaceAll('ở', 'o')
+        .replaceAll('ỡ', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll('ú', 'u')
+        .replaceAll('ụ', 'u')
+        .replaceAll('ủ', 'u')
+        .replaceAll('ũ', 'u')
+        .replaceAll('ư', 'u')
+        .replaceAll('ừ', 'u')
+        .replaceAll('ứ', 'u')
+        .replaceAll('ự', 'u')
+        .replaceAll('ử', 'u')
+        .replaceAll('ữ', 'u')
+        .replaceAll('ỳ', 'y')
+        .replaceAll('ý', 'y')
+        .replaceAll('ỵ', 'y')
+        .replaceAll('ỷ', 'y')
+        .replaceAll('ỹ', 'y')
+        .replaceAll('đ', 'd');
+
+    final replacements = <RegExp, String>{
+      RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
+      RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
+      RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
+    };
+    for (final entry in replacements.entries) {
+      output = output.replaceAll(entry.key, entry.value);
+    }
+    return output;
+  }
+
+  String _normalizeQuestionForAgent(String input) {
+    var output = _normalizeForKnowledge(input);
+    final replacements = <RegExp, String>{
+      RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bch[aá]\s*vi\b', caseSensitive: false): 'chavi',
+    };
+    for (final entry in replacements.entries) {
+      output = output.replaceAll(entry.key, entry.value);
+    }
+    return output;
+  }
 }
 
 class _RecentText {

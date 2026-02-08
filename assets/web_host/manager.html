@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css" />
+  <link rel="stylesheet" href="/console.css" />
+  <title>Web Quản Lý Tri Thức</title>
+</head>
+<body>
+  <div class="manager-shell">
+    <header class="manager-header">
+      <div>
+        <h1>Web Quản Lý Tri Thức</h1>
+        <p>Chế độ chỉ xem theo mục KDOC. Muốn chỉnh sửa nội dung, vui lòng mở trang soạn thảo.</p>
+      </div>
+      <div class="manager-header-actions">
+        <span id="managerHostStatus" class="metric-chip metric-chip-host">Host: Đang kiểm tra</span>
+        <a class="btn btn-soft" href="/" rel="noopener noreferrer">Mở trang soạn thảo</a>
+      </div>
+    </header>
+
+    <section class="manager-kpis" aria-label="Tổng quan nhanh">
+      <article class="manager-kpi">
+        <p class="manager-kpi-label">Tổng tài liệu</p>
+        <p id="managerKpiDocs" class="manager-kpi-value">0</p>
+      </article>
+      <article class="manager-kpi">
+        <p class="manager-kpi-label">Tài liệu đang chọn</p>
+        <p id="managerKpiSelected" class="manager-kpi-value manager-kpi-value-sm">Chưa chọn</p>
+      </article>
+      <article class="manager-kpi">
+        <p class="manager-kpi-label">Trạng thái biên tập</p>
+        <p id="managerKpiDraft" class="manager-kpi-value manager-kpi-value-sm">Chỉ xem</p>
+      </article>
+    </section>
+
+    <main class="manager-main">
+      <section class="manager-list" aria-label="Danh sách tài liệu">
+        <div>
+          <h2 class="manager-list-title">Tài liệu tri thức</h2>
+          <p id="managerDocCount" class="manager-list-count">Tổng: 0</p>
+        </div>
+
+        <div class="notes-tools">
+          <input
+            id="managerFilterInput"
+            class="field"
+            placeholder="Tìm theo tên tài liệu..."
+            aria-label="Lọc tài liệu theo tên"
+          />
+          <select id="managerSortSelect" class="field narrow-select" aria-label="Sắp xếp danh sách tài liệu">
+            <option value="updated_desc">Cập nhật mới nhất</option>
+            <option value="updated_asc">Cập nhật cũ nhất</option>
+            <option value="name_asc">Tên A-Z</option>
+            <option value="name_desc">Tên Z-A</option>
+          </select>
+        </div>
+
+        <div id="managerDocBody" class="notes-scroll" role="list" aria-live="polite"></div>
+
+        <div class="notes-actions">
+          <button id="managerRefreshBtn" class="btn btn-ghost" type="button" aria-label="Làm mới danh sách tài liệu">Làm mới</button>
+        </div>
+      </section>
+
+      <section class="manager-content">
+        <div class="manager-panel">
+          <h3>Xem theo mục (KDOC)</h3>
+          <p>Chọn một tài liệu ở cột trái để xem nội dung theo cấu trúc KDOC v1. Chế độ này chỉ hỗ trợ xem.</p>
+          <div class="manager-editor-meta">
+            <span id="managerSelectedDoc" class="metric-chip">Tài liệu: Chưa chọn</span>
+            <span id="managerEditorMeta" class="metric-chip">0 ký tự</span>
+            <span id="managerKdocBadge" class="metric-chip">KDOC: Chưa kiểm tra</span>
+          </div>
+          <span id="managerLastModified" class="metric-chip">Cập nhật lần cuối: -</span>
+          <div id="managerKdocView" class="kdoc-outline-body manager-kdoc-view" aria-live="polite">
+            Chọn một tài liệu ở cột trái để xem nội dung.
+          </div>
+        </div>
+
+        <div class="manager-panel">
+          <h3>Kiểm thử truy vấn tri thức</h3>
+          <p>Nhập câu hỏi để test nhanh kết quả truy xuất từ kho tri thức.</p>
+          <div class="test-row">
+            <input id="managerQueryInput" class="field" placeholder="Ví dụ: ưu điểm của bột chanh Chavi" aria-label="Nội dung truy vấn tri thức" />
+            <input id="managerTopKInput" class="field small-input" type="number" value="5" min="1" max="10" aria-label="Số kết quả trả về" />
+            <button id="managerSearchBtn" class="btn btn-primary" type="button" aria-label="Tìm theo truy vấn">Tìm</button>
+          </div>
+          <div id="managerSearchResults" class="result-box" aria-live="polite">Chưa có kết quả.</div>
+        </div>
+
+        <p id="managerStatus" class="status-line info" role="status" aria-live="polite">Sẵn sàng.</p>
+      </section>
+    </main>
+  </div>
+
+  <script src="/manager.js"></script>
+</body>
+</html>

@@ -15,9 +15,7 @@ import 'udp_client.dart';
 
 // Ported from Android Kotlin: MqttProtocol.kt
 class MqttProtocol extends Protocol {
-  MqttProtocol({
-    required this.mqttConfig,
-  }) : _mutex = Lock();
+  MqttProtocol({required this.mqttConfig}) : _mutex = Lock();
 
   final MqttConfig mqttConfig;
   final Lock _mutex;
@@ -42,7 +40,8 @@ class MqttProtocol extends Protocol {
   }
 
   Future<void> _startMqttClient() async {
-    if (_client?.connectionStatus?.state == mqtt.MqttConnectionState.connected) {
+    if (_client?.connectionStatus?.state ==
+        mqtt.MqttConnectionState.connected) {
       _client?.disconnect();
     }
 
@@ -89,7 +88,13 @@ class MqttProtocol extends Protocol {
           if (decoded is Map<String, dynamic>) {
             json = decoded;
           }
-        } catch (_) {
+        } catch (error) {
+          AppLogger.event(
+            'MQTT',
+            'invalid_json',
+            fields: <String, Object?>{'error': error.toString()},
+            level: 'W',
+          );
           // Emit error instead of throwing inside listener.
           networkErrorStream.add('Invalid JSON');
           continue;
@@ -116,11 +121,14 @@ class MqttProtocol extends Protocol {
 
     try {
       await client.connect();
-    } catch (_) {
+    } catch (error) {
       AppLogger.event(
         'MQTT',
         'connect_failed',
-        fields: <String, Object?>{'endpoint': _endpoint},
+        fields: <String, Object?>{
+          'endpoint': _endpoint,
+          'error': error.toString(),
+        },
         level: 'E',
       );
       networkErrorStream.add('Server not connected');
@@ -155,9 +163,11 @@ class MqttProtocol extends Protocol {
 
   @override
   Future<bool> openAudioChannel() async {
-    if (_client?.connectionStatus?.state != mqtt.MqttConnectionState.connected) {
+    if (_client?.connectionStatus?.state !=
+        mqtt.MqttConnectionState.connected) {
       await _startMqttClient();
-      if (_client?.connectionStatus?.state != mqtt.MqttConnectionState.connected) {
+      if (_client?.connectionStatus?.state !=
+          mqtt.MqttConnectionState.connected) {
         return false;
       }
     }
@@ -167,9 +177,7 @@ class MqttProtocol extends Protocol {
       'type': 'hello',
       'version': 3,
       'transport': 'udp',
-      'features': <String, dynamic>{
-        'mcp': true,
-      },
+      'features': <String, dynamic>{'mcp': true},
       'audio_params': <String, dynamic>{
         'format': 'opus',
         'sample_rate': AudioConfig.sampleRate,
@@ -227,7 +235,8 @@ class MqttProtocol extends Protocol {
   @override
   Future<void> sendText(String text) async {
     if (_publishTopic.isEmpty ||
-        _client?.connectionStatus?.state != mqtt.MqttConnectionState.connected) {
+        _client?.connectionStatus?.state !=
+            mqtt.MqttConnectionState.connected) {
       return;
     }
     try {
@@ -238,7 +247,13 @@ class MqttProtocol extends Protocol {
         mqtt.MqttQos.atLeastOnce,
         builder.payload!,
       );
-    } catch (_) {
+    } catch (error) {
+      AppLogger.event(
+        'MQTT',
+        'publish_failed',
+        fields: <String, Object?>{'error': error.toString()},
+        level: 'E',
+      );
       networkErrorStream.add('Server error');
     }
   }
@@ -284,7 +299,8 @@ class MqttProtocol extends Protocol {
     if (data[0] != 1) {
       return;
     }
-    final sequence = ((data[12] & 0xff) << 24) |
+    final sequence =
+        ((data[12] & 0xff) << 24) |
         ((data[13] & 0xff) << 16) |
         ((data[14] & 0xff) << 8) |
         (data[15] & 0xff);

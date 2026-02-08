@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
+import '../../../capabilities/web_host/local_web_host_service.dart';
 import '../../../capabilities/protocol/protocol.dart';
 import '../../../core/theme/forui/theme_tokens.dart';
 import '../../../features/home/domain/entities/home_system_status.dart';
@@ -132,23 +135,9 @@ enum _SettingsSection {
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     with TickerProviderStateMixin {
-  static const List<double> _textScaleSteps = [
-    0.85,
-    0.95,
-    1.0,
-    1.2,
-    1.5,
-  ];
-  static const List<double> _cameraAspectRatios = [
-    1.0,
-    4 / 3,
-    16 / 9,
-  ];
-  static const List<String> _cameraAspectLabels = [
-    '1:1',
-    '4:3',
-    '16:9',
-  ];
+  static const List<double> _textScaleSteps = [0.85, 0.95, 1.0, 1.2, 1.5];
+  static const List<double> _cameraAspectRatios = [1.0, 4 / 3, 16 / 9];
+  static const List<String> _cameraAspectLabels = ['1:1', '4:3', '16:9'];
   static const List<AppThemePalette> _paletteOptions = [
     AppThemePalette.neutral,
     AppThemePalette.green,
@@ -168,22 +157,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     TextSendMode.listenDetect,
     TextSendMode.text,
   ];
-  static const List<String> _textSendModeLabels = [
-    'Lắng nghe',
-    'Văn bản',
-  ];
-  static const List<double> _carouselHeights = [
-    160,
-    200,
-    240,
-    280,
-  ];
-  static const List<double> _carouselViewports = [
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-  ];
+  static const List<String> _textSendModeLabels = ['Lắng nghe', 'Văn bản'];
+  static const List<double> _carouselHeights = [160, 200, 240, 280];
+  static const List<double> _carouselViewports = [0.6, 0.7, 0.8, 0.9];
   static const List<Duration> _carouselIntervals = [
     Duration(seconds: 2),
     Duration(seconds: 3),
@@ -215,6 +191,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
   late int _carouselAnimationIndex;
   late bool _carouselAutoPlayLocal;
   late bool _carouselEnlargeLocal;
+  final LocalWebHostService _webHost = LocalWebHostService.instance;
+  StreamSubscription<LocalWebHostState>? _webHostStateSubscription;
+  late LocalWebHostState _webHostState;
 
   @override
   void initState() {
@@ -231,12 +210,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _textSendModeIndex = _textSendModeToIndex(widget.textSendMode);
     _greetingText = widget.connectGreeting;
     _carouselHeightIndex = _carouselHeightToIndex(widget.carouselHeight);
-    _carouselViewportIndex =
-        _carouselViewportToIndex(widget.carouselViewportFraction);
-    _carouselIntervalIndex =
-        _carouselIntervalToIndex(widget.carouselAutoPlayInterval);
-    _carouselAnimationIndex =
-        _carouselAnimationToIndex(widget.carouselAnimationDuration);
+    _carouselViewportIndex = _carouselViewportToIndex(
+      widget.carouselViewportFraction,
+    );
+    _carouselIntervalIndex = _carouselIntervalToIndex(
+      widget.carouselAutoPlayInterval,
+    );
+    _carouselAnimationIndex = _carouselAnimationToIndex(
+      widget.carouselAnimationDuration,
+    );
     _carouselAutoPlayLocal = widget.carouselAutoPlay;
     _carouselEnlargeLocal = widget.carouselEnlargeCenter;
     _sectionExpanded = {
@@ -263,6 +245,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
           curve: Curves.easeInOut,
         ),
     };
+    _webHostState = _webHost.state;
+    _webHostStateSubscription = _webHost.stateStream.listen((next) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _webHostState = next;
+      });
+    });
   }
 
   @override
@@ -335,22 +326,25 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
         _carouselHeightIndex = nextCarouselHeight;
       });
     }
-    final nextCarouselViewport =
-        _carouselViewportToIndex(widget.carouselViewportFraction);
+    final nextCarouselViewport = _carouselViewportToIndex(
+      widget.carouselViewportFraction,
+    );
     if (nextCarouselViewport != _carouselViewportIndex) {
       setState(() {
         _carouselViewportIndex = nextCarouselViewport;
       });
     }
-    final nextCarouselInterval =
-        _carouselIntervalToIndex(widget.carouselAutoPlayInterval);
+    final nextCarouselInterval = _carouselIntervalToIndex(
+      widget.carouselAutoPlayInterval,
+    );
     if (nextCarouselInterval != _carouselIntervalIndex) {
       setState(() {
         _carouselIntervalIndex = nextCarouselInterval;
       });
     }
-    final nextCarouselAnim =
-        _carouselAnimationToIndex(widget.carouselAnimationDuration);
+    final nextCarouselAnim = _carouselAnimationToIndex(
+      widget.carouselAnimationDuration,
+    );
     if (nextCarouselAnim != _carouselAnimationIndex) {
       setState(() {
         _carouselAnimationIndex = nextCarouselAnim;
@@ -368,8 +362,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     }
   }
 
-  double _coerceVolume(double? value) =>
-      (value ?? 0.35).clamp(0.0, 1.0);
+  double _coerceVolume(double? value) => (value ?? 0.35).clamp(0.0, 1.0);
   int _textScaleToIndex(double value) {
     var nearestIndex = 0;
     var nearestDiff = double.infinity;
@@ -465,6 +458,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
 
   @override
   void dispose() {
+    _webHostStateSubscription?.cancel();
     for (final controller in _sectionControllers.values) {
       controller.dispose();
     }
@@ -480,8 +474,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
         : audioIcon(_sliderValue);
     final textScaleValue = _textScaleSteps[_textScaleIndex];
     final iconSize = scaledIconSize(context, 15);
-    final textScale =
-        MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.5);
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(0.85, 1.5);
     final tabHeight = (35.0 * textScale).clamp(35.0, 56.0);
     final themeIndex = widget.themeMode == ThemeMode.dark ? 1 : 0;
     final paletteLabel = _paletteOptions[_paletteIndex].label;
@@ -497,6 +492,10 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
         '${_carouselIntervals[_carouselIntervalIndex].inSeconds}s';
     final carouselAnimLabel =
         '${_carouselAnimations[_carouselAnimationIndex].inMilliseconds}ms';
+    final hostUrl = _webHostState.url;
+    final hostStatus = _webHostState.isRunning ? 'Đang chạy' : 'Đang dừng';
+    final hostLabel =
+        hostUrl ?? (_webHostState.message ?? 'Chưa có địa chỉ host');
     final offline = isOffline(widget.connectivity);
     final isWifiConnected =
         widget.connectivity?.contains(HomeConnectivity.wifi) ?? false;
@@ -505,22 +504,22 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     final wifiStatus = offline
         ? 'Mất kết nối internet'
         : isWifiConnected
-            ? (cleanWifiName(widget.wifiName) ?? 'Wi‑Fi')
-            : isMobileConnected
-                ? (widget.carrierName ?? '4G/5G')
-                : networkDisplay(
-                    widget.connectivity,
-                    widget.wifiName,
-                    widget.carrierName,
-                  );
+        ? (cleanWifiName(widget.wifiName) ?? 'Wi‑Fi')
+        : isMobileConnected
+        ? (widget.carrierName ?? '4G/5G')
+        : networkDisplay(
+            widget.connectivity,
+            widget.wifiName,
+            widget.carrierName,
+          );
     final wifiStatusColor = offline
         ? context.theme.colors.destructive
         : context.theme.colors.mutedForeground;
     final wifiPrefixIcon = offline
         ? FIcons.wifiOff
         : isMobileConnected
-            ? FIcons.cardSim
-            : wifiIcon(widget.connectivity, widget.wifiName);
+        ? FIcons.cardSim
+        : wifiIcon(widget.connectivity, widget.wifiName);
     FWidgetStateMap<IconThemeData> scaledItemIconStyle(
       FWidgetStateMap<IconThemeData> base,
     ) {
@@ -531,18 +530,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
         WidgetState.any: normal.copyWith(size: iconSize),
       });
     }
+
     FItemGroupStyle itemGroupStyle(FItemGroupStyle style) => style.copyWith(
-          itemStyle: (itemStyle) => itemStyle.copyWith(
-            contentStyle: (contentStyle) => contentStyle.copyWith(
-              prefixIconStyle: scaledItemIconStyle(
-                contentStyle.prefixIconStyle,
-              ),
-              suffixIconStyle: scaledItemIconStyle(
-                contentStyle.suffixIconStyle,
-              ),
-            ),
-          ),
-        );
+      itemStyle: (itemStyle) => itemStyle.copyWith(
+        contentStyle: (contentStyle) => contentStyle.copyWith(
+          prefixIconStyle: scaledItemIconStyle(contentStyle.prefixIconStyle),
+          suffixIconStyle: scaledItemIconStyle(contentStyle.suffixIconStyle),
+        ),
+      ),
+    );
 
     Widget sectionHeader(String title, _SettingsSection section) {
       final expanded = _sectionExpanded[section] ?? false;
@@ -668,158 +664,165 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                FItem(
-                  prefix: Icon(audioIcon(_sliderValue), size: iconSize),
-                  title: const Text('Âm lượng'),
-                  suffix: Icon(volumeSuffixIcon, size: iconSize),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: FSlider(
-                        control: FSliderControl.liftedContinuous(
-                          value: FSliderValue(max: _sliderValue),
-                          onChange: (next) {
-                            setState(() {
-                              _sliderValue = next.max;
-                            });
-                            widget.onVolumeChanged?.call(next.max);
-                          },
-                        ),
-                        marks: const [
-                          FSliderMark(value: 0, label: Text('0%')),
-                          FSliderMark(value: 0.25, tick: false),
-                          FSliderMark(value: 0.5),
-                          FSliderMark(value: 0.75, tick: false),
-                          FSliderMark(value: 1, label: Text('100%')),
-                        ],
-                      ),
+                    FItem(
+                      prefix: Icon(audioIcon(_sliderValue), size: iconSize),
+                      title: const Text('Âm lượng'),
+                      suffix: Icon(volumeSuffixIcon, size: iconSize),
                     ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(FIcons.mic, size: iconSize),
-                  title: const Text('Chế độ nghe'),
-                  suffix: Text(
-                    listeningModeLabel,
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _listeningModeIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _listeningModeIndex = index;
-                          });
-                          widget.onListeningModeChanged(
-                            _listeningModes[index],
-                          );
-                        },
-                      ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      scrollable: false,
-                      children: const [
-                        FTabEntry(
-                          label: Text('Tự dừng'),
-                          child: SizedBox.shrink(),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        FTabEntry(
-                          label: Text('Thủ công'),
-                          child: SizedBox.shrink(),
-                        ),
-                        FTabEntry(
-                          label: Text('Luôn nghe'),
-                          child: SizedBox.shrink(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.chat_bubble_outline, size: iconSize),
-                  title: const Text('Gửi text'),
-                  suffix: Text(
-                    textSendModeLabel,
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _textSendModeIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _textSendModeIndex = index;
-                          });
-                          widget.onTextSendModeChanged(
-                            _textSendModes[index],
-                          );
-                        },
-                      ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      scrollable: false,
-                      children: const [
-                        FTabEntry(
-                          label: Text('Lắng nghe'),
-                          child: SizedBox.shrink(),
-                        ),
-                        FTabEntry(
-                          label: Text('Văn bản'),
-                          child: SizedBox.shrink(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.mark_chat_read_outlined, size: iconSize),
-                  title: const Text('Lời chào kết nối'),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTextField(
-                      label: const Text('Nội dung gửi khi kết nối'),
-                      hint: 'Ví dụ: Xin chào',
-                      maxLines: 2,
-                      control: FTextFieldControl.lifted(
-                        value: TextEditingValue(
-                          text: _greetingText,
-                          selection: TextSelection.collapsed(
-                            offset: _greetingText.length,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FSlider(
+                            control: FSliderControl.liftedContinuous(
+                              value: FSliderValue(max: _sliderValue),
+                              onChange: (next) {
+                                setState(() {
+                                  _sliderValue = next.max;
+                                });
+                                widget.onVolumeChanged?.call(next.max);
+                              },
+                            ),
+                            marks: const [
+                              FSliderMark(value: 0, label: Text('0%')),
+                              FSliderMark(value: 0.25, tick: false),
+                              FSliderMark(value: 0.5),
+                              FSliderMark(value: 0.75, tick: false),
+                              FSliderMark(value: 1, label: Text('100%')),
+                            ],
                           ),
                         ),
-                        onChange: (value) {
-                          setState(() {
-                            _greetingText = value.text;
-                          });
-                          widget.onConnectGreetingChanged(value.text);
-                        },
                       ),
                     ),
-                  ),
-                ),
-                ],
+                    FItem(
+                      prefix: Icon(FIcons.mic, size: iconSize),
+                      title: const Text('Chế độ nghe'),
+                      suffix: Text(
+                        listeningModeLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _listeningModeIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _listeningModeIndex = index;
+                              });
+                              widget.onListeningModeChanged(
+                                _listeningModes[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tự dừng'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Thủ công'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Luôn nghe'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(Icons.chat_bubble_outline, size: iconSize),
+                      title: const Text('Gửi text'),
+                      suffix: Text(
+                        textSendModeLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _textSendModeIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _textSendModeIndex = index;
+                              });
+                              widget.onTextSendModeChanged(
+                                _textSendModes[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('Lắng nghe'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Văn bản'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(
+                        Icons.mark_chat_read_outlined,
+                        size: iconSize,
+                      ),
+                      title: const Text('Lời chào kết nối'),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTextField(
+                          label: const Text('Nội dung gửi khi kết nối'),
+                          hint: 'Ví dụ: Xin chào',
+                          maxLines: 2,
+                          control: FTextFieldControl.lifted(
+                            value: TextEditingValue(
+                              text: _greetingText,
+                              selection: TextSelection.collapsed(
+                                offset: _greetingText.length,
+                              ),
+                            ),
+                            onChange: (value) {
+                              setState(() {
+                                _greetingText = value.text;
+                              });
+                              widget.onConnectGreetingChanged(value.text);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
@@ -830,204 +833,227 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                FItem(
-                  prefix: Icon(FIcons.camera, size: iconSize),
-                  title: const Text('Camera'),
-                  suffix: Text(
-                    widget.cameraEnabled ? 'Bật' : 'Tắt',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: cameraIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _cameraEnabledLocal = index == 1;
-                          });
-                          widget.onCameraEnabledChanged(_cameraEnabledLocal);
-                        },
-                      ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      children: const [
-                        FTabEntry(
-                          label: Text('Tắt'),
-                          child: SizedBox.shrink(),
+                    FItem(
+                      prefix: Icon(FIcons.camera, size: iconSize),
+                      title: const Text('Camera'),
+                      suffix: Text(
+                        widget.cameraEnabled ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
                         ),
-                        FTabEntry(
-                          label: Text('Bật'),
-                          child: SizedBox.shrink(),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.zoom_in_outlined, size: iconSize),
-                  title: const Text('Tỉ lệ khung hình'),
-                  suffix: Text(
-                    cameraAspectLabel,
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _cameraAspectIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _cameraAspectIndex = index;
-                          });
-                          widget.onCameraAspectChanged(
-                            _cameraAspectRatios[index],
-                          );
-                        },
-                      ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      scrollable: false,
-                      children: const [
-                        FTabEntry(
-                          label: Text('1:1'),
-                          child: SizedBox.shrink(),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: cameraIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _cameraEnabledLocal = index == 1;
+                              });
+                              widget.onCameraEnabledChanged(
+                                _cameraEnabledLocal,
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        FTabEntry(
-                          label: Text('4:3'),
-                          child: SizedBox.shrink(),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(Icons.zoom_in_outlined, size: iconSize),
+                      title: const Text('Tỉ lệ khung hình'),
+                      suffix: Text(
+                        cameraAspectLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
                         ),
-                        FTabEntry(
-                          label: Text('16:9'),
-                          child: SizedBox.shrink(),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.center_focus_strong_outlined, size: iconSize),
-                  title: const Text('Mốc khuôn mặt'),
-                  suffix: Text(
-                    _faceLandmarksLocal ? 'Bật' : 'Tắt',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _faceLandmarksLocal ? 1 : 0,
-                        onChange: (index) {
-                          final enabled = index == 1;
-                          setState(() {
-                            _faceLandmarksLocal = enabled;
-                          });
-                          widget.onFaceLandmarksChanged(enabled);
-                        },
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _cameraAspectIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _cameraAspectIndex = index;
+                              });
+                              widget.onCameraAspectChanged(
+                                _cameraAspectRatios[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('1:1'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('4:3'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('16:9'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
                       ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      children: const [
-                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
-                      ],
                     ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.grid_view_outlined, size: iconSize),
-                  title: const Text('Facial Mesh'),
-                  suffix: Text(
-                    _faceMeshLocal ? 'Bật' : 'Tắt',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _faceMeshLocal ? 1 : 0,
-                        onChange: (index) {
-                          final enabled = index == 1;
-                          setState(() {
-                            _faceMeshLocal = enabled;
-                          });
-                          widget.onFaceMeshChanged(enabled);
-                        },
+                    FItem(
+                      prefix: Icon(
+                        Icons.center_focus_strong_outlined,
+                        size: iconSize,
                       ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
+                      title: const Text('Mốc khuôn mặt'),
+                      suffix: Text(
+                        _faceLandmarksLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
-                      children: const [
-                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
-                      ],
                     ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.visibility_outlined, size: iconSize),
-                  title: const Text('Eye Tracking'),
-                  suffix: Text(
-                    _eyeTrackingLocal ? 'Bật' : 'Tắt',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _eyeTrackingLocal ? 1 : 0,
-                        onChange: (index) {
-                          final enabled = index == 1;
-                          setState(() {
-                            _eyeTrackingLocal = enabled;
-                          });
-                          widget.onEyeTrackingChanged(enabled);
-                        },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _faceLandmarksLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _faceLandmarksLocal = enabled;
+                              });
+                              widget.onFaceLandmarksChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
                       ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      children: const [
-                        FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
-                      ],
                     ),
-                  ),
-                ),
-                ],
+                    FItem(
+                      prefix: Icon(Icons.grid_view_outlined, size: iconSize),
+                      title: const Text('Facial Mesh'),
+                      suffix: Text(
+                        _faceMeshLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _faceMeshLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _faceMeshLocal = enabled;
+                              });
+                              widget.onFaceMeshChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(Icons.visibility_outlined, size: iconSize),
+                      title: const Text('Eye Tracking'),
+                      suffix: Text(
+                        _eyeTrackingLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _eyeTrackingLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _eyeTrackingLocal = enabled;
+                              });
+                              widget.onEyeTrackingChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
@@ -1038,90 +1064,90 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                FItem(
-                  prefix: Icon(FIcons.moon, size: iconSize),
-                  title: const Text('Giao diện'),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: themeIndex,
-                        onChange: (index) {
-                          if (index == 0) {
-                            widget.onSetLight();
-                          } else {
-                            widget.onSetDark();
-                          }
-                        },
-                      ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      children: const [
-                        FTabEntry(
-                          label: Text('Sáng'),
-                          child: SizedBox.shrink(),
-                        ),
-                        FTabEntry(
-                          label: Text('Tối'),
-                          child: SizedBox.shrink(),
-                        ),
-                      ],
+                    FItem(
+                      prefix: Icon(FIcons.moon, size: iconSize),
+                      title: const Text('Giao diện'),
                     ),
-                  ),
-                ),
-                FItem(
-                  prefix: Icon(Icons.palette_outlined, size: iconSize),
-                  title: const Text('Chủ đề màu'),
-                  suffix: Text(
-                    paletteLabel,
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _paletteIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _paletteIndex = index;
-                          });
-                          widget.onThemePaletteChanged(
-                            _paletteOptions[index],
-                          );
-                        },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: themeIndex,
+                            onChange: (index) {
+                              if (index == 0) {
+                                widget.onSetLight();
+                              } else {
+                                widget.onSetDark();
+                              }
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Sáng'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Tối'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
                       ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      scrollable: false,
-                      children: const [
-                        FTabEntry(
-                          label: Text('Mặc định'),
-                          child: SizedBox.shrink(),
-                        ),
-                        FTabEntry(
-                          label: Text('Xanh lá'),
-                          child: SizedBox.shrink(),
-                        ),
-                        FTabEntry(
-                          label: Text('Chanh'),
-                          child: SizedBox.shrink(),
-                        ),
-                      ],
                     ),
-                  ),
-                ),
-                ],
+                    FItem(
+                      prefix: Icon(Icons.palette_outlined, size: iconSize),
+                      title: const Text('Chủ đề màu'),
+                      suffix: Text(
+                        paletteLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _paletteIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _paletteIndex = index;
+                              });
+                              widget.onThemePaletteChanged(
+                                _paletteOptions[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('Mặc định'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Xanh lá'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Chanh'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
@@ -1132,46 +1158,61 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                FItem(
-                  prefix: Icon(FIcons.aLargeSmall, size: iconSize),
-                  title: const Text('Cỡ chữ'),
-                  suffix: Text(
-                    '${(textScaleValue * 100).round()}%',
-                    style: context.theme.typography.base.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: context.theme.colors.foreground,
-                    ),
-                  ),
-                ),
-                FItem.raw(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                    child: FTabs(
-                      control: FTabControl.lifted(
-                        index: _textScaleIndex,
-                        onChange: (index) {
-                          setState(() {
-                            _textScaleIndex = index;
-                          });
-                          widget.onTextScaleChanged(_textScaleSteps[index]);
-                        },
+                    FItem(
+                      prefix: Icon(FIcons.aLargeSmall, size: iconSize),
+                      title: const Text('Cỡ chữ'),
+                      suffix: Text(
+                        '${(textScaleValue * 100).round()}%',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
-                      style: (style) => style.copyWith(
-                        spacing: 0,
-                        height: tabHeight,
-                      ),
-                      scrollable: false,
-                      children: const [
-                        FTabEntry(label: Text('85%'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('95%'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('100%'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('120%'), child: SizedBox.shrink()),
-                        FTabEntry(label: Text('150%'), child: SizedBox.shrink()),
-                      ],
                     ),
-                  ),
-                ),
-                ],
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _textScaleIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _textScaleIndex = index;
+                              });
+                              widget.onTextScaleChanged(_textScaleSteps[index]);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('85%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('95%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('100%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('120%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('150%'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
@@ -1182,238 +1223,298 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                  FItem(
-                    prefix: Icon(Icons.image_outlined, size: iconSize),
-                    title: const Text('Chiều cao'),
-                    suffix: Text(
-                      '${carouselHeightLabel}px',
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(Icons.image_outlined, size: iconSize),
+                      title: const Text('Chiều cao'),
+                      suffix: Text(
+                        '${carouselHeightLabel}px',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselHeightIndex,
-                          onChange: (index) {
-                            setState(() {
-                              _carouselHeightIndex = index;
-                            });
-                            widget.onCarouselHeightChanged(
-                              _carouselHeights[index],
-                            );
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselHeightIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _carouselHeightIndex = index;
+                              });
+                              widget.onCarouselHeightChanged(
+                                _carouselHeights[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('160'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('200'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('240'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('280'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        scrollable: false,
-                        children: const [
-                          FTabEntry(label: Text('160'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('200'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('240'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('280'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                  FItem(
-                    prefix: Icon(Icons.play_arrow_rounded, size: iconSize),
-                    title: const Text('Tự chạy'),
-                    suffix: Text(
-                      _carouselAutoPlayLocal ? 'Bật' : 'Tắt',
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(Icons.play_arrow_rounded, size: iconSize),
+                      title: const Text('Tự chạy'),
+                      suffix: Text(
+                        _carouselAutoPlayLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselAutoPlayLocal ? 1 : 0,
-                          onChange: (index) {
-                            final enabled = index == 1;
-                            setState(() {
-                              _carouselAutoPlayLocal = enabled;
-                            });
-                            widget.onCarouselAutoPlayChanged(enabled);
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselAutoPlayLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _carouselAutoPlayLocal = enabled;
+                              });
+                              widget.onCarouselAutoPlayChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        children: const [
-                          FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                  FItem(
-                    prefix: Icon(Icons.timer_outlined, size: iconSize),
-                    title: const Text('Chu kỳ'),
-                    suffix: Text(
-                      carouselIntervalLabel,
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(Icons.timer_outlined, size: iconSize),
+                      title: const Text('Chu kỳ'),
+                      suffix: Text(
+                        carouselIntervalLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselIntervalIndex,
-                          onChange: (index) {
-                            setState(() {
-                              _carouselIntervalIndex = index;
-                            });
-                            widget.onCarouselIntervalChanged(
-                              _carouselIntervals[index],
-                            );
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselIntervalIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _carouselIntervalIndex = index;
+                              });
+                              widget.onCarouselIntervalChanged(
+                                _carouselIntervals[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('2s'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('3s'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('4s'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('6s'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        scrollable: false,
-                        children: const [
-                          FTabEntry(label: Text('2s'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('3s'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('4s'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('6s'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                  FItem(
-                    prefix: Icon(Icons.speed_rounded, size: iconSize),
-                    title: const Text('Tốc độ chạy'),
-                    suffix: Text(
-                      carouselAnimLabel,
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(Icons.speed_rounded, size: iconSize),
+                      title: const Text('Tốc độ chạy'),
+                      suffix: Text(
+                        carouselAnimLabel,
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselAnimationIndex,
-                          onChange: (index) {
-                            setState(() {
-                              _carouselAnimationIndex = index;
-                            });
-                            widget.onCarouselAnimationChanged(
-                              _carouselAnimations[index],
-                            );
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselAnimationIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _carouselAnimationIndex = index;
+                              });
+                              widget.onCarouselAnimationChanged(
+                                _carouselAnimations[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('400'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('700'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('1000'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        scrollable: false,
-                        children: const [
-                          FTabEntry(label: Text('400'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('700'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('1000'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                  FItem(
-                    prefix: Icon(Icons.view_carousel_outlined, size: iconSize),
-                    title: const Text('Hiển thị'),
-                    suffix: Text(
-                      '$carouselViewportLabel%',
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(
+                        Icons.view_carousel_outlined,
+                        size: iconSize,
+                      ),
+                      title: const Text('Hiển thị'),
+                      suffix: Text(
+                        '$carouselViewportLabel%',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselViewportIndex,
-                          onChange: (index) {
-                            setState(() {
-                              _carouselViewportIndex = index;
-                            });
-                            widget.onCarouselViewportChanged(
-                              _carouselViewports[index],
-                            );
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselViewportIndex,
+                            onChange: (index) {
+                              setState(() {
+                                _carouselViewportIndex = index;
+                              });
+                              widget.onCarouselViewportChanged(
+                                _carouselViewports[index],
+                              );
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          scrollable: false,
+                          children: const [
+                            FTabEntry(
+                              label: Text('60%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('70%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('80%'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('90%'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        scrollable: false,
-                        children: const [
-                          FTabEntry(label: Text('60%'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('70%'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('80%'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('90%'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                  FItem(
-                    prefix: Icon(Icons.open_in_full_outlined, size: iconSize),
-                    title: const Text('Phóng to giữa'),
-                    suffix: Text(
-                      _carouselEnlargeLocal ? 'Bật' : 'Tắt',
-                      style: context.theme.typography.base.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: context.theme.colors.foreground,
+                    FItem(
+                      prefix: Icon(Icons.open_in_full_outlined, size: iconSize),
+                      title: const Text('Phóng to giữa'),
+                      suffix: Text(
+                        _carouselEnlargeLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
                       ),
                     ),
-                  ),
-                  FItem.raw(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: ThemeTokens.spaceSm),
-                      child: FTabs(
-                        control: FTabControl.lifted(
-                          index: _carouselEnlargeLocal ? 1 : 0,
-                          onChange: (index) {
-                            final enabled = index == 1;
-                            setState(() {
-                              _carouselEnlargeLocal = enabled;
-                            });
-                            widget.onCarouselEnlargeChanged(enabled);
-                          },
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
                         ),
-                        style: (style) => style.copyWith(
-                          spacing: 0,
-                          height: tabHeight,
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _carouselEnlargeLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _carouselEnlargeLocal = enabled;
+                              });
+                              widget.onCarouselEnlargeChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
                         ),
-                        children: const [
-                          FTabEntry(label: Text('Tắt'), child: SizedBox.shrink()),
-                          FTabEntry(label: Text('Bật'), child: SizedBox.shrink()),
-                        ],
                       ),
                     ),
-                  ),
-                ],
+                  ],
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
@@ -1428,9 +1529,28 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                       prefix: Icon(Icons.extension_outlined, size: iconSize),
                       title: const Text('MCP Server Flow'),
                       details: Text(
-                        'Quản lý tools và JSON‑RPC',
+                        'Quản lý tools, JSON‑RPC và host nội bộ',
                         style: context.theme.typography.sm.copyWith(
                           color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(Icons.lan_outlined, size: iconSize),
+                      title: const Text('Địa chỉ truy cập'),
+                      details: Text(
+                        hostLabel,
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                      suffix: Text(
+                        hostStatus,
+                        style: context.theme.typography.sm.copyWith(
+                          color: _webHostState.isRunning
+                              ? context.theme.colors.primary
+                              : context.theme.colors.destructive,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
@@ -1452,10 +1572,10 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   ],
                 ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
     );
   }
 

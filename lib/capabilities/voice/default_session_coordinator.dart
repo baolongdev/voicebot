@@ -20,8 +20,8 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   DefaultSessionCoordinator({
     required AudioInput audioInput,
     required AudioOutput audioOutput,
-  })  : _audioInput = audioInput,
-        _audioOutput = audioOutput;
+  }) : _audioInput = audioInput,
+       _audioOutput = audioOutput;
 
   final AudioInput _audioInput;
   final AudioOutput _audioOutput;
@@ -39,7 +39,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   final StreamController<bool> _speakingController =
       StreamController<bool>.broadcast();
 
-  final McpServer _mcpServer = McpServer();
+  final McpServer _mcpServer = McpServer.shared;
   TransportClient? _transport;
   StreamSubscription<Map<String, dynamic>>? _jsonSubscription;
   StreamSubscription<Uint8List>? _audioSubscription;
@@ -95,23 +95,14 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       await disconnect().timeout(const Duration(milliseconds: 500));
     } catch (_) {}
     _transport = transport;
-    AppLogger.event(
-      'SessionCoordinator',
-      'connect_start',
-    );
+    AppLogger.event('SessionCoordinator', 'connect_start');
     final connected = await _transport!.connect();
     if (!connected) {
-      AppLogger.event(
-        'SessionCoordinator',
-        'connect_failed',
-      );
+      AppLogger.event('SessionCoordinator', 'connect_failed');
       _transport = null;
       return false;
     }
-    AppLogger.event(
-      'SessionCoordinator',
-      'connect_success',
-    );
+    AppLogger.event('SessionCoordinator', 'connect_success');
 
     await _setupPlayback();
     _setupDecoder();
@@ -264,8 +255,9 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   Future<void> _setupPlayback() async {
-    var playbackSampleRate =
-        serverSampleRate > 0 ? serverSampleRate : AudioConfig.sampleRate;
+    var playbackSampleRate = serverSampleRate > 0
+        ? serverSampleRate
+        : AudioConfig.sampleRate;
     if (Platform.isWindows) {
       AppLogger.log(
         'SessionCoordinator',
@@ -273,7 +265,8 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       );
     }
     _playbackSampleRate = playbackSampleRate;
-    _playbackFrameBytes = (playbackSampleRate *
+    _playbackFrameBytes =
+        (playbackSampleRate *
             AudioConfig.frameDurationMs *
             AudioConfig.channels *
             2) ~/
@@ -380,20 +373,50 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   Future<void> _handleMcpMessage(Map<String, dynamic> json) async {
     final payload = json['payload'];
     if (payload is! Map<String, dynamic>) {
+      AppLogger.event(
+        'MCP',
+        'invalid_payload',
+        fields: <String, Object?>{'type': json['type']},
+        level: 'W',
+      );
       return;
     }
-    AppLogger.log(
+    AppLogger.event(
       'MCP',
-      'request=${jsonEncode(payload)}',
-      level: 'D',
+      'request',
+      fields: <String, Object?>{
+        'method': payload['method'],
+        'id': payload['id'],
+      },
     );
+    AppLogger.log('MCP', 'request_body=${jsonEncode(payload)}');
     final response = await _mcpServer.handleMessage(payload);
     if (response == null) {
+      AppLogger.event(
+        'MCP',
+        'ignored',
+        fields: <String, Object?>{
+          'reason': 'null_response',
+          'method': payload['method'],
+          'id': payload['id'],
+        },
+        level: 'W',
+      );
       return;
     }
     final sessionId =
         _transport?.sessionId ?? (json['session_id'] as String? ?? '');
     if (sessionId.isEmpty) {
+      AppLogger.event(
+        'MCP',
+        'reply_skipped',
+        fields: <String, Object?>{
+          'reason': 'missing_session_id',
+          'method': payload['method'],
+          'id': payload['id'],
+        },
+        level: 'W',
+      );
       return;
     }
     final envelope = <String, dynamic>{
@@ -401,12 +424,16 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       'type': 'mcp',
       'payload': response,
     };
-    await sendText(jsonEncode(envelope));
-    AppLogger.log(
+    await _transport?.sendText(jsonEncode(envelope));
+    AppLogger.event(
       'MCP',
-      'response=${jsonEncode(response)}',
-      level: 'D',
+      'response',
+      fields: <String, Object?>{
+        'id': response['id'],
+        'has_error': response['error'] != null,
+      },
     );
+    AppLogger.log('MCP', 'response_body=${jsonEncode(response)}');
   }
 
   void _handleIncomingAudio(Uint8List data) {

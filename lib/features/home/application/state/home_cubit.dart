@@ -20,11 +20,11 @@ class HomeCubit extends Cubit<HomeState> {
     required core_ota.OtaService ota,
     required ChatSession chatCubit,
     required HomeSystemService systemService,
-  })  : _settingsRepository = settingsRepository,
-        _ota = ota,
-        _chatCubit = chatCubit,
-        _systemService = systemService,
-        super(HomeState.initial()) {
+  }) : _settingsRepository = settingsRepository,
+       _ota = ota,
+       _chatCubit = chatCubit,
+       _systemService = systemService,
+       super(HomeState.initial()) {
     _chatSubscription = _chatCubit.stream.listen(_handleChatStateChanged);
   }
 
@@ -66,7 +66,7 @@ class HomeCubit extends Cubit<HomeState> {
 
     final batteryLevel = await _systemService.fetchBatteryLevel();
     final connectivity = await _systemService.fetchConnectivity();
-    final wifiName = await _systemService.fetchWifiName();
+    final wifiName = _cleanWifiName(await _systemService.fetchWifiName());
     final carrierName = await _systemService.fetchCarrierName();
     final volume = await _systemService.fetchVolume();
     final audioDevice = await _systemService.fetchAudioDevice();
@@ -82,14 +82,14 @@ class HomeCubit extends Cubit<HomeState> {
       ),
     );
 
-    _batteryStateSub =
-        _systemService.batteryStateStream.listen((batteryState) {
+    _batteryStateSub = _systemService.batteryStateStream.listen((batteryState) {
       unawaited(_refreshBatteryLevel(batteryState: batteryState));
     });
-    _connectivitySub =
-        _systemService.connectivityStream.listen((results) async {
+    _connectivitySub = _systemService.connectivityStream.listen((
+      results,
+    ) async {
       emit(state.copyWith(connectivity: results));
-      final name = await _systemService.fetchWifiName();
+      final name = _cleanWifiName(await _systemService.fetchWifiName());
       emit(state.copyWith(wifiName: name));
     });
     _volumeSub = _systemService.volumeStream.listen((value) {
@@ -109,12 +109,7 @@ class HomeCubit extends Cubit<HomeState> {
       return;
     }
     _connectInFlight = true;
-    emit(
-      state.copyWith(
-        isConnecting: true,
-        errorMessage: null,
-      ),
-    );
+    emit(state.copyWith(isConnecting: true, errorMessage: null));
 
     try {
       final outcome = await _prepareConnection();
@@ -141,9 +136,7 @@ class HomeCubit extends Cubit<HomeState> {
             .timeout(const Duration(seconds: 1));
       } catch (_) {}
       try {
-        await _chatCubit
-            .connect()
-            .timeout(const Duration(seconds: 12));
+        await _chatCubit.connect().timeout(const Duration(seconds: 12));
       } on TimeoutException {
         await _chatCubit.disconnect();
         emit(
@@ -222,9 +215,7 @@ class HomeCubit extends Cubit<HomeState> {
 
     final ready = _hasReadyConfig(deviceInfo != null);
     if (ready) {
-      return _PrepareOutcome.ready(
-        activation: null,
-      );
+      return _PrepareOutcome.ready(activation: null);
     }
 
     return _PrepareOutcome.error('Chưa có cấu hình XiaoZhi');
@@ -286,8 +277,7 @@ class HomeCubit extends Cubit<HomeState> {
 
   void _startActivationProgress() {
     _activationProgressTimer?.cancel();
-    _activationProgressTimer =
-        Timer.periodic(_activationProgressStep, (_) {
+    _activationProgressTimer = Timer.periodic(_activationProgressStep, (_) {
       if (_disposed || isClosed) {
         return;
       }
@@ -310,24 +300,25 @@ class HomeCubit extends Cubit<HomeState> {
       final networks = await _systemService.scanWifiNetworks();
       emit(state.copyWith(wifiNetworks: networks, wifiLoading: false));
     } catch (_) {
-      emit(state.copyWith(
-        wifiLoading: false,
-        wifiError: 'Không thể quét Wi‑Fi, thử lại sau.',
-      ));
+      emit(
+        state.copyWith(
+          wifiLoading: false,
+          wifiError: 'Không thể quét Wi‑Fi, thử lại sau.',
+        ),
+      );
     }
   }
 
-  Future<bool> connectToWifi(
-    HomeWifiNetwork network,
-    String password,
-  ) async {
+  Future<bool> connectToWifi(HomeWifiNetwork network, String password) async {
     emit(state.copyWith(wifiLoading: true, wifiError: null));
     final success = await _systemService.connectToWifi(network, password);
     if (!success) {
-      emit(state.copyWith(
-        wifiLoading: false,
-        wifiError: 'Kết nối Wi‑Fi thất bại.',
-      ));
+      emit(
+        state.copyWith(
+          wifiLoading: false,
+          wifiError: 'Kết nối Wi‑Fi thất bại.',
+        ),
+      );
       return false;
     }
     emit(state.copyWith(wifiLoading: false));
@@ -346,19 +337,23 @@ class HomeCubit extends Cubit<HomeState> {
 
   Future<void> refreshNetworkStatus() async {
     for (var attempt = 0; attempt < 5; attempt += 1) {
-      await Future<void>.delayed(const Duration(seconds: 1));
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+      }
       if (_disposed || isClosed) {
         return;
       }
       final connectivity = await _systemService.fetchConnectivity();
       emit(state.copyWith(connectivity: connectivity));
-      final name = await _systemService.fetchWifiName();
+      final name = _cleanWifiName(await _systemService.fetchWifiName());
       emit(state.copyWith(wifiName: name));
       final cleaned = _cleanWifiName(name);
       if (cleaned != null && cleaned.isNotEmpty) {
-        emit(state.copyWith(
-          connectivity: const <HomeConnectivity>[HomeConnectivity.wifi],
-        ));
+        emit(
+          state.copyWith(
+            connectivity: const <HomeConnectivity>[HomeConnectivity.wifi],
+          ),
+        );
         return;
       }
     }

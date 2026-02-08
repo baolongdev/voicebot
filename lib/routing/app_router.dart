@@ -45,7 +45,7 @@ class AppRouter {
       GoRoute(
         path: Routes.mcpFlow,
         name: RouteNames.mcpFlow,
-        builder: (context, state) => McpFlowPage(),
+        builder: (context, state) => const McpFlowPage(),
       ),
       GoRoute(
         path: Routes.root,

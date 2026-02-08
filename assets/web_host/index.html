@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css" />
+  <link rel="stylesheet" href="/console.css" />
+  <title>Bảng Điều Khiển Tri Thức</title>
+</head>
+<body>
+  <div class="workspace-card">
+    <aside class="pane sidebar-pane" aria-label="Điều hướng">
+      <div class="user-switcher">
+        <div class="avatar">CV</div>
+        <div>
+          <p class="user-name">Chanh Việt Team</p>
+        </div>
+      </div>
+
+      <label class="search-label" for="sidebarSearch">Tìm nhanh</label>
+      <input
+        id="sidebarSearch"
+        class="search-input"
+        placeholder="Tìm theo tiêu đề hoặc tag"
+        aria-label="Tìm kiếm nhanh tài liệu tri thức theo tiêu đề hoặc tag"
+      />
+
+      <nav class="nav-list" aria-label="Danh mục">
+        <button class="nav-item active" type="button">Kho tri thức</button>
+      </nav>
+
+      <section class="folder-panel" aria-label="Quản lý thư mục tri thức">
+        <div class="folder-head">
+          <p class="folder-title">Thư mục tri thức</p>
+          <button id="addFolderBtn" class="folder-add-btn" type="button" aria-label="Tạo thư mục mới" title="Tạo thư mục mới">
+            <i class="icon-folder-plus" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div id="folderList" class="folder-list" role="list"></div>
+      </section>
+    </aside>
+
+    <section class="pane notes-pane">
+      <header class="notes-header">
+        <div>
+          <h2>Kho tri thức</h2>
+          <p id="docCount">Tổng: 0</p>
+        </div>
+        <button id="newNoteBtn" class="btn btn-soft" type="button" aria-label="Tạo tài liệu tri thức mới">+ Tạo tài liệu</button>
+      </header>
+
+      <div class="notes-tools">
+        <input
+          id="docFilterInput"
+          class="field"
+          placeholder="Tìm theo tiêu đề..."
+          aria-label="Lọc tài liệu tri thức theo tiêu đề"
+        />
+        <select id="docSortSelect" class="field narrow-select" aria-label="Sắp xếp danh sách tài liệu tri thức">
+          <option value="updated_desc">Cập nhật mới nhất</option>
+          <option value="updated_asc">Cập nhật cũ nhất</option>
+          <option value="name_asc">Tên A-Z</option>
+          <option value="name_desc">Tên Z-A</option>
+        </select>
+      </div>
+
+      <div id="docBody" class="notes-scroll" role="list" aria-live="polite"></div>
+
+      <div class="notes-actions">
+        <button id="refreshBtn" class="btn btn-ghost" type="button" aria-label="Làm mới danh sách">Làm mới</button>
+        <button id="exportAllBtn" class="btn btn-ghost" type="button" aria-label="Xuất toàn bộ dữ liệu">Xuất dữ liệu</button>
+        <button id="importAllBtn" class="btn btn-ghost" type="button" aria-label="Nhập toàn bộ dữ liệu">Nhập dữ liệu</button>
+        <button id="clearBtn" class="btn btn-danger" type="button" aria-label="Xóa toàn bộ tài liệu">Xóa toàn bộ</button>
+        <input
+          id="importAllInput"
+          class="toolbar-file-input"
+          type="file"
+          accept=".json,application/json"
+          aria-label="Chọn tệp JSON để nhập dữ liệu"
+        />
+      </div>
+    </section>
+
+    <section class="pane editor-pane">
+      <header class="editor-meta">
+        <div class="meta-top">
+          <p class="breadcrumb">Kho tri thức &gt; <span id="docPreviewTitle">Chưa đặt tên</span></p>
+        </div>
+
+        <input
+          id="docName"
+          class="title-input"
+          placeholder="Tên tài liệu"
+          list="docNameList"
+          aria-label="Tiêu đề tài liệu"
+        />
+        <datalist id="docNameList">
+          <option value="san_pham_chanh_viet.txt"></option>
+          <option value="faq_khach_hang.txt"></option>
+          <option value="huong_dan_su_dung.txt"></option>
+        </datalist>
+
+        <div class="meta-row">
+          <span>Tạo bởi: Admin</span>
+          <span>Cập nhật lần cuối: <strong id="lastModifiedLabel">-</strong></span>
+          <label class="meta-folder" for="docFolderSelect">
+            Thư mục:
+            <select id="docFolderSelect" class="meta-folder-select" aria-label="Chọn thư mục cho tài liệu"></select>
+          </label>
+          <span id="hostStatus" class="metric-chip metric-chip-host">Host: Đang kiểm tra</span>
+          <span id="docCountHero" class="metric-chip metric-chip-count">0 tài liệu</span>
+        </div>
+
+        <div class="tags-row" aria-label="Quản lý nhãn tài liệu">
+          <div id="docTagsList" class="doc-tags-list"></div>
+          <div class="doc-tags-actions">
+            <input
+              id="docTagInput"
+              class="doc-tag-input"
+              placeholder="Thêm nhãn..."
+              aria-label="Nhập nhãn mới"
+            />
+            <button id="addDocTagBtn" class="tag-add" type="button" aria-label="Thêm nhãn mới">
+              <i class="icon-plus" aria-hidden="true"></i> Thêm nhãn
+            </button>
+          </div>
+          <p class="doc-tags-hint">Nhấn vào tên nhãn để sửa. Nhấn dấu × để xóa.</p>
+        </div>
+      </header>
+
+      <div class="editor-toolbar" aria-label="Thanh công cụ soạn thảo">
+        <button id="insertImageBtn" class="toolbar-icon-btn" type="button" aria-label="Chèn hình ảnh" title="Chèn hình ảnh"><i class="icon-image" aria-hidden="true"></i></button>
+        <span class="toolbar-divider" aria-hidden="true"></span>
+        <button class="toolbar-template toolbar-chip-btn toolbar-template-product template-insert" data-template="product" type="button" aria-label="Chèn mẫu sản phẩm" title="Chèn mẫu sản phẩm">
+          <i class="icon-package" aria-hidden="true"></i> SP
+        </button>
+        <button class="toolbar-template toolbar-chip-btn toolbar-template-faq template-insert" data-template="faq" type="button" aria-label="Chèn mẫu FAQ" title="Chèn mẫu FAQ">
+          <i class="icon-circle-question-mark" aria-hidden="true"></i> FAQ
+        </button>
+        <button class="toolbar-template toolbar-chip-btn toolbar-template-policy template-insert" data-template="policy" type="button" aria-label="Chèn mẫu chính sách" title="Chèn mẫu chính sách">
+          <i class="icon-shield" aria-hidden="true"></i> CS
+        </button>
+        <button id="openDocFileBtn" class="toolbar-attach toolbar-chip-btn" type="button" aria-label="Đính kèm file văn bản" title="Đính kèm file văn bản">
+          <i class="icon-file-text" aria-hidden="true"></i> Tệp
+        </button>
+        <input
+          id="docFileMirror"
+          class="toolbar-file-input"
+          type="file"
+          accept=".txt,.md,.json,.csv,.log,.yaml,.yml,.xml"
+          aria-label="Đính kèm tệp văn bản nguồn"
+        />
+      </div>
+
+      <div class="editor-scroll">
+        <div class="editor-content">
+          <div class="view-switch" role="group" aria-label="Chuyển chế độ xem">
+            <button id="viewTextBtn" class="view-switch-btn active" type="button" aria-label="Chế độ nhập văn bản">
+              Text
+            </button>
+            <button id="viewKdocBtn" class="view-switch-btn" type="button" aria-label="Chế độ xem theo mục KDOC">
+              Xem theo mục (KDOC)
+            </button>
+          </div>
+
+          <div id="textEditorBlock">
+            <textarea id="docText" placeholder="Nhập nội dung tài liệu tại đây..." aria-label="Nội dung tài liệu"></textarea>
+          </div>
+
+          <div id="kdocOutlineBlock" class="kdoc-outline is-hidden">
+            <h4>Xem theo mục (KDOC)</h4>
+            <p>Nội dung sẽ được hiển thị theo từng mục để dễ đọc và kiểm tra cấu trúc.</p>
+            <div id="kdocOutlineBody" class="kdoc-outline-body" aria-live="polite">
+              Chưa có dữ liệu KDOC.
+            </div>
+          </div>
+
+          <div class="upload-tools">
+            <label for="imageFileInput" class="upload-label">Đính kèm ảnh minh họa</label>
+            <input id="imageFileInput" class="field" type="file" accept="image/*" multiple aria-label="Tải ảnh minh họa" />
+          </div>
+
+          <div class="image-grid" id="imageGrid" aria-label="Vùng ảnh minh họa">
+            <div class="image-card">Ảnh minh họa A</div>
+            <div class="image-card">Ảnh minh họa B</div>
+          </div>
+
+        </div>
+      </div>
+
+      <footer class="editor-footer">
+        <p id="uploadStatus" class="status-line info" role="status" aria-live="polite">Sẵn sàng.</p>
+        <button id="uploadBtn" class="btn btn-primary" type="button" aria-label="Lưu tài liệu lên hệ thống">Lưu tài liệu</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="appModal" class="app-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="appModalTitle">
+    <div class="app-modal-panel">
+      <header class="app-modal-header">
+        <h3 id="appModalTitle">Xác nhận thao tác</h3>
+      </header>
+      <div class="app-modal-body">
+        <p id="appModalMessage" class="app-modal-message"></p>
+        <div id="appModalInputWrap" class="app-modal-input-wrap is-hidden">
+          <input id="appModalInput" class="app-modal-input" aria-label="Nội dung nhập vào" />
+        </div>
+      </div>
+      <footer class="app-modal-actions">
+        <button id="appModalCancel" class="btn btn-ghost" type="button">Hủy</button>
+        <button id="appModalConfirm" class="btn btn-primary" type="button">Xác nhận</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="/console.js"></script>
+</body>
+</html>
