@@ -3,27 +3,36 @@ import 'dart:convert';
 import 'dart:typed_data';
 import '../../../../capabilities/protocol/protocol.dart';
 import '../../../../capabilities/mcp/mcp_server.dart';
+import '../../../../capabilities/web_host/local_web_host_service.dart';
 import '../../../../capabilities/voice/session_coordinator.dart';
 import '../../../../capabilities/voice/transport_client.dart';
 import '../../../../capabilities/voice/websocket_transport_client.dart';
 import '../../../../capabilities/voice/mqtt_transport_client.dart';
+import '../../../../core/config/app_config.dart';
 import '../../../form/domain/models/server_form_data.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/result/result.dart';
 import '../../domain/entities/chat_config.dart';
 import '../../domain/entities/chat_response.dart';
+import '../../domain/entities/related_chat_image.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/utils/throttle.dart';
 import '../services/xiaozhi_text_service.dart';
 
 class ChatRepositoryImpl implements ChatRepository {
-  ChatRepositoryImpl({required SessionCoordinator sessionCoordinator})
-    : _sessionCoordinator = sessionCoordinator,
-      _responsesController = StreamController<ChatResponse>.broadcast(),
-      _audioController = StreamController<List<int>>.broadcast(),
-      _errorController = StreamController<Failure>.broadcast(),
-      _speakingController = StreamController<bool>.broadcast() {
+  ChatRepositoryImpl({
+    required SessionCoordinator sessionCoordinator,
+    Uri? Function()? webHostBaseUriResolver,
+    Future<Map<String, dynamic>?> Function(Map<String, dynamic> payload)?
+    mcpHandleMessage,
+  }) : _sessionCoordinator = sessionCoordinator,
+       _webHostBaseUriResolver = webHostBaseUriResolver,
+       _mcpHandleMessage = mcpHandleMessage ?? McpServer.shared.handleMessage,
+       _responsesController = StreamController<ChatResponse>.broadcast(),
+       _audioController = StreamController<List<int>>.broadcast(),
+       _errorController = StreamController<Failure>.broadcast(),
+       _speakingController = StreamController<bool>.broadcast() {
     _textService = XiaozhiTextService(
       sessionCoordinator: _sessionCoordinator,
       sessionIdProvider: () => _transport?.sessionId ?? '',
@@ -31,6 +40,9 @@ class ChatRepositoryImpl implements ChatRepository {
   }
 
   final SessionCoordinator _sessionCoordinator;
+  final Uri? Function()? _webHostBaseUriResolver;
+  final Future<Map<String, dynamic>?> Function(Map<String, dynamic> payload)
+  _mcpHandleMessage;
   final StreamController<ChatResponse> _responsesController;
   final StreamController<List<int>> _audioController;
   final StreamController<Failure> _errorController;
@@ -55,9 +67,12 @@ class ChatRepositoryImpl implements ChatRepository {
   int? _lastLocalVolumeTarget;
   DateTime _lastBlockedReplyAt = DateTime.fromMillisecondsSinceEpoch(0);
   String? _lastBlockedInput;
+  String? _lastImageContextQuery;
+  DateTime _lastImageContextAt = DateTime.fromMillisecondsSinceEpoch(0);
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
   static const Duration _recentTextWindow = Duration(seconds: 10);
   static const Duration _knowledgeVoiceCooldown = Duration(seconds: 6);
+  static const Duration _imageContextTtl = Duration(minutes: 10);
   static const String _knowledgeMarker = '__KBCTX__';
   static const String _missingMqttCode = 'missing_mqtt';
   static const bool _forceKnowledgeModeEnabled = true;
@@ -283,6 +298,179 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> sendAudio(List<int> data) async {
     await _sessionCoordinator.sendAudio(data);
+  }
+
+  @override
+  Future<List<RelatedChatImage>> getRelatedImagesForQuery(
+    String query, {
+    int? topK,
+    int? maxImages,
+  }) async {
+    if (!AppConfig.chatRelatedImagesEnabled) {
+      return const <RelatedChatImage>[];
+    }
+    final inputQuery = query.trim();
+    if (inputQuery.isEmpty) {
+      return const <RelatedChatImage>[];
+    }
+    var effectiveQuery = inputQuery;
+    final now = DateTime.now();
+    if (!_isGenericImageRequest(inputQuery)) {
+      _lastImageContextQuery = inputQuery;
+      _lastImageContextAt = now;
+    }
+    if (_isGenericImageRequest(inputQuery) &&
+        _lastImageContextQuery != null &&
+        now.difference(_lastImageContextAt) <= _imageContextTtl) {
+      effectiveQuery = _lastImageContextQuery!;
+      AppLogger.event(
+        'ChatRepository',
+        'related_images_context_fallback',
+        fields: <String, Object?>{
+          'input_query': inputQuery,
+          'effective_query': effectiveQuery,
+        },
+        level: 'D',
+      );
+    }
+
+    final topKValue = (topK ?? AppConfig.chatRelatedImagesSearchTopK).clamp(
+      1,
+      10,
+    );
+    final maxImageCount = (maxImages ?? AppConfig.chatRelatedImagesMaxCount)
+        .clamp(1, 12);
+    final startedAt = DateTime.now();
+    try {
+      final result = await _callMcpTool(
+        name: 'self.knowledge.search_images',
+        arguments: <String, dynamic>{
+          'query': effectiveQuery,
+          'top_k': topKValue,
+          'max_images': maxImageCount,
+        },
+      );
+      final payload = _decodeToolPayload(result);
+      if (payload is! Map) {
+        return const <RelatedChatImage>[];
+      }
+      final rows = payload['images'];
+      if (rows is! List || rows.isEmpty) {
+        AppLogger.event(
+          'ChatRepository',
+          'related_images_no_images',
+          fields: <String, Object?>{
+            'query': inputQuery,
+            'effective_query': effectiveQuery,
+          },
+          level: 'D',
+        );
+        return const <RelatedChatImage>[];
+      }
+
+      final baseUri = _resolveWebHostBaseUri();
+      if (baseUri == null) {
+        AppLogger.event(
+          'ChatRepository',
+          'related_images_no_web_host',
+          fields: <String, Object?>{
+            'query': inputQuery,
+            'effective_query': effectiveQuery,
+          },
+          level: 'D',
+        );
+        return const <RelatedChatImage>[];
+      }
+
+      final imagesById = <String, RelatedChatImage>{};
+      var droppedNonLocal = 0;
+      for (final row in rows) {
+        if (row is! Map) {
+          continue;
+        }
+        final item = Map<String, dynamic>.from(row);
+        final id = (item['id'] ?? '').toString().trim();
+        final urlRaw = (item['url'] ?? '').toString().trim();
+        if (id.isEmpty || urlRaw.isEmpty) {
+          continue;
+        }
+        final resolvedUrl = _resolveLocalImageUrl(urlRaw, baseUri);
+        if (resolvedUrl == null) {
+          droppedNonLocal += 1;
+          continue;
+        }
+        final fileName = (item['file_name'] ?? '').toString().trim();
+        final docName = (item['doc_name'] ?? '').toString().trim();
+        final image = RelatedChatImage(
+          id: id,
+          documentName: docName.isEmpty ? 'unknown' : docName,
+          fileName: fileName.isEmpty ? 'image' : fileName,
+          url: resolvedUrl,
+          mimeType: (item['mime_type'] ?? '').toString().trim(),
+          bytes: (item['bytes'] as num?)?.toInt() ?? 0,
+          score: (item['score'] as num?)?.toInt() ?? 0,
+          createdAt: DateTime.tryParse(
+            (item['created_at'] ?? '').toString().trim(),
+          ),
+        );
+        final existing = imagesById[id];
+        if (existing == null || image.score > existing.score) {
+          imagesById[id] = image;
+        }
+      }
+      if (droppedNonLocal > 0) {
+        AppLogger.event(
+          'ChatRepository',
+          'related_images_drop_non_local',
+          fields: <String, Object?>{
+            'query': inputQuery,
+            'effective_query': effectiveQuery,
+            'dropped': droppedNonLocal,
+          },
+          level: 'D',
+        );
+      }
+
+      final merged = imagesById.values.toList(growable: false)
+        ..sort((a, b) {
+          final byScore = b.score.compareTo(a.score);
+          if (byScore != 0) {
+            return byScore;
+          }
+          final aMillis = a.createdAt?.millisecondsSinceEpoch ?? 0;
+          final bMillis = b.createdAt?.millisecondsSinceEpoch ?? 0;
+          return bMillis.compareTo(aMillis);
+        });
+      final limited = merged.take(maxImageCount).toList(growable: false);
+      if (limited.isNotEmpty) {
+        _lastImageContextQuery = effectiveQuery;
+        _lastImageContextAt = now;
+      }
+      AppLogger.event(
+        'ChatRepository',
+        'related_images_loaded',
+        fields: <String, Object?>{
+          'query': inputQuery,
+          'effective_query': effectiveQuery,
+          'images': limited.length,
+          'latency_ms': DateTime.now().difference(startedAt).inMilliseconds,
+        },
+        level: 'D',
+      );
+      return limited;
+    } catch (error) {
+      AppLogger.event(
+        'ChatRepository',
+        'related_images_error',
+        fields: <String, Object?>{
+          'query': inputQuery,
+          'effective_query': effectiveQuery,
+          'error': error.toString(),
+        },
+        level: 'D',
+      );
+      return const <RelatedChatImage>[];
+    }
   }
 
   void _handleIncomingJson(Map<String, dynamic> json) {
@@ -590,7 +778,7 @@ YEU_CAU_TRA_LOI:
     required int maxSnippetChars,
     bool includeFullContent = false,
   }) async {
-    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+    final response = await _mcpHandleMessage(<String, dynamic>{
       'jsonrpc': '2.0',
       'id': _mcpRequestId++,
       'method': 'tools/call',
@@ -842,7 +1030,9 @@ YEU_CAU_TRA_LOI:
     final normalized = content.replaceAll('\r\n', '\n').trim();
     final lines = normalized.split('\n');
     final start = lines.indexWhere((line) => line.trim() == '=== KDOC:v1 ===');
-    final end = lines.lastIndexWhere((line) => line.trim() == '=== END_KDOC ===');
+    final end = lines.lastIndexWhere(
+      (line) => line.trim() == '=== END_KDOC ===',
+    );
     if (start < 0 || end <= start) {
       return null;
     }
@@ -878,7 +1068,7 @@ YEU_CAU_TRA_LOI:
   }
 
   Future<List<String>> _listKnowledgeDocumentNames({required int limit}) async {
-    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+    final response = await _mcpHandleMessage(<String, dynamic>{
       'jsonrpc': '2.0',
       'id': _mcpRequestId++,
       'method': 'tools/call',
@@ -928,6 +1118,60 @@ YEU_CAU_TRA_LOI:
       }
     }
     return names;
+  }
+
+  Uri? _resolveWebHostBaseUri() {
+    final injected = _webHostBaseUriResolver?.call();
+    if (injected != null) {
+      return injected;
+    }
+    final state = LocalWebHostService.instance.state;
+    final rawUrl = state.url;
+    if (!state.isRunning || rawUrl == null || rawUrl.trim().isEmpty) {
+      return null;
+    }
+    final parsed = Uri.tryParse(rawUrl.trim());
+    if (parsed == null || parsed.scheme.isEmpty) {
+      return null;
+    }
+    return Uri(
+      scheme: parsed.scheme,
+      host: '127.0.0.1',
+      port: parsed.hasPort ? parsed.port : null,
+      path: '/',
+    );
+  }
+
+  String? _resolveLocalImageUrl(String rawUrl, Uri baseUri) {
+    final trimmed = rawUrl.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    Uri? parsed = Uri.tryParse(trimmed);
+    if (parsed != null && parsed.hasScheme) {
+      final sameHost = parsed.host == baseUri.host;
+      final samePort = parsed.port == baseUri.port;
+      if (!sameHost || !samePort) {
+        return null;
+      }
+    } else {
+      parsed = Uri.tryParse(baseUri.resolve(trimmed).toString());
+    }
+
+    if (parsed == null) {
+      return null;
+    }
+
+    if (!parsed.path.startsWith('/api/documents/image/content')) {
+      return null;
+    }
+
+    if (!parsed.queryParameters.containsKey('id')) {
+      return null;
+    }
+
+    return baseUri.resolve('${parsed.path}?${parsed.query}').toString();
   }
 
   Future<void> _tryHandleLocalVolumeCommand(String text) async {
@@ -1052,20 +1296,53 @@ YEU_CAU_TRA_LOI:
     required String name,
     Map<String, dynamic> arguments = const <String, dynamic>{},
   }) async {
-    final response = await McpServer.shared.handleMessage(<String, dynamic>{
+    final requestId = _mcpRequestId++;
+    AppLogger.event(
+      'ChatRepository',
+      'mcp_tool_call',
+      fields: <String, Object?>{
+        'id': requestId,
+        'tool': name,
+        'arguments': arguments,
+      },
+      level: 'D',
+    );
+    final response = await _mcpHandleMessage(<String, dynamic>{
       'jsonrpc': '2.0',
-      'id': _mcpRequestId++,
+      'id': requestId,
       'method': 'tools/call',
       'params': <String, dynamic>{'name': name, 'arguments': arguments},
     });
     if (response == null) {
+      AppLogger.event(
+        'ChatRepository',
+        'mcp_tool_null_response',
+        fields: <String, Object?>{'id': requestId, 'tool': name},
+        level: 'D',
+      );
       return null;
     }
     final error = response['error'];
     if (error is Map && error['message'] is String) {
+      AppLogger.event(
+        'ChatRepository',
+        'mcp_tool_error',
+        fields: <String, Object?>{
+          'id': requestId,
+          'tool': name,
+          'error': error['message'],
+        },
+        level: 'D',
+      );
       return null;
     }
     final result = response['result'];
+    AppLogger.event(
+      'ChatRepository',
+      'mcp_tool_success',
+      fields: <String, Object?>{'id': requestId, 'tool': name},
+      level: 'D',
+    );
     if (result is Map<String, dynamic>) {
       return result;
     }
@@ -1233,8 +1510,8 @@ YEU_CAU_TRA_LOI:
     final replacements = <RegExp, String>{
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
-      RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
     };
@@ -1244,13 +1521,44 @@ YEU_CAU_TRA_LOI:
     return output;
   }
 
+  bool _isGenericImageRequest(String text) {
+    final normalized = _normalizeForKnowledge(text);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    const intents = <String>{
+      'hinh anh',
+      'hinh',
+      'anh',
+      'hinh san pham',
+      'anh san pham',
+      'xem anh',
+      'xem hinh',
+      'cho toi hinh',
+      'cho toi hinh anh',
+      'show image',
+      'show images',
+      'image',
+      'images',
+      'photo',
+      'photos',
+      'gallery',
+    };
+    for (final intent in intents) {
+      if (normalized.contains(intent)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   String _normalizeQuestionForAgent(String input) {
     var output = _normalizeForKnowledge(input);
     final replacements = <RegExp, String>{
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
-      RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bch[aá]\s*vi\b', caseSensitive: false): 'chavi',
     };
     for (final entry in replacements.entries) {

@@ -177,13 +177,21 @@
           </div>
 
           <div class="upload-tools">
-            <label for="imageFileInput" class="upload-label">Đính kèm ảnh minh họa</label>
-            <input id="imageFileInput" class="field" type="file" accept="image/*" multiple aria-label="Tải ảnh minh họa" />
+            <div class="upload-tools-head">
+              <label for="imageFileInput" class="upload-label">Ảnh minh họa theo tài liệu</label>
+              <button id="pickImageBtn" class="btn btn-ghost" type="button" aria-label="Chọn ảnh từ thiết bị">
+                Chọn ảnh
+              </button>
+            </div>
+            <div id="imageDropZone" class="image-drop-zone" role="button" tabindex="0" aria-label="Kéo thả ảnh vào đây để tải lên">
+              Kéo & thả ảnh vào đây, hoặc bấm "Chọn ảnh" (JPEG/PNG/WEBP, tối đa {{MAX_IMAGE_UPLOAD_MB}}MB/ảnh)
+            </div>
+            <p id="imageUploadStatus" class="status-line info" role="status" aria-live="polite">Chưa có ảnh tải lên.</p>
+            <input id="imageFileInput" class="toolbar-file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-label="Tải ảnh minh họa" />
           </div>
 
           <div class="image-grid" id="imageGrid" aria-label="Vùng ảnh minh họa">
-            <div class="image-card">Ảnh minh họa A</div>
-            <div class="image-card">Ảnh minh họa B</div>
+            <div class="image-card image-card-empty">Chưa có ảnh cho tài liệu này.</div>
           </div>
 
         </div>
@@ -214,6 +222,9 @@
     </div>
   </div>
 
+  <script>
+    window.__WEB_HOST_MAX_IMAGE_UPLOAD_MB__ = Number('{{MAX_IMAGE_UPLOAD_MB}}');
+  </script>
   <script src="/console.js"></script>
 </body>
 </html>

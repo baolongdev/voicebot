@@ -5,6 +5,9 @@ const docFileMirror = document.getElementById('docFileMirror');
 const openDocFileBtn = document.getElementById('openDocFileBtn');
 const imageFileInput = document.getElementById('imageFileInput');
 const imageGrid = document.getElementById('imageGrid');
+const imageDropZone = document.getElementById('imageDropZone');
+const pickImageBtn = document.getElementById('pickImageBtn');
+const imageUploadStatus = document.getElementById('imageUploadStatus');
 const insertImageBtn = document.getElementById('insertImageBtn');
 const docText = document.getElementById('docText');
 const uploadBtn = document.getElementById('uploadBtn');
@@ -35,6 +38,10 @@ const docFolderSelect = document.getElementById('docFolderSelect');
 const docTagsList = document.getElementById('docTagsList');
 const docTagInput = document.getElementById('docTagInput');
 const addDocTagBtn = document.getElementById('addDocTagBtn');
+const MAX_IMAGE_UPLOAD_MB = Number(window.__WEB_HOST_MAX_IMAGE_UPLOAD_MB__) > 0
+  ? Number(window.__WEB_HOST_MAX_IMAGE_UPLOAD_MB__)
+  : 15;
+const MAX_IMAGE_UPLOAD_BYTES = MAX_IMAGE_UPLOAD_MB * 1024 * 1024;
 const appModal = document.getElementById('appModal');
 const appModalTitle = document.getElementById('appModalTitle');
 const appModalMessage = document.getElementById('appModalMessage');
@@ -46,7 +53,9 @@ const appModalConfirm = document.getElementById('appModalConfirm');
 let documentsCache = [];
 let selectedDocName = '';
 let listScrollTop = 0;
-let imageObjectUrls = [];
+let documentImages = [];
+let isUploadingImage = false;
+let imageFetchTimer = null;
 let draftTimer = null;
 let isDirty = false;
 let isSaving = false;
@@ -62,6 +71,10 @@ let noteTagState = {};
 let activeModalResolve = null;
 let activeModalInput = false;
 let modalPreviousFocus = null;
+let imagePreviewModal = null;
+let imagePreviewImage = null;
+let imagePreviewTitle = null;
+let imagePreviewMeta = null;
 const saveButtonDefaultLabel = uploadBtn ? uploadBtn.textContent : 'Lưu tài liệu';
 
 const DRAFT_KEY = 'voicebot.webhost.editor.draft.v1';
@@ -423,6 +436,79 @@ function bindModalEvents() {
       closeModal({ confirmed: true, value: appModalInput.value });
     }
   });
+}
+
+function ensureImagePreviewModal() {
+  if (imagePreviewModal) {
+    return;
+  }
+  const wrapper = document.createElement('div');
+  wrapper.className = 'image-preview-modal is-hidden';
+  wrapper.setAttribute('role', 'dialog');
+  wrapper.setAttribute('aria-modal', 'true');
+  wrapper.setAttribute('aria-label', 'Xem ảnh lớn');
+  wrapper.innerHTML =
+    '<div class="image-preview-panel">' +
+    '<header class="image-preview-head">' +
+    '<p class="image-preview-title" id="imagePreviewTitle">Xem ảnh</p>' +
+    '<button class="image-preview-close" type="button" data-image-preview-close aria-label="Đóng ảnh">×</button>' +
+    '</header>' +
+    '<div class="image-preview-body">' +
+    '<img id="imagePreviewImage" alt="" loading="eager" />' +
+    '</div>' +
+    '<p class="image-preview-meta" id="imagePreviewMeta"></p>' +
+    '</div>';
+  document.body.appendChild(wrapper);
+  imagePreviewModal = wrapper;
+  imagePreviewImage = wrapper.querySelector('#imagePreviewImage');
+  imagePreviewTitle = wrapper.querySelector('#imagePreviewTitle');
+  imagePreviewMeta = wrapper.querySelector('#imagePreviewMeta');
+
+  wrapper.addEventListener('click', function (event) {
+    const target = event.target;
+    if (target === wrapper) {
+      closeImagePreview();
+      return;
+    }
+    if (target instanceof HTMLElement && target.hasAttribute('data-image-preview-close')) {
+      closeImagePreview();
+    }
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && imagePreviewModal && !imagePreviewModal.classList.contains('is-hidden')) {
+      event.preventDefault();
+      closeImagePreview();
+    }
+  });
+}
+
+function openImagePreview(url, title, meta) {
+  ensureImagePreviewModal();
+  if (!imagePreviewModal || !imagePreviewImage) {
+    return;
+  }
+  imagePreviewImage.src = String(url || '');
+  imagePreviewImage.alt = String(title || 'Ảnh minh họa');
+  if (imagePreviewTitle) {
+    imagePreviewTitle.textContent = String(title || 'Ảnh minh họa');
+  }
+  if (imagePreviewMeta) {
+    imagePreviewMeta.textContent = String(meta || '');
+  }
+  imagePreviewModal.classList.remove('is-hidden');
+  document.body.classList.add('image-preview-open');
+}
+
+function closeImagePreview() {
+  if (!imagePreviewModal) {
+    return;
+  }
+  imagePreviewModal.classList.add('is-hidden');
+  document.body.classList.remove('image-preview-open');
+  if (imagePreviewImage) {
+    imagePreviewImage.src = '';
+  }
 }
 
 function saveTagState() {
@@ -1500,6 +1586,7 @@ function loadDraft() {
       docName.value = String(draft.name || '');
       docText.value = String(draft.text || '');
       renderKdocOutline(docText.value || '');
+      fetchDocumentImages(docName.value, { silentStatus: true });
       isDirty = true;
       setStatus('Đã khôi phục bản nháp cục bộ. Vui lòng lưu để cập nhật hệ thống.', 'info');
     }
@@ -1515,37 +1602,252 @@ function scheduleDraftSave() {
   draftTimer = setTimeout(saveDraft, 250);
 }
 
-function renderImagePlaceholders() {
+function currentImageDocumentName() {
+  const draftName = String(docName?.value || '').trim();
+  if (draftName) {
+    return draftName;
+  }
+  const activeName = String(selectedDocName || '').trim();
+  return activeName;
+}
+
+function setImageUploadStatus(message, tone) {
+  if (!imageUploadStatus) return;
+  const normalizedTone = ['info', 'loading', 'ok', 'warn'].includes(tone)
+    ? tone
+    : 'info';
+  imageUploadStatus.textContent = message;
+  imageUploadStatus.className = 'status-line ' + normalizedTone;
+}
+
+function setImageUploadBusy(busy) {
+  isUploadingImage = !!busy;
+  if (pickImageBtn) {
+    pickImageBtn.disabled = isUploadingImage;
+  }
+  if (imageFileInput) {
+    imageFileInput.disabled = isUploadingImage;
+  }
+  if (insertImageBtn) {
+    insertImageBtn.disabled = isUploadingImage;
+  }
+  if (imageDropZone) {
+    imageDropZone.setAttribute('aria-busy', isUploadingImage ? 'true' : 'false');
+  }
+}
+
+function resetImageGallery(message) {
+  documentImages = [];
   if (!imageGrid) return;
   imageGrid.innerHTML =
-    '<div class="image-card">Ảnh minh họa A</div>' +
-    '<div class="image-card">Ảnh minh họa B</div>';
+    '<div class="image-card image-card-empty">' + esc(message || 'Chưa có ảnh cho tài liệu này.') + '</div>';
 }
 
-function clearImageObjectUrls() {
-  imageObjectUrls.forEach(function (url) {
-    URL.revokeObjectURL(url);
-  });
-  imageObjectUrls = [];
-}
-
-function renderImages(files) {
+function renderDocumentImages() {
   if (!imageGrid) return;
-  clearImageObjectUrls();
-  const items = Array.from(files || []).slice(0, 6);
-  if (items.length === 0) {
-    renderImagePlaceholders();
+  if (documentImages.length === 0) {
+    resetImageGallery('Chưa có ảnh cho tài liệu này.');
     return;
   }
 
-  imageGrid.innerHTML = items
-    .map(function (file, idx) {
-      const url = URL.createObjectURL(file);
-      imageObjectUrls.push(url);
-      const alt = esc(file.name || ('Ảnh ' + (idx + 1)));
-      return '<figure class="image-card"><img src="' + url + '" alt="' + alt + '" /></figure>';
+  imageGrid.innerHTML = documentImages
+    .map(function (item) {
+      const imageId = esc(String(item.id || ''));
+      const fileName = esc(String(item.file_name || 'image'));
+      const bytes = Number(item.bytes || 0).toLocaleString('vi-VN');
+      const created = esc(formatTimestamp(item.created_at));
+      const url = '/api/documents/image/content?id=' + encodeURIComponent(String(item.id || ''));
+      return (
+        '<figure class="image-card image-card-remote">' +
+        '<button class="image-preview-trigger image-card-image-wrap" type="button" ' +
+        'data-image-preview-url="' + esc(url) + '" ' +
+        'data-image-preview-title="' + fileName + '" ' +
+        'data-image-preview-meta="' + created + ' • ' + bytes + ' bytes" ' +
+        'aria-label="Xem ảnh lớn ' + fileName + '">' +
+        '<img src="' + url + '" alt="' + fileName + '" loading="lazy" />' +
+        '</button>' +
+        '<figcaption class="image-card-caption">' +
+        '<div class="image-card-title" title="' + fileName + '">' + fileName + '</div>' +
+        '<div class="image-card-meta">' + created + ' • ' + bytes + ' bytes</div>' +
+        '<div class="image-card-actions">' +
+        '<button class="image-delete-btn" type="button" data-image-delete="' + imageId + '" aria-label="Xóa ảnh ' + fileName + '">Xóa</button>' +
+        '</div>' +
+        '</figcaption>' +
+        '</figure>'
+      );
     })
     .join('');
+
+  imageGrid.querySelectorAll('[data-image-delete]').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      const imageId = btn.getAttribute('data-image-delete');
+      if (!imageId) return;
+      const confirmed = await showConfirm('Bạn có muốn xóa ảnh này khỏi tài liệu?', {
+        title: 'Xóa ảnh minh họa',
+        confirmText: 'Xóa',
+        cancelText: 'Hủy',
+        confirmTone: 'danger',
+      });
+      if (!confirmed) {
+        return;
+      }
+      try {
+        await req('/api/documents/image?id=' + encodeURIComponent(imageId), {
+          method: 'DELETE',
+          retryCount: 1,
+        });
+        setImageUploadStatus('Đã xóa ảnh.', 'ok');
+        const doc = currentImageDocumentName();
+        if (doc) {
+          await fetchDocumentImages(doc, { silentStatus: true });
+        } else {
+          resetImageGallery('Chưa có ảnh cho tài liệu này.');
+        }
+      } catch (error) {
+        setImageUploadStatus('Xóa ảnh lỗi: ' + error.message, 'warn');
+      }
+    });
+  });
+
+  imageGrid.querySelectorAll('[data-image-preview-url]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      const imageUrl = btn.getAttribute('data-image-preview-url') || '';
+      const title = btn.getAttribute('data-image-preview-title') || 'Ảnh minh họa';
+      const meta = btn.getAttribute('data-image-preview-meta') || '';
+      openImagePreview(imageUrl, title, meta);
+    });
+  });
+}
+
+async function fetchDocumentImages(docNameValue, options) {
+  const opts = options || {};
+  const doc = String(docNameValue || '').trim();
+  if (!doc) {
+    resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
+    if (!opts.silentStatus) {
+      setImageUploadStatus('Chưa có tên tài liệu để tải ảnh.', 'info');
+    }
+    return;
+  }
+
+  try {
+    const data = await req(
+      '/api/documents/images?name=' + encodeURIComponent(doc),
+      { retryCount: 1 },
+    );
+    documentImages = Array.isArray(data.images) ? data.images : [];
+    renderDocumentImages();
+    if (!opts.silentStatus) {
+      setImageUploadStatus(
+        documentImages.length > 0
+          ? 'Đã tải ' + documentImages.length + ' ảnh.'
+          : 'Tài liệu chưa có ảnh.',
+        'info',
+      );
+    }
+  } catch (error) {
+    documentImages = [];
+    resetImageGallery('Không tải được danh sách ảnh.');
+    if (!opts.silentStatus) {
+      setImageUploadStatus('Không tải được ảnh: ' + error.message, 'warn');
+    }
+  }
+}
+
+function scheduleImageFetch(docNameValue) {
+  if (imageFetchTimer) {
+    clearTimeout(imageFetchTimer);
+  }
+  const target = String(docNameValue || '').trim();
+  imageFetchTimer = setTimeout(function () {
+    fetchDocumentImages(target, { silentStatus: true });
+  }, 260);
+}
+
+async function uploadSingleImage(file, doc) {
+  const mime = String(file?.type || '').toLowerCase();
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+    throw new Error('Ảnh "' + (file.name || '') + '" không đúng định dạng JPEG/PNG/WEBP.');
+  }
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    throw new Error('Ảnh "' + (file.name || '') + '" vượt quá giới hạn ' + MAX_IMAGE_UPLOAD_MB + 'MB.');
+  }
+  const form = new FormData();
+  form.append('name', doc);
+  form.append('file', file, file.name || 'image');
+  try {
+    await req('/api/documents/image', {
+      method: 'POST',
+      retryCount: 1,
+      body: form,
+    });
+  } catch (multipartError) {
+    // Fallback JSON upload to avoid multipart parsing differences across browsers/devices.
+    const dataBase64 = await fileToBase64(file);
+    await req('/api/documents/image', {
+      method: 'POST',
+      retryCount: 1,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: doc,
+        file_name: file.name || 'image',
+        mime_type: mime,
+        data_base64: dataBase64,
+      }),
+    });
+  }
+}
+
+function fileToBase64(file) {
+  return new Promise(function (resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function () {
+      const result = String(reader.result || '');
+      const marker = 'base64,';
+      const idx = result.indexOf(marker);
+      if (idx < 0) {
+        reject(new Error('Không đọc được dữ liệu ảnh base64.'));
+        return;
+      }
+      resolve(result.substring(idx + marker.length));
+    };
+    reader.onerror = function () {
+      reject(new Error('Đọc dữ liệu ảnh thất bại.'));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function uploadImageFiles(fileList) {
+  if (isUploadingImage) {
+    return;
+  }
+  const files = Array.from(fileList || []);
+  if (files.length === 0) {
+    return;
+  }
+  const doc = currentImageDocumentName();
+  if (!doc) {
+    setImageUploadStatus('Hãy nhập tên tài liệu và lưu trước khi tải ảnh.', 'warn');
+    return;
+  }
+
+  setImageUploadBusy(true);
+  try {
+    for (let i = 0; i < files.length; i += 1) {
+      setImageUploadStatus('Đang tải ảnh ' + (i + 1) + '/' + files.length + '...', 'loading');
+      await uploadSingleImage(files[i], doc);
+    }
+    await fetchDocumentImages(doc, { silentStatus: true });
+    setImageUploadStatus('Tải ảnh thành công (' + files.length + ' tệp).', 'ok');
+  } catch (error) {
+    setImageUploadStatus('Tải ảnh lỗi: ' + error.message, 'warn');
+  } finally {
+    if (imageFileInput) {
+      imageFileInput.value = '';
+    }
+    setImageUploadBusy(false);
+  }
 }
 
 async function loadDocumentContent(name) {
@@ -1569,6 +1871,7 @@ async function loadDocumentContent(name) {
     renderFolderSelect();
     renderDocTagEditor();
     renderDocuments(documentsCache);
+    await fetchDocumentImages(selectedDocName, { silentStatus: true });
     setStatus('Đã tải nội dung tài liệu.', 'ok');
   } catch (e) {
     setStatus('Không đọc được nội dung: ' + e.message, 'warn');
@@ -1601,7 +1904,7 @@ async function uploadDocument() {
       method: 'POST',
       retryCount: 1,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name, text: text }),
+      body: JSON.stringify({ name: name, old_name: previousName || '', text: text }),
     });
     moveDocFolderAssignment(previousName, name);
     moveDocTagsAssignment(previousName, name);
@@ -1657,7 +1960,8 @@ async function clearDocuments() {
     renderDocTagEditor();
     renderFolderList();
     renderDocuments([]);
-    renderImagePlaceholders();
+    resetImageGallery('Chưa có ảnh cho tài liệu này.');
+    setImageUploadStatus('Chưa có ảnh tải lên.', 'info');
     setStatus('Đã xóa toàn bộ tài liệu.', 'ok');
   } catch (e) {
     setStatus('Xóa lỗi: ' + e.message, 'warn');
@@ -1731,16 +2035,46 @@ function bindEvents() {
   }
 
   if (imageFileInput) {
-    imageFileInput.addEventListener('change', function (e) {
+    imageFileInput.addEventListener('change', async function (e) {
       const files = e.target.files || [];
-      renderImages(files);
-      setStatus(files.length ? 'Đã nạp ảnh minh họa.' : 'Không có ảnh được chọn.', files.length ? 'info' : 'warn');
+      await uploadImageFiles(files);
+    });
+  }
+
+  if (pickImageBtn && imageFileInput) {
+    pickImageBtn.addEventListener('click', function () {
+      imageFileInput.click();
     });
   }
 
   if (insertImageBtn && imageFileInput) {
     insertImageBtn.addEventListener('click', function () {
       imageFileInput.click();
+    });
+  }
+
+  if (imageDropZone) {
+    imageDropZone.addEventListener('click', function () {
+      imageFileInput?.click();
+    });
+    imageDropZone.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        imageFileInput?.click();
+      }
+    });
+    imageDropZone.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      imageDropZone.classList.add('is-dragover');
+    });
+    imageDropZone.addEventListener('dragleave', function () {
+      imageDropZone.classList.remove('is-dragover');
+    });
+    imageDropZone.addEventListener('drop', async function (event) {
+      event.preventDefault();
+      imageDropZone.classList.remove('is-dragover');
+      const files = event.dataTransfer?.files || [];
+      await uploadImageFiles(files);
     });
   }
 
@@ -1884,7 +2218,8 @@ function bindEvents() {
       renderFolderSelect();
       renderDocTagEditor();
       setStatus('Đang tạo tài liệu tri thức mới.', 'info');
-      renderImagePlaceholders();
+      resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
+      setImageUploadStatus('Hãy nhập tên tài liệu trước khi tải ảnh.', 'info');
       renderDocuments(documentsCache);
       docName?.focus();
     });
@@ -1910,6 +2245,14 @@ function bindEvents() {
     docName.addEventListener('input', function () {
       onEditorInput();
       renderDocTagEditor();
+      if (!selectedDocName) {
+        const typedName = String(docName.value || '').trim();
+        if (typedName) {
+          scheduleImageFetch(typedName);
+        } else {
+          resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
+        }
+      }
     });
   }
   if (docText) docText.addEventListener('input', onEditorInput);
@@ -1935,7 +2278,8 @@ function bindEvents() {
   loadTagState();
   setLastModified('-');
   markEditorSaved();
-  renderImagePlaceholders();
+  resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
+  setImageUploadStatus('Chưa có ảnh tải lên.', 'info');
   renderKdocOutline(docText?.value || '');
   renderFolderList();
   renderFolderSelect();

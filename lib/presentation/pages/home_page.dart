@@ -406,9 +406,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       >(
                         selector: (state) => (
                           emotion: state.currentEmotion,
-                          message: state.messages.isNotEmpty
-                              ? state.messages.last
-                              : null,
+                          message: _lastTranscriptMessage(state.messages),
                           ttsDurationMs: state.lastTtsDurationMs,
                           ttsText: state.lastTtsText,
                           incoming: state.incomingLevel,
@@ -495,6 +493,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         child: const SizedBox.expand(),
       ),
     );
+  }
+
+  ChatMessage? _lastTranscriptMessage(List<ChatMessage> messages) {
+    for (var index = messages.length - 1; index >= 0; index -= 1) {
+      final message = messages[index];
+      if (message.type != ChatMessageType.text) {
+        continue;
+      }
+      if (message.text.trim().isEmpty) {
+        continue;
+      }
+      return message;
+    }
+    return null;
   }
 
   void _dismissSettingsSheet() {

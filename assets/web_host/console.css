@@ -27,11 +27,12 @@
 html,
 body {
   margin: 0;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  min-height: 100vh;
+  min-height: 100%;
   padding: 16px;
   background: var(--bg);
   color: var(--text);
@@ -800,6 +801,8 @@ body.is-dragging-doc * {
   gap: 8px;
   font-size: 12px;
   color: var(--text-soft);
+  max-height: 320px;
+  overflow: auto;
 }
 
 .kdoc-convert-note {
@@ -893,28 +896,67 @@ body.is-dragging-doc * {
   gap: 6px;
 }
 
+.upload-tools-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .upload-label {
   font-size: 12px;
   font-weight: 700;
   color: var(--muted);
 }
 
+.image-drop-zone {
+  border: 2px dashed var(--line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 14px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.image-drop-zone:hover,
+.image-drop-zone.is-dragover {
+  background: var(--panel-alt);
+  color: var(--text-soft);
+}
+
 .image-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
   gap: 12px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 4px;
+  align-content: start;
 }
 
 .image-card {
   border: 2px solid var(--line);
   min-height: 170px;
-  background: var(--panel-soft);
+  background: var(--panel);
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
   display: grid;
   place-items: center;
   overflow: hidden;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.image-card.image-card-empty {
+  min-height: 110px;
+  border-style: dashed;
+}
+
+.image-card.image-card-remote:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 #000;
 }
 
 .image-card img {
@@ -922,6 +964,166 @@ body.is-dragging-doc * {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.image-preview-trigger {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  background: transparent;
+  cursor: zoom-in;
+  display: block;
+  text-align: left;
+}
+
+.image-preview-trigger:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.image-card.image-card-remote {
+  min-height: 0;
+  display: block;
+  padding: 0;
+  position: relative;
+}
+
+.image-card-image-wrap {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-bottom: 2px solid var(--line);
+  background: #f0f0f0;
+}
+
+.image-card-caption {
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  background: var(--panel);
+}
+
+.image-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-card-meta {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.image-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.image-delete-btn {
+  border: 2px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.image-delete-btn:hover {
+  background: #000;
+  color: #fff;
+}
+
+.image-preview-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  z-index: 5600;
+}
+
+.image-preview-panel {
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 36px);
+  border: 2px solid #000;
+  background: #fff;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.image-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 2px solid #000;
+}
+
+.image-preview-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-preview-close {
+  border: 2px solid #000;
+  background: #fff;
+  color: #000;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 17px;
+}
+
+.image-preview-close:hover {
+  background: #000;
+  color: #fff;
+}
+
+.image-preview-body {
+  background: #111;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+}
+
+.image-preview-body img {
+  max-width: 100%;
+  max-height: calc(100vh - 180px);
+  object-fit: contain;
+  display: block;
+}
+
+.image-preview-meta {
+  margin: 0;
+  padding: 10px 12px;
+  border-top: 2px solid #000;
+  font-size: 12px;
+  color: #000;
+  background: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+body.image-preview-open {
+  overflow: hidden;
 }
 
 .editor-footer {
@@ -1177,6 +1379,15 @@ body.is-dragging-doc * {
   background: var(--panel-soft);
 }
 
+.manager-image-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.manager-image-grid .image-delete-btn,
+.manager-image-grid .image-card-actions {
+  display: none;
+}
+
 .manager-kdoc-empty {
   margin: 0;
   font-size: 12px;
@@ -1399,7 +1610,8 @@ button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
-.nav-item:focus-visible {
+.nav-item:focus-visible,
+.image-drop-zone:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
@@ -1418,19 +1630,101 @@ textarea:focus-visible,
   border: 2px solid var(--panel-soft);
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1400px) {
   body {
     padding: 10px;
+  }
+
+  .workspace-card {
+    width: 100%;
+    height: calc(100vh - 20px);
+    grid-template-columns: 204px 280px minmax(0, 1fr);
+  }
+
+  .manager-shell {
+    width: 100%;
+    height: calc(100vh - 20px);
+  }
+
+  .editor-content {
+    width: min(820px, 100%);
+    padding: 14px 16px 18px;
+  }
+}
+
+@media (max-width: 1140px) {
+  .workspace-card {
+    grid-template-columns: 240px minmax(0, 1fr);
+    grid-template-rows: minmax(220px, 38vh) minmax(0, 1fr);
+    grid-template-areas:
+      "sidebar notes"
+      "sidebar editor";
+  }
+
+  .sidebar-pane {
+    grid-area: sidebar;
+    border-right: 2px solid var(--line);
+    border-bottom: none;
+    min-height: 0;
+  }
+
+  .notes-pane {
+    grid-area: notes;
+    border-right: none;
+    border-bottom: 2px solid var(--line);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .editor-pane {
+    grid-area: editor;
+    border-right: none;
+    border-bottom: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .notes-scroll,
+  .editor-scroll {
+    min-height: 0;
+  }
+
+  .manager-main {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+
+  .manager-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-image-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow: auto;
+  }
+
+  body {
+    padding: 8px;
   }
 
   .workspace-card,
   .manager-shell {
     height: auto;
-    min-height: calc(100vh - 20px);
+    min-height: 0;
   }
 
   .workspace-card {
+    display: grid;
     grid-template-columns: 1fr;
+    grid-template-rows: none;
+    grid-template-areas: none;
   }
 
   .pane {
@@ -1442,16 +1736,65 @@ textarea:focus-visible,
     border-bottom: none;
   }
 
+  .sidebar-pane,
   .notes-pane,
   .editor-pane {
-    min-height: 420px;
+    grid-area: auto;
+    max-height: none;
+    min-height: 0;
   }
 
-  .manager-main {
+  .notes-pane,
+  .editor-pane {
+    overflow: hidden;
+  }
+
+  .notes-scroll {
+    max-height: 44vh;
+  }
+
+  .editor-scroll {
+    max-height: 60vh;
+  }
+
+  .meta-row {
+    gap: 8px;
+  }
+
+  .doc-tags-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .editor-toolbar {
+    gap: 5px;
+    padding: 8px 10px;
+  }
+
+  .editor-toolbar .toolbar-chip-btn {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+
+  .editor-content {
+    width: 100%;
+    padding: 12px;
+  }
+
+  .image-grid,
+  .kdoc-grid {
     grid-template-columns: 1fr;
   }
 
+  .image-grid {
+    max-height: 46vh;
+  }
+
   .manager-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .manager-main {
     grid-template-columns: 1fr;
   }
 
@@ -1464,12 +1807,7 @@ textarea:focus-visible,
     grid-template-columns: 1fr;
   }
 
-  .manager-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .image-grid,
-  .kdoc-grid {
+  .manager-image-grid {
     grid-template-columns: 1fr;
   }
 

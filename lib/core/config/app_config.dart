@@ -15,4 +15,18 @@ class AppConfig {
 
   // Default text sent right after connection succeeds.
   static const String connectGreetingDefault = 'Xin chào';
+
+  // Max upload size for each web-host document image.
+  static const int webHostImageUploadMaxMb = 100;
+  static const int webHostImageUploadMaxBytes =
+      webHostImageUploadMaxMb * 1024 * 1024;
+
+  // Chat related-images block toggles.
+  static const bool chatRelatedImagesEnabled = true;
+  static const int chatRelatedImagesMaxCount = 4;
+  static const int chatRelatedImagesSearchTopK = 3;
+  static const bool chatRelatedImagesAnimationEnabled = true;
+
+  // Timeout for local web-host calls used by chat related-images lookup.
+  static const int chatRelatedImagesRequestTimeoutMs = 2500;
 }

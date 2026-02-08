@@ -13,6 +13,7 @@ import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/chat_response.dart';
 import '../usecases/connect_chat_usecase.dart';
 import '../usecases/disconnect_chat_usecase.dart';
+import '../usecases/get_related_images_for_query_usecase.dart';
 import '../usecases/load_chat_config_usecase.dart';
 import '../usecases/observe_chat_errors_usecase.dart';
 import '../usecases/observe_chat_incoming_level_usecase.dart';
@@ -28,6 +29,7 @@ import '../usecases/stop_listening_usecase.dart';
 import '../../domain/entities/chat_config.dart';
 import 'chat_state.dart';
 import 'chat_session.dart';
+import '../../domain/entities/related_chat_image.dart';
 
 class ChatCubit extends Cubit<ChatState> implements ChatSession {
   ChatCubit({
@@ -43,23 +45,25 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     required ObserveChatIncomingLevelUseCase observeIncomingLevel,
     required ObserveChatOutgoingLevelUseCase observeOutgoingLevel,
     required ObserveChatSpeakingUseCase observeSpeaking,
+    required GetRelatedImagesForQueryUseCase getRelatedImagesForQuery,
     required SetListeningModeUseCase setListeningMode,
     required SetTextSendModeUseCase setTextSendMode,
-  })  : _loadConfig = loadConfig,
-        _connect = connect,
-        _disconnect = disconnect,
-        _sendMessage = sendMessage,
-        _sendGreeting = sendGreeting,
-        _startListening = startListening,
-        _stopListening = stopListening,
-        _setListeningMode = setListeningMode,
-        _setTextSendMode = setTextSendMode,
-        _observeResponses = observeResponses,
-        _observeErrors = observeErrors,
-        _observeIncomingLevel = observeIncomingLevel,
-        _observeOutgoingLevel = observeOutgoingLevel,
-        _observeSpeaking = observeSpeaking,
-        super(ChatState.initial());
+  }) : _loadConfig = loadConfig,
+       _connect = connect,
+       _disconnect = disconnect,
+       _sendMessage = sendMessage,
+       _sendGreeting = sendGreeting,
+       _startListening = startListening,
+       _stopListening = stopListening,
+       _setListeningMode = setListeningMode,
+       _setTextSendMode = setTextSendMode,
+       _observeResponses = observeResponses,
+       _observeErrors = observeErrors,
+       _observeIncomingLevel = observeIncomingLevel,
+       _observeOutgoingLevel = observeOutgoingLevel,
+       _observeSpeaking = observeSpeaking,
+       _getRelatedImagesForQuery = getRelatedImagesForQuery,
+       super(ChatState.initial());
 
   final LoadChatConfigUseCase _loadConfig;
   final ConnectChatUseCase _connect;
@@ -75,6 +79,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   final ObserveChatIncomingLevelUseCase _observeIncomingLevel;
   final ObserveChatOutgoingLevelUseCase _observeOutgoingLevel;
   final ObserveChatSpeakingUseCase _observeSpeaking;
+  final GetRelatedImagesForQueryUseCase _getRelatedImagesForQuery;
 
   StreamSubscription<ChatResponse>? _responseSubscription;
   StreamSubscription<Failure>? _errorSubscription;
@@ -93,12 +98,15 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   double? _pendingIncomingLevel;
   double? _pendingOutgoingLevel;
   final Throttler _levelThrottle = Throttler(80);
-  final Debouncer _levelDebouncer =
-      Debouncer(const Duration(milliseconds: 80));
+  final Debouncer _levelDebouncer = Debouncer(const Duration(milliseconds: 80));
   Timer? _networkWarningTimer;
   DateTime? _ttsStartAt;
   String? _lastAgentText;
+  int _relatedImagesRequestToken = 0;
+  String? _lastRelatedQuery;
+  DateTime _lastRelatedQueryAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _networkWarningHold = Duration(seconds: 12);
+  static const String _relatedImagesMessageId = '__related_images__';
   String _connectGreeting = AppConfig.connectGreetingDefault;
   Future<void> initialize() async {
     await _attachStreams();
@@ -119,9 +127,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       final pendingConnect = _connectCompleter;
       if (pendingConnect != null) {
         try {
-          await pendingConnect.future.timeout(
-            const Duration(seconds: 5),
-          );
+          await pendingConnect.future.timeout(const Duration(seconds: 5));
         } catch (_) {}
       }
       _connectInFlight = false;
@@ -169,6 +175,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     final nextMessages = List<ChatMessage>.from(state.messages)
       ..add(
         ChatMessage(
+          id: _newMessageId(),
           text: trimmed,
           isUser: true,
           timestamp: DateTime.now(),
@@ -181,6 +188,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       ),
     );
     _logMessage('[User] $trimmed');
+    unawaited(_loadRelatedImagesForQuery(trimmed));
 
     try {
       final result = await _sendMessage(trimmed);
@@ -221,10 +229,12 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     _responseSubscription = _observeResponses().listen(_handleResponse);
     _errorSubscription = _observeErrors().listen(_handleError);
     _speakingSubscription = _observeSpeaking().listen(_handleSpeakingChanged);
-    _incomingLevelSubscription =
-        _observeIncomingLevel().listen(_updateIncomingLevel);
-    _outgoingLevelSubscription =
-        _observeOutgoingLevel().listen(_updateOutgoingLevel);
+    _incomingLevelSubscription = _observeIncomingLevel().listen(
+      _updateIncomingLevel,
+    );
+    _outgoingLevelSubscription = _observeOutgoingLevel().listen(
+      _updateOutgoingLevel,
+    );
     _streamsAttached = true;
   }
 
@@ -241,6 +251,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     final nextMessages = List<ChatMessage>.from(state.messages)
       ..add(
         ChatMessage(
+          id: _newMessageId(),
           text: response.text,
           isUser: response.isUser,
           timestamp: DateTime.now(),
@@ -249,9 +260,133 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     if (!response.isUser) {
       _lastAgentText = response.text.trim();
     }
-    _logMessage(response.isUser ? '>> ${response.text}' : '<< ${response.text}');
-    emit(state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)));
+    _logMessage(
+      response.isUser ? '>> ${response.text}' : '<< ${response.text}',
+    );
+    emit(
+      state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
+    );
+    if (response.isUser) {
+      unawaited(_loadRelatedImagesForQuery(response.text));
+    }
   }
+
+  Future<void> _loadRelatedImagesForQuery(String query) async {
+    if (!AppConfig.chatRelatedImagesEnabled || _disposed || isClosed) {
+      return;
+    }
+    final trimmed = query.trim();
+    if (trimmed.length < 3) {
+      _upsertRelatedImages(query: trimmed, images: const <RelatedChatImage>[]);
+      return;
+    }
+
+    final normalized = _normalizeRelatedQuery(trimmed);
+    final now = DateTime.now();
+    if (_lastRelatedQuery == normalized &&
+        now.difference(_lastRelatedQueryAt) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastRelatedQuery = normalized;
+    _lastRelatedQueryAt = now;
+
+    final token = ++_relatedImagesRequestToken;
+    final startedAt = DateTime.now();
+    try {
+      final images = await _getRelatedImagesForQuery(
+        trimmed,
+        topK: AppConfig.chatRelatedImagesSearchTopK,
+        maxImages: AppConfig.chatRelatedImagesMaxCount,
+      );
+      if (_disposed || isClosed || token != _relatedImagesRequestToken) {
+        return;
+      }
+      final elapsed = DateTime.now().difference(startedAt).inMilliseconds;
+      AppLogger.event(
+        'ChatCubit',
+        'related_images_loaded',
+        fields: <String, Object?>{
+          'query': trimmed,
+          'count': images.length,
+          'latency_ms': elapsed,
+        },
+        level: 'D',
+      );
+      _upsertRelatedImages(query: trimmed, images: images);
+    } catch (error) {
+      if (_disposed || isClosed || token != _relatedImagesRequestToken) {
+        return;
+      }
+      AppLogger.event(
+        'ChatCubit',
+        'related_images_failed',
+        fields: <String, Object?>{'query': trimmed, 'error': error.toString()},
+        level: 'D',
+      );
+      _upsertRelatedImages(query: trimmed, images: const <RelatedChatImage>[]);
+    }
+  }
+
+  void _upsertRelatedImages({
+    required String query,
+    required List<RelatedChatImage> images,
+  }) {
+    if (_disposed || isClosed) {
+      return;
+    }
+    final nextMessages = List<ChatMessage>.from(state.messages);
+    final index = nextMessages.indexWhere(
+      (message) => message.id == _relatedImagesMessageId,
+    );
+    final nextPayload = List<RelatedChatImage>.unmodifiable(images);
+    final hasImages = nextPayload.isNotEmpty;
+    if (index == -1) {
+      if (!hasImages) {
+        return;
+      }
+      nextMessages.add(
+        ChatMessage(
+          id: _relatedImagesMessageId,
+          text: 'Hình ảnh liên quan',
+          isUser: false,
+          timestamp: DateTime.now(),
+          type: ChatMessageType.relatedImages,
+          relatedImages: nextPayload,
+          relatedQuery: query,
+        ),
+      );
+      emit(
+        state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
+      );
+      return;
+    }
+
+    if (!hasImages) {
+      nextMessages.removeAt(index);
+      emit(
+        state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
+      );
+      return;
+    }
+
+    final existing = nextMessages[index];
+    nextMessages[index] = existing.copyWith(
+      text: hasImages ? 'Hình ảnh liên quan' : '',
+      timestamp: DateTime.now(),
+      type: ChatMessageType.relatedImages,
+      relatedImages: nextPayload,
+      relatedQuery: query,
+    );
+    emit(
+      state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
+    );
+  }
+
+  String _normalizeRelatedQuery(String value) {
+    return value.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _newMessageId() => DateTime.now().microsecondsSinceEpoch.toString();
 
   void _handleError(Failure failure) {
     final isNetworkIssue = _isNetworkFailure(failure.message);
@@ -305,8 +440,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       emit(state.copyWith(isSpeaking: false));
       return;
     }
-    final durationMs =
-        DateTime.now().difference(startedAt).inMilliseconds;
+    final durationMs = DateTime.now().difference(startedAt).inMilliseconds;
     emit(
       state.copyWith(
         isSpeaking: false,
@@ -348,10 +482,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     _pendingIncomingLevel = null;
     _pendingOutgoingLevel = null;
     emit(
-      state.copyWith(
-        incomingLevel: nextIncoming,
-        outgoingLevel: nextOutgoing,
-      ),
+      state.copyWith(incomingLevel: nextIncoming, outgoingLevel: nextOutgoing),
     );
   }
 
@@ -375,8 +506,9 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       Result<ChatConfig>? configResult;
       if (config == null) {
         try {
-          configResult = await _loadConfig()
-              .timeout(const Duration(seconds: 3));
+          configResult = await _loadConfig().timeout(
+            const Duration(seconds: 3),
+          );
         } on TimeoutException {
           // Ignore; will handle via fallback error below.
         }
@@ -390,8 +522,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           _cachedConfig = config;
           usedCached = false;
         } else {
-          final message =
-              configResult?.failure?.message ?? 'Không thể kết nối';
+          final message = configResult?.failure?.message ?? 'Không thể kết nối';
           emit(
             state.copyWith(
               connectionError: message,
@@ -404,12 +535,14 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       }
 
       final configValue = config;
-      var result = await _connect(configValue)
-          .timeout(const Duration(seconds: 8));
+      var result = await _connect(
+        configValue,
+      ).timeout(const Duration(seconds: 8));
       if (!result.isSuccess && usedCached) {
         try {
-          configResult = await _loadConfig()
-              .timeout(const Duration(seconds: 3));
+          configResult = await _loadConfig().timeout(
+            const Duration(seconds: 3),
+          );
         } on TimeoutException {
           // Ignore; retry will fall back to cached state.
         }
@@ -421,8 +554,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
             configResult.data != null) {
           config = configResult.data!;
           _cachedConfig = config;
-          result = await _connect(config)
-              .timeout(const Duration(seconds: 8));
+          result = await _connect(config).timeout(const Duration(seconds: 8));
         }
       }
       if (_disposed || isClosed || generation != _connectGeneration) {
@@ -481,8 +613,9 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     try {
       await Future<void>.delayed(const Duration(milliseconds: 200));
       final greeting = _coerceGreeting(rawGreeting);
-      final result =
-          await _sendGreeting(greeting).timeout(const Duration(seconds: 3));
+      final result = await _sendGreeting(
+        greeting,
+      ).timeout(const Duration(seconds: 3));
       AppLogger.event(
         'ChatCubit',
         'auto_greeting_send',

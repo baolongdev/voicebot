@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:flutter_volume_controller/flutter_volume_controller.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../core/config/app_config.dart';
+import '../web_host/document_image_store.dart';
+
 class McpServer {
   static final McpServer shared = McpServer();
 
@@ -16,6 +19,7 @@ class McpServer {
   final McpDeviceController _controller;
   final LocalKnowledgeBase _knowledgeBase = LocalKnowledgeBase();
   final List<McpTool> _tools = <McpTool>[];
+  Future<DocumentImageStore>? _imageStoreFuture;
   List<McpTool> get tools => List<McpTool>.unmodifiable(_tools);
 
   Future<Map<String, dynamic>?> handleMessage(
@@ -365,6 +369,190 @@ class McpServer {
       ),
     );
 
+    addTool(
+      McpTool(
+        name: 'self.knowledge.search_images',
+        description:
+            '[VI] Mục đích: Tìm ảnh liên quan theo truy vấn tri thức. Tool sẽ '
+            'tìm tài liệu khớp bằng `self.knowledge.search`, sau đó gom ảnh đã '
+            'upload theo các tài liệu đó.\n'
+            'Cách dùng: truyền `query`, tùy chọn `top_k` (1-10, mặc định 3), '
+            '`max_images` (1-20, mặc định theo cấu hình app).\n'
+            'Kết quả: JSON gồm `matched_docs` và `images[]` '
+            '(id, doc_name, file_name, mime_type, bytes, created_at, url, score).\n'
+            '[EN] Purpose: Search related images by knowledge query. The tool '
+            'first runs `self.knowledge.search`, then collects uploaded images '
+            'from matched documents.\n'
+            'Usage: provide `query`, optional `top_k` (1-10, default 3), '
+            '`max_images` (1-20, default from app config).\n'
+            'Return: JSON with `matched_docs` and `images[]` '
+            '(id, doc_name, file_name, mime_type, bytes, created_at, url, score).',
+        properties: <McpProperty>[
+          const McpProperty.string('query'),
+          const McpProperty.integer('top_k', defaultInt: 3, min: 1, max: 10),
+          McpProperty.integer(
+            'max_images',
+            defaultInt: AppConfig.chatRelatedImagesMaxCount,
+            min: 1,
+            max: 20,
+          ),
+        ],
+        callback: (args) async {
+          final query = (args['query'] as String? ?? '').trim();
+          if (query.isEmpty) {
+            throw Exception('Missing valid argument: query');
+          }
+          final topK = (args['top_k'] as int? ?? 3).clamp(1, 10);
+          final maxImages =
+              (args['max_images'] as int? ??
+                      AppConfig.chatRelatedImagesMaxCount)
+                  .clamp(1, 20);
+
+          final matches = await _knowledgeBase.search(query, topK: topK);
+          if (matches.isEmpty) {
+            return <String, dynamic>{
+              'query': query,
+              'matched_docs': 0,
+              'matched_docs_with_images': 0,
+              'images': const <Map<String, Object?>>[],
+            };
+          }
+
+          var normalizedQuery = _normalizeForGuard(query);
+          normalizedQuery = normalizedQuery.replaceAll(
+            RegExp(r'\bchabi\b', caseSensitive: false),
+            'chavi',
+          );
+          const imageQueryStopwords = <String>{
+            'cho',
+            'toi',
+            've',
+            'thong',
+            'tin',
+            'hinh',
+            'anh',
+            'xem',
+            'san',
+            'pham',
+            'la',
+            'co',
+            'nhung',
+          };
+          final queryTokens = normalizedQuery
+              .split(RegExp(r'\s+'))
+              .where(
+                (token) =>
+                    token.length >= 2 &&
+                    !imageQueryStopwords.contains(token),
+              )
+              .toSet();
+
+          final imageStore = await _getImageStore();
+          final byId = <String, Map<String, Object?>>{};
+          final collected = <Map<String, Object?>>[];
+          for (final row in matches) {
+            final docName = (row['name'] ?? '').toString().trim();
+            if (docName.isEmpty) {
+              continue;
+            }
+            final score = (row['score'] as num?)?.toInt() ?? 0;
+            final titleRaw = (row['title'] ?? docName).toString();
+            var normalizedTitle = _normalizeForGuard(titleRaw);
+            normalizedTitle = normalizedTitle.replaceAll(
+              RegExp(r'\bchabi\b', caseSensitive: false),
+              'chavi',
+            );
+            final titleTokenHits = queryTokens
+                .where((token) => normalizedTitle.contains(token))
+                .length;
+            final fieldHitsRaw = row['field_hits'];
+            final fieldHits = fieldHitsRaw is List
+                ? fieldHitsRaw.map((item) => item.toString()).toSet()
+                : const <String>{};
+            final scoreBoost =
+                (titleTokenHits * 12) +
+                (fieldHits.contains('title') ? 20 : 0) +
+                (fieldHits.contains('aliases') ? 12 : 0) +
+                (fieldHits.contains('keywords') ? 8 : 0);
+            final effectiveScore = score + scoreBoost;
+            final images = await imageStore.listImagesByDocument(docName);
+            for (final item in images) {
+              final imageId = (item['id'] ?? '').toString().trim();
+              if (imageId.isEmpty) {
+                continue;
+              }
+              final entry = <String, Object?>{
+                ...item,
+                'score': effectiveScore,
+                'source_doc_score': score,
+                'url':
+                    '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
+              };
+              final existing = byId[imageId];
+              final existingScore = (existing?['score'] as num?)?.toInt() ?? -1;
+              if (existing == null || effectiveScore > existingScore) {
+                byId[imageId] = entry;
+              }
+            }
+          }
+
+          collected.addAll(byId.values);
+          final merged = collected
+            ..sort((a, b) {
+              final byScore = ((b['score'] as num?)?.toInt() ?? 0).compareTo(
+                (a['score'] as num?)?.toInt() ?? 0,
+              );
+              if (byScore != 0) {
+                return byScore;
+              }
+              final aCreated = (a['created_at'] ?? '').toString();
+              final bCreated = (b['created_at'] ?? '').toString();
+              return bCreated.compareTo(aCreated);
+            });
+          final selected = <Map<String, Object?>>[];
+          final seenDoc = <String>{};
+          final seenId = <String>{};
+
+          // Pass 1: keep at least one image per matched document (if available).
+          for (final item in merged) {
+            if (selected.length >= maxImages) {
+              break;
+            }
+            final imageId = (item['id'] ?? '').toString().trim();
+            final docName = (item['doc_name'] ?? '').toString().trim();
+            if (imageId.isEmpty || docName.isEmpty) {
+              continue;
+            }
+            if (seenDoc.contains(docName) || !seenId.add(imageId)) {
+              continue;
+            }
+            seenDoc.add(docName);
+            selected.add(item);
+          }
+
+          // Pass 2: fill remaining slots by relevance score.
+          for (final item in merged) {
+            if (selected.length >= maxImages) {
+              break;
+            }
+            final imageId = (item['id'] ?? '').toString().trim();
+            if (imageId.isEmpty || !seenId.add(imageId)) {
+              continue;
+            }
+            selected.add(item);
+          }
+
+          final limited = selected.take(maxImages).toList(growable: false);
+          return <String, dynamic>{
+            'query': query,
+            'matched_docs': matches.length,
+            'matched_docs_with_images': seenDoc.length,
+            'images': limited,
+          };
+        },
+      ),
+    );
+
     addUserOnlyTool(
       McpTool(
         name: 'self.get_system_info',
@@ -641,6 +829,24 @@ class McpServer {
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
   }
+
+  Future<DocumentImageStore> _getImageStore() {
+    _imageStoreFuture ??= _createImageStore();
+    return _imageStoreFuture!;
+  }
+
+  Future<DocumentImageStore> _createImageStore() async {
+    final baseDir = await getApplicationDocumentsDirectory();
+    final root = Directory(
+      '${baseDir.path}${Platform.pathSeparator}voicebot${Platform.pathSeparator}web_host_images',
+    );
+    final store = DocumentImageStore(
+      rootDirectory: root,
+      maxFileBytes: AppConfig.webHostImageUploadMaxBytes,
+    );
+    await store.initialize();
+    return store;
+  }
 }
 
 class McpTool {
@@ -792,8 +998,7 @@ class LocalKnowledgeBase {
     }
 
     final docId = (sections['DOC_ID'] ?? '').trim();
-    if (docId.isNotEmpty &&
-        !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(docId)) {
+    if (docId.isNotEmpty && !RegExp(r'^[a-zA-Z0-9_.-]+$').hasMatch(docId)) {
       errors.add('[DOC_ID] chỉ được chứa chữ, số, `_`, `-`, `.`.');
     }
 
@@ -893,21 +1098,25 @@ class LocalKnowledgeBase {
     final compactPhrases = phrases.map(_compact).toSet();
     final tokens = <String>{for (final phrase in phrases) ..._tokenize(phrase)};
 
-    final matches = <({
-      int score,
-      _KnowledgeDocument doc,
-      String snippet,
-      List<String> fieldHits,
-      String title,
-      String docType,
-      String summary,
-      String usage,
-      String safetyNote,
-      bool structured,
-    })>[];
+    final matches =
+        <
+          ({
+            int score,
+            _KnowledgeDocument doc,
+            String snippet,
+            List<String> fieldHits,
+            String title,
+            String docType,
+            String summary,
+            String usage,
+            String safetyNote,
+            bool structured,
+          })
+        >[];
     for (final doc in _documents.values) {
       final sections = _parseKdocSections(doc.rawContent);
-      final structured = sections != null && validateKdocContent(doc.rawContent).isValid;
+      final structured =
+          sections != null && validateKdocContent(doc.rawContent).isValid;
 
       final title = _sectionOrEmpty(sections, 'TITLE').isEmpty
           ? doc.name
@@ -933,7 +1142,8 @@ class LocalKnowledgeBase {
         'faq': _foldForSearch(faq),
       };
       final fieldCompact = <String, String>{
-        for (final entry in fieldFolded.entries) entry.key: _compact(entry.value),
+        for (final entry in fieldFolded.entries)
+          entry.key: _compact(entry.value),
       };
       final fieldWeights = <String, ({int phrase, int compact, int token})>{
         'title': (phrase: 56, compact: 42, token: 8),
@@ -1005,10 +1215,9 @@ class LocalKnowledgeBase {
         continue;
       }
 
-      final sortedFields = scoreByField.entries
-          .where((entry) => entry.value > 0)
-          .toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
+      final sortedFields =
+          scoreByField.entries.where((entry) => entry.value > 0).toList()
+            ..sort((a, b) => b.value.compareTo(a.value));
       final fieldHits = sortedFields.map((entry) => entry.key).toList();
       final primaryField = fieldHits.isEmpty ? 'content' : fieldHits.first;
       final snippet = switch (primaryField) {
@@ -1158,7 +1367,8 @@ class LocalKnowledgeBase {
     final sections = _parseKdocSections(doc.rawContent);
     final title = (sections?['TITLE'] ?? doc.name).trim();
     final docType = (sections?['DOC_TYPE'] ?? '').trim().toLowerCase();
-    final structured = sections != null && validateKdocContent(doc.rawContent).isValid;
+    final structured =
+        sections != null && validateKdocContent(doc.rawContent).isValid;
     return <String, dynamic>{
       'name': doc.name,
       'title': title.isEmpty ? doc.name : title,
@@ -1393,6 +1603,7 @@ class LocalKnowledgeBase {
     final replacements = <RegExp, String>{
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
@@ -1425,6 +1636,7 @@ class LocalKnowledgeBase {
     final replacements = <RegExp, String>{
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bcha-vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',

@@ -4,6 +4,7 @@ import '../../core/system/ota/ota_service.dart' as core_ota;
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/chat/application/usecases/connect_chat_usecase.dart';
 import '../../features/chat/application/usecases/disconnect_chat_usecase.dart';
+import '../../features/chat/application/usecases/get_related_images_for_query_usecase.dart';
 import '../../features/chat/application/usecases/load_chat_config_usecase.dart';
 import '../../features/chat/application/usecases/observe_chat_errors_usecase.dart';
 import '../../features/chat/application/usecases/observe_chat_incoming_level_usecase.dart';
@@ -146,6 +147,12 @@ void registerChatFeature(GetIt getIt) {
     );
   }
 
+  if (!getIt.isRegistered<GetRelatedImagesForQueryUseCase>()) {
+    getIt.registerFactory<GetRelatedImagesForQueryUseCase>(
+      () => GetRelatedImagesForQueryUseCase(getIt<ChatRepository>()),
+    );
+  }
+
   if (!getIt.isRegistered<ChatCubit>()) {
     getIt.registerLazySingleton<ChatCubit>(
       () => ChatCubit(
@@ -163,6 +170,7 @@ void registerChatFeature(GetIt getIt) {
         observeIncomingLevel: getIt<ObserveChatIncomingLevelUseCase>(),
         observeOutgoingLevel: getIt<ObserveChatOutgoingLevelUseCase>(),
         observeSpeaking: getIt<ObserveChatSpeakingUseCase>(),
+        getRelatedImagesForQuery: getIt<GetRelatedImagesForQueryUseCase>(),
       ),
     );
   }

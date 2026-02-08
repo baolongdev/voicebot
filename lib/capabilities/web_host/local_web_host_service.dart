@@ -3,9 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/logging/app_logger.dart';
 import '../mcp/mcp_server.dart';
+import 'document_image_store.dart';
 
 class LocalWebHostService {
   LocalWebHostService._();
@@ -19,12 +22,20 @@ class LocalWebHostService {
   HttpServer? _server;
   LocalWebHostState _state = const LocalWebHostState.stopped();
   int _nextRpcId = 20000;
+  int _nextHttpRequestId = 1;
   static const Duration _mcpTimeout = Duration(seconds: 8);
   String? _indexTemplateCache;
   String? _managerTemplateCache;
   String? _cssCache;
   String? _jsCache;
   String? _managerJsCache;
+  Future<DocumentImageStore>? _imageStoreFuture;
+
+  static const Set<String> _allowedImageMimeTypes = <String>{
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+  };
 
   Stream<LocalWebHostState> get stateStream => _stateController.stream;
   LocalWebHostState get state => _state;
@@ -171,6 +182,26 @@ class LocalWebHostService {
         return;
       }
 
+      if (path == '/api/documents/image' && method == 'POST') {
+        await _handleUploadImage(request);
+        return;
+      }
+
+      if (path == '/api/documents/images' && method == 'GET') {
+        await _handleListDocumentImages(request);
+        return;
+      }
+
+      if (path == '/api/documents/image/content' && method == 'GET') {
+        await _handleGetDocumentImageContent(request);
+        return;
+      }
+
+      if (path == '/api/documents/image' && method == 'DELETE') {
+        await _handleDeleteDocumentImage(request);
+        return;
+      }
+
       if (path == '/api/documents' && method == 'DELETE') {
         await _handleClearDocuments(request);
         return;
@@ -246,6 +277,7 @@ class LocalWebHostService {
     final body = await _readJsonBody(request);
     final name = (body['name'] as String? ?? '').trim();
     final text = (body['text'] as String? ?? '').trim();
+    final oldName = (body['old_name'] as String? ?? '').trim();
     if (name.isEmpty || text.isEmpty) {
       await _writeJson(request, <String, Object?>{
         'ok': false,
@@ -268,6 +300,22 @@ class LocalWebHostService {
       name: 'self.knowledge.upload_text',
       arguments: <String, dynamic>{'name': name, 'text': text},
     );
+    if (oldName.isNotEmpty && oldName != name) {
+      final imageStore = await _getImageStore();
+      final moved = await imageStore.migrateDocumentName(
+        oldName: oldName,
+        newName: name,
+      );
+      AppLogger.event(
+        'WebHost',
+        'image_doc_rename',
+        fields: <String, Object?>{
+          'from': oldName,
+          'to': name,
+          'moved_images': moved,
+        },
+      );
+    }
     final uploadPayload = _decodeToolPayload(upload);
     final listResult = await _callTool(name: 'self.knowledge.list_documents');
     final listPayload = _decodeToolPayload(listResult);
@@ -284,12 +332,221 @@ class LocalWebHostService {
   Future<void> _handleClearDocuments(HttpRequest request) async {
     final clear = await _callTool(name: 'self.knowledge.clear');
     final clearPayload = _decodeToolPayload(clear);
+    final imageStore = await _getImageStore();
+    final removedImages = await imageStore.clearAll();
+    AppLogger.event(
+      'WebHost',
+      'image_clear_all',
+      fields: <String, Object?>{'removed_images': removedImages},
+    );
     await _writeJson(request, <String, Object?>{
       'ok': true,
       'result': clearPayload,
+      'removed_images': removedImages,
       'count': 0,
       'documents': const <Map<String, Object?>>[],
     });
+  }
+
+  Future<void> _handleUploadImage(HttpRequest request) async {
+    final requestId = _nextHttpRequestId++;
+    try {
+      final contentType = request.headers.contentType;
+      final mimeTypeHeader = contentType?.mimeType.toLowerCase() ?? '';
+      final isJsonBody = mimeTypeHeader == 'application/json';
+      final upload = isJsonBody
+          ? await _readImageUploadJsonRequest(request)
+          : await _readImageUploadRequest(request);
+      final mimeType = upload.mimeType.trim().toLowerCase();
+      if (!_allowedImageMimeTypes.contains(mimeType)) {
+        await _writeJson(request, <String, Object?>{
+          'ok': false,
+          'error': 'Định dạng ảnh không hỗ trợ. Chỉ chấp nhận JPEG/PNG/WEBP.',
+        }, statusCode: HttpStatus.badRequest);
+        return;
+      }
+      if (upload.bytes.length > AppConfig.webHostImageUploadMaxBytes) {
+        final maxMb = AppConfig.webHostImageUploadMaxMb;
+        await _writeJson(request, <String, Object?>{
+          'ok': false,
+          'error': 'Ảnh vượt quá giới hạn ${maxMb}MB.',
+        }, statusCode: HttpStatus.badRequest);
+        return;
+      }
+
+      final imageStore = await _getImageStore();
+      final created = await imageStore.saveImage(
+        docName: upload.docName,
+        fileName: upload.fileName,
+        mimeType: mimeType,
+        bytes: upload.bytes,
+        caption: upload.caption,
+      );
+      final imageId = (created['id'] ?? '').toString();
+      final image = <String, Object?>{
+        ...created,
+        'url': '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
+      };
+      AppLogger.event(
+        'WebHost',
+        'image_upload',
+        fields: <String, Object?>{
+          'request_id': requestId,
+          'doc': upload.docName,
+          'image_id': imageId,
+          'mime': mimeType,
+          'bytes': upload.bytes.length,
+        },
+      );
+      await _writeJson(request, <String, Object?>{
+        'ok': true,
+        'image': image,
+      });
+    } catch (error) {
+      AppLogger.event(
+        'WebHost',
+        'image_upload_error',
+        fields: <String, Object?>{
+          'request_id': requestId,
+          'error': error.toString(),
+        },
+        level: 'E',
+      );
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': error.toString(),
+      }, statusCode: HttpStatus.badRequest);
+    }
+  }
+
+  Future<_ImageUploadRequest> _readImageUploadJsonRequest(
+    HttpRequest request,
+  ) async {
+    final body = await _readJsonBody(request);
+    final docName = (body['name'] as String? ?? '').trim();
+    if (docName.isEmpty) {
+      throw Exception('Thiếu trường name (tên tài liệu).');
+    }
+    final fileNameRaw = (body['file_name'] as String? ?? 'image').trim();
+    final fileName = fileNameRaw.isEmpty ? 'image' : fileNameRaw;
+    final mimeType = (body['mime_type'] as String? ?? '').trim().toLowerCase();
+    final dataBase64 = ((body['data_base64'] ?? body['data']) as String? ?? '')
+        .trim();
+    if (dataBase64.isEmpty) {
+      throw Exception('Thiếu dữ liệu ảnh base64.');
+    }
+    late List<int> decoded;
+    try {
+      decoded = base64Decode(dataBase64);
+    } on FormatException {
+      throw Exception('Dữ liệu ảnh base64 không hợp lệ.');
+    }
+    if (decoded.isEmpty) {
+      throw Exception('Dữ liệu ảnh rỗng.');
+    }
+    final normalizedMimeType =
+        mimeType.isEmpty ? _guessMimeTypeFromFileName(fileName) : mimeType;
+    final caption = (body['caption'] as String?)?.trim();
+    return _ImageUploadRequest(
+      docName: docName,
+      fileName: fileName,
+      mimeType: normalizedMimeType,
+      bytes: Uint8List.fromList(decoded),
+      caption: caption?.isEmpty ?? true ? null : caption,
+    );
+  }
+
+  Future<void> _handleListDocumentImages(HttpRequest request) async {
+    final requestId = _nextHttpRequestId++;
+    final name = (request.uri.queryParameters['name'] ?? '').trim();
+    if (name.isEmpty) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Thiếu tên tài liệu.',
+      }, statusCode: HttpStatus.badRequest);
+      return;
+    }
+    final imageStore = await _getImageStore();
+    final images = await imageStore.listImagesByDocument(name);
+    final enriched = images.map((item) {
+      final id = (item['id'] ?? '').toString();
+      return <String, Object?>{
+        ...item,
+        'url': '/api/documents/image/content?id=${Uri.encodeQueryComponent(id)}',
+      };
+    }).toList(growable: false);
+
+    AppLogger.event(
+      'WebHost',
+      'image_list',
+      fields: <String, Object?>{
+        'request_id': requestId,
+        'doc': name,
+        'count': enriched.length,
+      },
+    );
+    await _writeJson(request, <String, Object?>{
+      'ok': true,
+      'doc_name': name,
+      'count': enriched.length,
+      'images': enriched,
+    });
+  }
+
+  Future<void> _handleGetDocumentImageContent(HttpRequest request) async {
+    final imageId = (request.uri.queryParameters['id'] ?? '').trim();
+    if (imageId.isEmpty) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Thiếu id ảnh.',
+      }, statusCode: HttpStatus.badRequest);
+      return;
+    }
+
+    final imageStore = await _getImageStore();
+    final content = await imageStore.readImageBinary(imageId);
+    if (content == null) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Không tìm thấy ảnh.',
+      }, statusCode: HttpStatus.notFound);
+      return;
+    }
+    await _writeBinary(
+      request,
+      bytes: content.bytes,
+      mimeType: content.mimeType,
+      fileName: content.fileName,
+    );
+  }
+
+  Future<void> _handleDeleteDocumentImage(HttpRequest request) async {
+    final requestId = _nextHttpRequestId++;
+    final imageId = (request.uri.queryParameters['id'] ?? '').trim();
+    if (imageId.isEmpty) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Thiếu id ảnh.',
+      }, statusCode: HttpStatus.badRequest);
+      return;
+    }
+    final imageStore = await _getImageStore();
+    final removed = await imageStore.deleteImage(imageId);
+    AppLogger.event(
+      'WebHost',
+      'image_delete',
+      fields: <String, Object?>{
+        'request_id': requestId,
+        'image_id': imageId,
+        'removed': removed,
+      },
+      level: removed ? 'I' : 'W',
+    );
+    await _writeJson(request, <String, Object?>{
+      'ok': removed,
+      'removed': removed,
+      if (!removed) 'error': 'Không tìm thấy ảnh để xóa.',
+    }, statusCode: removed ? HttpStatus.ok : HttpStatus.notFound);
   }
 
   Future<void> _handleSearch(HttpRequest request) async {
@@ -329,6 +586,165 @@ class LocalWebHostService {
       return Map<String, dynamic>.from(decoded);
     }
     return <String, dynamic>{};
+  }
+
+  Future<_ImageUploadRequest> _readImageUploadRequest(HttpRequest request) async {
+    final contentType = request.headers.contentType;
+    final isMultipart =
+        contentType != null &&
+        contentType.primaryType.toLowerCase() == 'multipart' &&
+        contentType.subType.toLowerCase() == 'form-data';
+    if (!isMultipart) {
+      throw Exception('Content-Type phải là multipart/form-data.');
+    }
+    final boundary =
+        (contentType.parameters['boundary'] ?? '').trim().replaceAll('"', '');
+    if (boundary.isEmpty) {
+      throw Exception('Thiếu boundary trong multipart/form-data.');
+    }
+
+    String docName = '';
+    String? caption;
+    String? fileName;
+    String fileMimeType = '';
+    Uint8List? fileBytes;
+
+    final requestBytes = await request.fold<List<int>>(
+      <int>[],
+      (buffer, data) {
+        buffer.addAll(data);
+        return buffer;
+      },
+    );
+    final parts = _parseMultipartBody(
+      bytes: Uint8List.fromList(requestBytes),
+      boundary: boundary,
+    );
+    for (final part in parts) {
+      final contentDisposition =
+          part.headers['content-disposition'] ?? part.headers['Content-Disposition'] ?? '';
+      final fieldName = _extractDispositionValue(
+        contentDisposition,
+        'name',
+      )?.trim();
+      final partFileName = _extractDispositionValue(
+        contentDisposition,
+        'filename',
+      );
+
+      if (partFileName != null && partFileName.trim().isNotEmpty) {
+        fileName = partFileName.trim();
+        fileMimeType = ((part.headers['content-type'] ??
+                    part.headers['Content-Type'] ??
+                    '')
+                .split(';')
+                .first)
+            .trim();
+        fileBytes = part.body;
+        continue;
+      }
+
+      final value = utf8.decode(part.body, allowMalformed: true).trim();
+      if (fieldName == 'name') {
+        docName = value;
+      } else if (fieldName == 'caption') {
+        caption = value;
+      }
+    }
+
+    if (docName.trim().isEmpty) {
+      throw Exception('Thiếu trường name (tên tài liệu).');
+    }
+    if (fileBytes == null || fileBytes.isEmpty) {
+      throw Exception('Không nhận được file ảnh upload.');
+    }
+    final normalizedFileName =
+        (fileName ?? 'image').trim().isEmpty ? 'image' : fileName!.trim();
+    final normalizedMimeType =
+        fileMimeType.trim().isEmpty
+            ? _guessMimeTypeFromFileName(normalizedFileName)
+            : fileMimeType.trim().toLowerCase();
+
+    return _ImageUploadRequest(
+      docName: docName.trim(),
+      fileName: normalizedFileName,
+      mimeType: normalizedMimeType,
+      bytes: fileBytes,
+      caption: caption,
+    );
+  }
+
+  String? _extractDispositionValue(String header, String key) {
+    final quoted = RegExp('$key="([^"]*)"').firstMatch(header);
+    if (quoted != null) {
+      return quoted.group(1);
+    }
+    final plain = RegExp('$key=([^;\\s]+)').firstMatch(header);
+    return plain?.group(1);
+  }
+
+  List<_MultipartPart> _parseMultipartBody({
+    required Uint8List bytes,
+    required String boundary,
+  }) {
+    final raw = latin1.decode(bytes, allowInvalid: true);
+    final marker = '--$boundary';
+    final sections = raw.split(marker);
+    final parts = <_MultipartPart>[];
+
+    for (final section in sections) {
+      var chunk = section;
+      if (chunk.isEmpty || chunk == '--' || chunk == '--\r\n') {
+        continue;
+      }
+      if (chunk.startsWith('\r\n')) {
+        chunk = chunk.substring(2);
+      }
+      if (chunk.endsWith('--')) {
+        chunk = chunk.substring(0, chunk.length - 2);
+      }
+      if (chunk.endsWith('\r\n')) {
+        chunk = chunk.substring(0, chunk.length - 2);
+      }
+
+      final separatorIndex = chunk.indexOf('\r\n\r\n');
+      if (separatorIndex <= 0) {
+        continue;
+      }
+      final rawHeader = chunk.substring(0, separatorIndex);
+      final rawBody = chunk.substring(separatorIndex + 4);
+      final headerLines = rawHeader.split('\r\n');
+      final headers = <String, String>{};
+      for (final line in headerLines) {
+        final idx = line.indexOf(':');
+        if (idx <= 0) {
+          continue;
+        }
+        final name = line.substring(0, idx).trim();
+        final value = line.substring(idx + 1).trim();
+        if (name.isNotEmpty) {
+          headers[name] = value;
+          headers[name.toLowerCase()] = value;
+        }
+      }
+      final bodyBytes = Uint8List.fromList(latin1.encode(rawBody));
+      parts.add(_MultipartPart(headers: headers, body: bodyBytes));
+    }
+    return parts;
+  }
+
+  String _guessMimeTypeFromFileName(String fileName) {
+    final lowered = fileName.toLowerCase();
+    if (lowered.endsWith('.jpg') || lowered.endsWith('.jpeg')) {
+      return 'image/jpeg';
+    }
+    if (lowered.endsWith('.png')) {
+      return 'image/png';
+    }
+    if (lowered.endsWith('.webp')) {
+      return 'image/webp';
+    }
+    return 'application/octet-stream';
   }
 
   Future<Map<String, dynamic>> _callTool({
@@ -495,6 +911,24 @@ class LocalWebHostService {
     await request.response.close();
   }
 
+  Future<void> _writeBinary(
+    HttpRequest request, {
+    required Uint8List bytes,
+    required String mimeType,
+    required String fileName,
+  }) async {
+    request.response
+      ..statusCode = HttpStatus.ok
+      ..headers.set(HttpHeaders.contentTypeHeader, mimeType)
+      ..headers.set(HttpHeaders.cacheControlHeader, 'no-store')
+      ..headers.set(
+        'content-disposition',
+        'inline; filename="${Uri.encodeComponent(fileName)}"',
+      )
+      ..add(bytes);
+    await request.response.close();
+  }
+
   Future<void> _writeJson(
     HttpRequest request,
     Map<String, Object?> data, {
@@ -514,7 +948,12 @@ class LocalWebHostService {
       assign: (value) => _indexTemplateCache = value,
     );
     final url = _state.url ?? 'unknown';
-    return template.replaceAll('{{WEB_HOST_URL}}', url);
+    return template
+        .replaceAll('{{WEB_HOST_URL}}', url)
+        .replaceAll(
+          '{{MAX_IMAGE_UPLOAD_MB}}',
+          AppConfig.webHostImageUploadMaxMb.toString(),
+        );
   }
 
   Future<String> _consoleCss() async {
@@ -564,6 +1003,24 @@ class LocalWebHostService {
     return content;
   }
 
+  Future<DocumentImageStore> _getImageStore() {
+    _imageStoreFuture ??= _createImageStore();
+    return _imageStoreFuture!;
+  }
+
+  Future<DocumentImageStore> _createImageStore() async {
+    final baseDir = await getApplicationDocumentsDirectory();
+    final root = Directory(
+      '${baseDir.path}${Platform.pathSeparator}voicebot${Platform.pathSeparator}web_host_images',
+    );
+    final store = DocumentImageStore(
+      rootDirectory: root,
+      maxFileBytes: AppConfig.webHostImageUploadMaxBytes,
+    );
+    await store.initialize();
+    return store;
+  }
+
   Future<String?> _resolveLocalIpv4() async {
     try {
       final interfaces = await NetworkInterface.list(
@@ -587,6 +1044,29 @@ class LocalWebHostService {
       _stateController.add(next);
     }
   }
+}
+
+class _ImageUploadRequest {
+  const _ImageUploadRequest({
+    required this.docName,
+    required this.fileName,
+    required this.mimeType,
+    required this.bytes,
+    this.caption,
+  });
+
+  final String docName;
+  final String fileName;
+  final String mimeType;
+  final Uint8List bytes;
+  final String? caption;
+}
+
+class _MultipartPart {
+  const _MultipartPart({required this.headers, required this.body});
+
+  final Map<String, String> headers;
+  final Uint8List body;
 }
 
 class LocalWebHostState {

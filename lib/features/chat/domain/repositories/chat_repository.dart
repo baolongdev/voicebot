@@ -3,6 +3,7 @@ import '../../../../core/result/result.dart';
 import '../../../../capabilities/protocol/protocol.dart';
 import '../entities/chat_config.dart';
 import '../entities/chat_response.dart';
+import '../entities/related_chat_image.dart';
 
 abstract class ChatRepository {
   Stream<ChatResponse> get responses;
@@ -22,4 +23,9 @@ abstract class ChatRepository {
   Future<Result<bool>> sendGreeting(String text);
   Future<Result<bool>> sendMessage(String text);
   Future<void> sendAudio(List<int> data);
+  Future<List<RelatedChatImage>> getRelatedImagesForQuery(
+    String query, {
+    int? topK,
+    int? maxImages,
+  });
 }

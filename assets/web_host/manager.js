@@ -12,6 +12,7 @@ const managerKdocBadge = document.getElementById('managerKdocBadge');
 const managerSelectedDoc = document.getElementById('managerSelectedDoc');
 const managerLastModified = document.getElementById('managerLastModified');
 const managerKdocView = document.getElementById('managerKdocView');
+const managerImageGallery = document.getElementById('managerImageGallery');
 const managerQueryInput = document.getElementById('managerQueryInput');
 const managerTopKInput = document.getElementById('managerTopKInput');
 const managerSearchBtn = document.getElementById('managerSearchBtn');
@@ -20,6 +21,11 @@ const managerStatus = document.getElementById('managerStatus');
 
 let docsCache = [];
 let selectedName = '';
+let selectedImages = [];
+let imagePreviewModal = null;
+let imagePreviewImage = null;
+let imagePreviewTitle = null;
+let imagePreviewMeta = null;
 
 const KDOC_SECTION_ORDER = [
   'DOC_ID',
@@ -138,6 +144,128 @@ function setKdocBadge(isValid) {
   if (!managerKdocBadge) return;
   managerKdocBadge.className = 'metric-chip ' + (isValid ? 'manager-kdoc-ok' : 'manager-kdoc-warn');
   managerKdocBadge.textContent = isValid ? 'KDOC: Hợp lệ' : 'KDOC: Cần chỉnh';
+}
+
+function resetManagerImageGallery(message) {
+  selectedImages = [];
+  if (!managerImageGallery) return;
+  managerImageGallery.innerHTML =
+    '<div class="image-card image-card-empty">' + esc(message || 'Chưa có ảnh cho tài liệu này.') + '</div>';
+}
+
+function renderManagerImageGallery() {
+  if (!managerImageGallery) return;
+  if (selectedImages.length === 0) {
+    resetManagerImageGallery('Chưa có ảnh cho tài liệu này.');
+    return;
+  }
+
+  managerImageGallery.innerHTML = selectedImages
+    .map((item) => {
+      const imageId = String(item.id || '');
+      const fileName = esc(String(item.file_name || 'image'));
+      const bytes = Number(item.bytes || 0).toLocaleString('vi-VN');
+      const created = esc(formatTimestamp(item.created_at));
+      const url = '/api/documents/image/content?id=' + encodeURIComponent(imageId);
+      return (
+        '<figure class="image-card image-card-remote">' +
+        '<button class="image-preview-trigger image-card-image-wrap" type="button" ' +
+        'data-image-preview-url="' + esc(url) + '" ' +
+        'data-image-preview-title="' + fileName + '" ' +
+        'data-image-preview-meta="' + created + ' • ' + bytes + ' bytes" ' +
+        'aria-label="Xem ảnh lớn ' + fileName + '">' +
+        '<img src="' + url + '" alt="' + fileName + '" loading="lazy" />' +
+        '</button>' +
+        '<figcaption class="image-card-caption">' +
+        '<div class="image-card-title" title="' + fileName + '">' + fileName + '</div>' +
+        '<div class="image-card-meta">' + created + ' • ' + bytes + ' bytes</div>' +
+        '</figcaption>' +
+        '</figure>'
+      );
+    })
+    .join('');
+
+  managerImageGallery.querySelectorAll('[data-image-preview-url]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const imageUrl = btn.getAttribute('data-image-preview-url') || '';
+      const title = btn.getAttribute('data-image-preview-title') || 'Ảnh minh họa';
+      const meta = btn.getAttribute('data-image-preview-meta') || '';
+      openImagePreview(imageUrl, title, meta);
+    });
+  });
+}
+
+function ensureImagePreviewModal() {
+  if (imagePreviewModal) {
+    return;
+  }
+  const wrapper = document.createElement('div');
+  wrapper.className = 'image-preview-modal is-hidden';
+  wrapper.setAttribute('role', 'dialog');
+  wrapper.setAttribute('aria-modal', 'true');
+  wrapper.setAttribute('aria-label', 'Xem ảnh lớn');
+  wrapper.innerHTML =
+    '<div class="image-preview-panel">' +
+    '<header class="image-preview-head">' +
+    '<p class="image-preview-title" id="managerImagePreviewTitle">Xem ảnh</p>' +
+    '<button class="image-preview-close" type="button" data-image-preview-close aria-label="Đóng ảnh">×</button>' +
+    '</header>' +
+    '<div class="image-preview-body">' +
+    '<img id="managerImagePreviewImage" alt="" loading="eager" />' +
+    '</div>' +
+    '<p class="image-preview-meta" id="managerImagePreviewMeta"></p>' +
+    '</div>';
+  document.body.appendChild(wrapper);
+  imagePreviewModal = wrapper;
+  imagePreviewImage = wrapper.querySelector('#managerImagePreviewImage');
+  imagePreviewTitle = wrapper.querySelector('#managerImagePreviewTitle');
+  imagePreviewMeta = wrapper.querySelector('#managerImagePreviewMeta');
+
+  wrapper.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target === wrapper) {
+      closeImagePreview();
+      return;
+    }
+    if (target instanceof HTMLElement && target.hasAttribute('data-image-preview-close')) {
+      closeImagePreview();
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && imagePreviewModal && !imagePreviewModal.classList.contains('is-hidden')) {
+      event.preventDefault();
+      closeImagePreview();
+    }
+  });
+}
+
+function openImagePreview(url, title, meta) {
+  ensureImagePreviewModal();
+  if (!imagePreviewModal || !imagePreviewImage) {
+    return;
+  }
+  imagePreviewImage.src = String(url || '');
+  imagePreviewImage.alt = String(title || 'Ảnh minh họa');
+  if (imagePreviewTitle) {
+    imagePreviewTitle.textContent = String(title || 'Ảnh minh họa');
+  }
+  if (imagePreviewMeta) {
+    imagePreviewMeta.textContent = String(meta || '');
+  }
+  imagePreviewModal.classList.remove('is-hidden');
+  document.body.classList.add('image-preview-open');
+}
+
+function closeImagePreview() {
+  if (!imagePreviewModal) {
+    return;
+  }
+  imagePreviewModal.classList.add('is-hidden');
+  document.body.classList.remove('image-preview-open');
+  if (imagePreviewImage) {
+    imagePreviewImage.src = '';
+  }
 }
 
 async function req(url, options) {
@@ -417,6 +545,23 @@ async function refreshDocuments(silentStatus) {
   }
 }
 
+async function loadManagerImages(docName) {
+  const name = String(docName || '').trim();
+  if (!name) {
+    resetManagerImageGallery('Chưa chọn tài liệu.');
+    return;
+  }
+  try {
+    const payload = await req('/api/documents/images?name=' + encodeURIComponent(name), {
+      retryCount: 1,
+    });
+    selectedImages = Array.isArray(payload.images) ? payload.images : [];
+    renderManagerImageGallery();
+  } catch (_) {
+    resetManagerImageGallery('Không tải được thư viện ảnh.');
+  }
+}
+
 async function loadDocument(name) {
   setStatus('Đang tải nội dung tài liệu...', 'loading');
   const payload = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
@@ -426,6 +571,7 @@ async function loadDocument(name) {
   updateSelectedDocMeta(selectedName, content.length);
   updateLastModified(doc.updated_at || '-');
   renderKdocView(content);
+  await loadManagerImages(selectedName);
   renderDocuments(docsCache);
   setStatus('Đã tải nội dung tài liệu.', 'ok');
 }
@@ -566,6 +712,7 @@ function bindEvents() {
   updateSelectedDocMeta('', 0);
   updateLastModified('-');
   setKdocBadge(false);
+  resetManagerImageGallery('Chưa chọn tài liệu.');
   updateKpis();
   await refreshHostInfo();
   try {
