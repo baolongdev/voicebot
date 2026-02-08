@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:mime/mime.dart' as mime;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/config/app_config.dart';
@@ -354,31 +355,74 @@ class LocalWebHostService {
       final contentType = request.headers.contentType;
       final mimeTypeHeader = contentType?.mimeType.toLowerCase() ?? '';
       final isJsonBody = mimeTypeHeader == 'application/json';
-      final upload = isJsonBody
-          ? await _readImageUploadJsonRequest(request)
-          : await _readImageUploadRequest(request);
+      if (isJsonBody) {
+        final upload = await _readImageUploadJsonRequest(request);
+        final mimeType = upload.mimeType.trim().toLowerCase();
+        if (!_allowedImageMimeTypes.contains(mimeType)) {
+          await _writeJson(request, <String, Object?>{
+            'ok': false,
+            'error': 'Định dạng ảnh không hỗ trợ. Chỉ chấp nhận JPEG/PNG/WEBP.',
+          }, statusCode: HttpStatus.badRequest);
+          return;
+        }
+        if (upload.bytes.length > AppConfig.webHostImageUploadMaxBytes) {
+          final maxMb = AppConfig.webHostImageUploadMaxMb;
+          await _writeJson(request, <String, Object?>{
+            'ok': false,
+            'error': 'Ảnh vượt quá giới hạn ${maxMb}MB.',
+          }, statusCode: HttpStatus.badRequest);
+          return;
+        }
+
+        final imageStore = await _getImageStore();
+        final created = await imageStore.saveImage(
+          docName: upload.docName,
+          fileName: upload.fileName,
+          mimeType: mimeType,
+          bytes: upload.bytes,
+          caption: upload.caption,
+        );
+        final imageId = (created['id'] ?? '').toString();
+        final image = <String, Object?>{
+          ...created,
+          'url':
+              '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
+        };
+        AppLogger.event(
+          'WebHost',
+          'image_upload',
+          fields: <String, Object?>{
+            'request_id': requestId,
+            'doc': upload.docName,
+            'image_id': imageId,
+            'mime': mimeType,
+            'bytes': upload.bytes.length,
+          },
+        );
+        await _writeJson(request, <String, Object?>{
+          'ok': true,
+          'image': image,
+        });
+        return;
+      }
+
+      final upload = await _readImageUploadMultipartRequest(request);
       final mimeType = upload.mimeType.trim().toLowerCase();
       if (!_allowedImageMimeTypes.contains(mimeType)) {
+        await _safeDeleteFile(upload.file);
         await _writeJson(request, <String, Object?>{
           'ok': false,
           'error': 'Định dạng ảnh không hỗ trợ. Chỉ chấp nhận JPEG/PNG/WEBP.',
         }, statusCode: HttpStatus.badRequest);
         return;
       }
-      if (upload.bytes.length > AppConfig.webHostImageUploadMaxBytes) {
-        final maxMb = AppConfig.webHostImageUploadMaxMb;
-        await _writeJson(request, <String, Object?>{
-          'ok': false,
-          'error': 'Ảnh vượt quá giới hạn ${maxMb}MB.',
-        }, statusCode: HttpStatus.badRequest);
-        return;
-      }
 
       final imageStore = await _getImageStore();
-      final created = await imageStore.saveImage(
+      final created = await imageStore.saveImageFile(
         docName: upload.docName,
         fileName: upload.fileName,
         mimeType: mimeType,
+        sourceFile: upload.file,
         bytes: upload.bytes,
         caption: upload.caption,
       );
@@ -395,7 +439,7 @@ class LocalWebHostService {
           'doc': upload.docName,
           'image_id': imageId,
           'mime': mimeType,
-          'bytes': upload.bytes.length,
+          'bytes': upload.bytes,
         },
       );
       await _writeJson(request, <String, Object?>{
@@ -453,6 +497,112 @@ class LocalWebHostService {
       mimeType: normalizedMimeType,
       bytes: Uint8List.fromList(decoded),
       caption: caption?.isEmpty ?? true ? null : caption,
+    );
+  }
+
+  Future<_ImageUploadFileRequest> _readImageUploadMultipartRequest(
+    HttpRequest request,
+  ) async {
+    final contentType = request.headers.contentType;
+    final isMultipart =
+        contentType != null &&
+        contentType.primaryType.toLowerCase() == 'multipart' &&
+        contentType.subType.toLowerCase() == 'form-data';
+    if (!isMultipart) {
+      throw Exception('Content-Type phải là multipart/form-data.');
+    }
+    final boundary =
+        (contentType.parameters['boundary'] ?? '').trim().replaceAll('"', '');
+    if (boundary.isEmpty) {
+      throw Exception('Thiếu boundary trong multipart/form-data.');
+    }
+
+    String docName = '';
+    String? caption;
+    String? fileName;
+    String fileMimeType = '';
+    File? tempFile;
+    int totalBytes = 0;
+    try {
+      final transformer = mime.MimeMultipartTransformer(boundary);
+      await for (final part in transformer.bind(request)) {
+        final headers = part.headers;
+        final contentDisposition = headers['content-disposition'] ?? '';
+        final fieldName =
+            _extractDispositionValue(contentDisposition, 'name')?.trim();
+        final partFileName = _extractDispositionValue(
+          contentDisposition,
+          'filename',
+        );
+
+        if (partFileName != null && partFileName.trim().isNotEmpty) {
+          if (tempFile != null) {
+            await part.drain();
+            throw Exception('Chỉ hỗ trợ 1 file ảnh mỗi lần upload.');
+          }
+          fileName = partFileName.trim();
+          fileMimeType =
+              (headers['content-type'] ?? '').split(';').first.trim();
+          tempFile = await _createTempUploadFile();
+          final sink = tempFile.openWrite();
+          try {
+            await for (final chunk in part) {
+              totalBytes += chunk.length.toInt();
+              if (totalBytes > AppConfig.webHostImageUploadMaxBytes) {
+                throw Exception(
+                  'Ảnh vượt quá giới hạn ${AppConfig.webHostImageUploadMaxMb}MB.',
+                );
+              }
+              sink.add(chunk);
+            }
+          } finally {
+            await sink.close();
+          }
+          continue;
+        }
+
+        final value = await utf8.decoder.bind(part).join();
+        if (fieldName == 'name') {
+          docName = value.trim();
+        } else if (fieldName == 'caption') {
+          caption = value.trim();
+        }
+      }
+    } catch (error) {
+      if (tempFile != null) {
+        await _safeDeleteFile(tempFile);
+      }
+      rethrow;
+    }
+
+    if (docName.trim().isEmpty) {
+      if (tempFile != null) {
+        await _safeDeleteFile(tempFile);
+      }
+      throw Exception('Thiếu trường name (tên tài liệu).');
+    }
+    if (tempFile == null || totalBytes == 0) {
+      if (tempFile != null) {
+        await _safeDeleteFile(tempFile);
+      }
+      throw Exception('Không nhận được file ảnh upload.');
+    }
+
+    final normalizedFileName =
+        (fileName ?? 'image').trim().isEmpty ? 'image' : fileName!.trim();
+    final normalizedMimeType =
+        fileMimeType.trim().isEmpty
+            ? _guessMimeTypeFromFileName(normalizedFileName)
+            : fileMimeType.trim().toLowerCase();
+    final normalizedCaption =
+        (caption?.trim().isEmpty ?? true) ? null : caption!.trim();
+    return _ImageUploadFileRequest(
+      docName: docName.trim(),
+      fileName: normalizedFileName,
+      mimeType: normalizedMimeType,
+      file: tempFile,
+      bytes: totalBytes,
+      caption: normalizedCaption,
     );
   }
 
@@ -588,150 +738,6 @@ class LocalWebHostService {
     return <String, dynamic>{};
   }
 
-  Future<_ImageUploadRequest> _readImageUploadRequest(HttpRequest request) async {
-    final contentType = request.headers.contentType;
-    final isMultipart =
-        contentType != null &&
-        contentType.primaryType.toLowerCase() == 'multipart' &&
-        contentType.subType.toLowerCase() == 'form-data';
-    if (!isMultipart) {
-      throw Exception('Content-Type phải là multipart/form-data.');
-    }
-    final boundary =
-        (contentType.parameters['boundary'] ?? '').trim().replaceAll('"', '');
-    if (boundary.isEmpty) {
-      throw Exception('Thiếu boundary trong multipart/form-data.');
-    }
-
-    String docName = '';
-    String? caption;
-    String? fileName;
-    String fileMimeType = '';
-    Uint8List? fileBytes;
-
-    final requestBytes = await request.fold<List<int>>(
-      <int>[],
-      (buffer, data) {
-        buffer.addAll(data);
-        return buffer;
-      },
-    );
-    final parts = _parseMultipartBody(
-      bytes: Uint8List.fromList(requestBytes),
-      boundary: boundary,
-    );
-    for (final part in parts) {
-      final contentDisposition =
-          part.headers['content-disposition'] ?? part.headers['Content-Disposition'] ?? '';
-      final fieldName = _extractDispositionValue(
-        contentDisposition,
-        'name',
-      )?.trim();
-      final partFileName = _extractDispositionValue(
-        contentDisposition,
-        'filename',
-      );
-
-      if (partFileName != null && partFileName.trim().isNotEmpty) {
-        fileName = partFileName.trim();
-        fileMimeType = ((part.headers['content-type'] ??
-                    part.headers['Content-Type'] ??
-                    '')
-                .split(';')
-                .first)
-            .trim();
-        fileBytes = part.body;
-        continue;
-      }
-
-      final value = utf8.decode(part.body, allowMalformed: true).trim();
-      if (fieldName == 'name') {
-        docName = value;
-      } else if (fieldName == 'caption') {
-        caption = value;
-      }
-    }
-
-    if (docName.trim().isEmpty) {
-      throw Exception('Thiếu trường name (tên tài liệu).');
-    }
-    if (fileBytes == null || fileBytes.isEmpty) {
-      throw Exception('Không nhận được file ảnh upload.');
-    }
-    final normalizedFileName =
-        (fileName ?? 'image').trim().isEmpty ? 'image' : fileName!.trim();
-    final normalizedMimeType =
-        fileMimeType.trim().isEmpty
-            ? _guessMimeTypeFromFileName(normalizedFileName)
-            : fileMimeType.trim().toLowerCase();
-
-    return _ImageUploadRequest(
-      docName: docName.trim(),
-      fileName: normalizedFileName,
-      mimeType: normalizedMimeType,
-      bytes: fileBytes,
-      caption: caption,
-    );
-  }
-
-  String? _extractDispositionValue(String header, String key) {
-    final quoted = RegExp('$key="([^"]*)"').firstMatch(header);
-    if (quoted != null) {
-      return quoted.group(1);
-    }
-    final plain = RegExp('$key=([^;\\s]+)').firstMatch(header);
-    return plain?.group(1);
-  }
-
-  List<_MultipartPart> _parseMultipartBody({
-    required Uint8List bytes,
-    required String boundary,
-  }) {
-    final raw = latin1.decode(bytes, allowInvalid: true);
-    final marker = '--$boundary';
-    final sections = raw.split(marker);
-    final parts = <_MultipartPart>[];
-
-    for (final section in sections) {
-      var chunk = section;
-      if (chunk.isEmpty || chunk == '--' || chunk == '--\r\n') {
-        continue;
-      }
-      if (chunk.startsWith('\r\n')) {
-        chunk = chunk.substring(2);
-      }
-      if (chunk.endsWith('--')) {
-        chunk = chunk.substring(0, chunk.length - 2);
-      }
-      if (chunk.endsWith('\r\n')) {
-        chunk = chunk.substring(0, chunk.length - 2);
-      }
-
-      final separatorIndex = chunk.indexOf('\r\n\r\n');
-      if (separatorIndex <= 0) {
-        continue;
-      }
-      final rawHeader = chunk.substring(0, separatorIndex);
-      final rawBody = chunk.substring(separatorIndex + 4);
-      final headerLines = rawHeader.split('\r\n');
-      final headers = <String, String>{};
-      for (final line in headerLines) {
-        final idx = line.indexOf(':');
-        if (idx <= 0) {
-          continue;
-        }
-        final name = line.substring(0, idx).trim();
-        final value = line.substring(idx + 1).trim();
-        if (name.isNotEmpty) {
-          headers[name] = value;
-          headers[name.toLowerCase()] = value;
-        }
-      }
-      final bodyBytes = Uint8List.fromList(latin1.encode(rawBody));
-      parts.add(_MultipartPart(headers: headers, body: bodyBytes));
-    }
-    return parts;
-  }
 
   String _guessMimeTypeFromFileName(String fileName) {
     final lowered = fileName.toLowerCase();
@@ -745,6 +751,30 @@ class LocalWebHostService {
       return 'image/webp';
     }
     return 'application/octet-stream';
+  }
+
+  String? _extractDispositionValue(String header, String key) {
+    final quoted = RegExp('$key="([^"]*)"').firstMatch(header);
+    if (quoted != null) {
+      return quoted.group(1);
+    }
+    final plain = RegExp('$key=([^;\\s]+)').firstMatch(header);
+    return plain?.group(1);
+  }
+
+  Future<File> _createTempUploadFile() async {
+    final tempDir = await getTemporaryDirectory();
+    final name =
+        'voicebot_upload_${DateTime.now().microsecondsSinceEpoch}_$_nextHttpRequestId.tmp';
+    return File('${tempDir.path}${Platform.pathSeparator}$name');
+  }
+
+  Future<void> _safeDeleteFile(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
   }
 
   Future<Map<String, dynamic>> _callTool({
@@ -1062,11 +1092,22 @@ class _ImageUploadRequest {
   final String? caption;
 }
 
-class _MultipartPart {
-  const _MultipartPart({required this.headers, required this.body});
+class _ImageUploadFileRequest {
+  const _ImageUploadFileRequest({
+    required this.docName,
+    required this.fileName,
+    required this.mimeType,
+    required this.file,
+    required this.bytes,
+    this.caption,
+  });
 
-  final Map<String, String> headers;
-  final Uint8List body;
+  final String docName;
+  final String fileName;
+  final String mimeType;
+  final File file;
+  final int bytes;
+  final String? caption;
 }
 
 class LocalWebHostState {

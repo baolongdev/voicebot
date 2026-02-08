@@ -685,6 +685,60 @@ class McpServer {
 
     addUserOnlyTool(
       McpTool(
+        name: 'self.knowledge.list_images',
+        description:
+            '[VI] Mục đích: Liệt kê danh sách ảnh đã tải lên từ kho tri thức. '
+            'Có thể lọc theo `doc_name` và giới hạn số lượng bằng `limit`.\n'
+            'Cách dùng: gọi không cần tham số hoặc truyền `doc_name`, `limit`.\n'
+            'Kết quả: JSON gồm `count` và `images[]` '
+            '(id, doc_name, file_name, mime_type, bytes, created_at, url).\n'
+            '[EN] Purpose: List uploaded knowledge images. Optional '
+            '`doc_name` filter and `limit` for result size.\n'
+            'Usage: call without arguments or provide `doc_name`, `limit`.\n'
+            'Return: JSON with `count` and `images[]` '
+            '(id, doc_name, file_name, mime_type, bytes, created_at, url).',
+        properties: <McpProperty>[
+          const McpProperty.string('doc_name', defaultString: ''),
+          McpProperty.integer(
+            'limit',
+            defaultInt: AppConfig.homeCarouselMaxImages,
+            min: 1,
+            max: 50,
+          ),
+        ],
+        callback: (args) async {
+          final docName = (args['doc_name'] as String? ?? '').trim();
+          final limit = (args['limit'] as int? ??
+                  AppConfig.homeCarouselMaxImages)
+              .clamp(1, 50);
+          final imageStore = await _getImageStore();
+          final images = docName.isEmpty
+              ? await imageStore.listAllImages()
+              : await imageStore.listImagesByDocument(docName);
+          final enriched = <Map<String, Object?>>[];
+          for (final item in images.take(limit)) {
+            final id = (item['id'] ?? '').toString().trim();
+            if (id.isEmpty) {
+              continue;
+            }
+            enriched.add(<String, Object?>{
+              ...item,
+              'url':
+                  '/api/documents/image/content?id=${Uri.encodeQueryComponent(id)}',
+            });
+          }
+          return <String, dynamic>{
+            'count': images.length,
+            if (docName.isNotEmpty) 'doc_name': docName,
+            'images': enriched,
+          };
+        },
+        userOnly: true,
+      ),
+    );
+
+    addUserOnlyTool(
+      McpTool(
         name: 'self.knowledge.get_document',
         description:
             '[VI] Mục đích: Lấy nội dung đầy đủ của một tài liệu theo tên.\n'
@@ -924,6 +978,8 @@ class LocalKnowledgeBase {
     'faq',
     'policy',
     'guide',
+    'info',
+    'company_profile',
   };
   static const Set<String> _searchStopwords = <String>{
     'la',

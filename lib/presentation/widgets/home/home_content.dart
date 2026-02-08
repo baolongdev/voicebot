@@ -1,4 +1,5 @@
 import 'package:carousel_slider/carousel_slider.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
@@ -12,6 +13,7 @@ class HomeContent extends StatelessWidget {
     super.key,
     required this.palette,
     required this.connectionData,
+    required this.carouselImages,
     required this.cameraEnabled,
     required this.cameraAspectRatio,
     required this.onCameraEnabledChanged,
@@ -30,6 +32,7 @@ class HomeContent extends StatelessWidget {
 
   final EmotionPalette palette;
   final ConnectionStatusData connectionData;
+  final List<String> carouselImages;
   final bool cameraEnabled;
   final double cameraAspectRatio;
   final ValueChanged<bool> onCameraEnabledChanged;
@@ -46,17 +49,9 @@ class HomeContent extends StatelessWidget {
   final bool carouselEnlargeCenter;
 
   static const double audioActiveThreshold = 0.02;
-  static const List<String> _carouselImages = [
-    'https://chanhviet.com/wp-content/uploads/2024/05/syrup-chanh-vang-chavi-1.png',
-    'https://chanhviet.com/wp-content/uploads/2023/07/cot-chanh-tuoi-100-chavi-chavi-1024x1024.jpg',
-    'https://chanhviet.com/wp-content/uploads/2019/11/bot-chanh-chavi.jpg',
-    'https://chanhviet.com/wp-content/uploads/2019/11/nuoc-cot-chanh-100a-chanh-viet.png',
-    'https://chanhviet.com/wp-content/uploads/2020/09/bot-thanh-long-hoa-tan-chavi-400g.png',
-    'https://chanhviet.com/wp-content/uploads/2024/01/bot-trai-cay-hoa-tan-chavi-1kg-1024x1024.jpg',
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final images = carouselImages;
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -99,15 +94,17 @@ class HomeContent extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _BottomCarousel(
-                        palette: palette,
-                        height: carouselHeight,
-                        autoPlay: carouselAutoPlay,
-                        autoPlayInterval: carouselAutoPlayInterval,
-                        animationDuration: carouselAnimationDuration,
-                        viewportFraction: carouselViewportFraction,
-                        enlargeCenter: carouselEnlargeCenter,
-                      ),
+                      if (images.isNotEmpty)
+                        _BottomCarousel(
+                          palette: palette,
+                          images: images,
+                          height: carouselHeight,
+                          autoPlay: carouselAutoPlay,
+                          autoPlayInterval: carouselAutoPlayInterval,
+                          animationDuration: carouselAnimationDuration,
+                          viewportFraction: carouselViewportFraction,
+                          enlargeCenter: carouselEnlargeCenter,
+                        ),
                     ],
                   ),
                 ),
@@ -131,9 +128,10 @@ class HomeContent extends StatelessWidget {
   }
 }
 
-class _BottomCarousel extends StatelessWidget {
+class _BottomCarousel extends StatefulWidget {
   const _BottomCarousel({
     required this.palette,
+    required this.images,
     required this.height,
     required this.autoPlay,
     required this.autoPlayInterval,
@@ -143,6 +141,7 @@ class _BottomCarousel extends StatelessWidget {
   });
 
   final EmotionPalette palette;
+  final List<String> images;
   final double height;
   final bool autoPlay;
   final Duration autoPlayInterval;
@@ -151,89 +150,185 @@ class _BottomCarousel extends StatelessWidget {
   final bool enlargeCenter;
 
   @override
+  State<_BottomCarousel> createState() => _BottomCarouselState();
+}
+
+class _BottomCarouselState extends State<_BottomCarousel>
+    with TickerProviderStateMixin {
+  final Map<String, double> _aspectRatios = <String, double>{};
+  final Set<String> _pendingAspectRatio = <String>{};
+  int _currentIndex = 0;
+
+  @override
+  void didUpdateWidget(covariant _BottomCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.images, widget.images)) {
+      _currentIndex = 0;
+      _pendingAspectRatio.removeWhere(
+        (url) => !widget.images.contains(url),
+      );
+      _aspectRatios.removeWhere(
+        (url, _) => !widget.images.contains(url),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      width: double.infinity,
-      child: CarouselSlider(
-        items: List.generate(HomeContent._carouselImages.length, (index) {
-          final imageUrl = HomeContent._carouselImages[index];
-          return GestureDetector(
-            onTap: () => _openImagePreview(context, imageUrl),
-            child: Container(
-              margin: const EdgeInsets.symmetric(
-                horizontal: ThemeTokens.spaceXs,
-              ),
-              decoration: BoxDecoration(
-                color: palette.controlBackground(context),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: palette.controlBorder(context)),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Center(
-                      child: Text(
-                        'Hình ảnh lỗi',
-                        style: context.theme.typography.sm.copyWith(
-                          color: palette.controlForeground(context),
-                          fontWeight: FontWeight.w600,
-                        ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = _resolveCarouselHeight(width);
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            height: height,
+            width: double.infinity,
+            child: CarouselSlider.builder(
+              itemCount: widget.images.length,
+              itemBuilder: (context, index, _) {
+                final imageUrl = widget.images[index];
+                _ensureAspectRatio(imageUrl);
+                return GestureDetector(
+                  onTap: () => _openImagePreview(context, imageUrl),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: ThemeTokens.spaceXs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: widget.palette.controlBackground(context),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: widget.palette.controlBorder(context),
                       ),
                     ),
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) {
-                        return child;
-                      }
-                      return Center(
-                        child: Text(
-                          'Đang tải...',
-                          style: context.theme.typography.sm.copyWith(
-                            color: palette.controlForeground(context),
-                            fontWeight: FontWeight.w600,
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => Center(
+                            child: Text(
+                              'Hình ảnh lỗi',
+                              style: context.theme.typography.sm.copyWith(
+                                color:
+                                    widget.palette.controlForeground(context),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          loadingBuilder: (context, child, progress) {
+                            if (progress == null) {
+                              return child;
+                            }
+                            return Center(
+                              child: Text(
+                                'Đang tải...',
+                                style: context.theme.typography.sm.copyWith(
+                                  color:
+                                      widget.palette.controlForeground(context),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                              colors: [
+                                widget.palette
+                                    .controlBackground(context)
+                                    .withValues(alpha: 0.35),
+                                widget.palette
+                                    .controlBackground(context)
+                                    .withValues(alpha: 0.0),
+                              ],
+                            ),
                           ),
                         ),
-                      );
-                    },
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          palette
-                              .controlBackground(context)
-                              .withValues(alpha: 0.35),
-                          palette
-                              .controlBackground(context)
-                              .withValues(alpha: 0.0),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
-                ],
+                );
+              },
+              options: CarouselOptions(
+                height: height,
+                viewportFraction: widget.viewportFraction.clamp(0.4, 1.0),
+                enlargeCenterPage: widget.enlargeCenter,
+                enableInfiniteScroll: true,
+                autoPlay: widget.autoPlay,
+                autoPlayInterval: widget.autoPlayInterval,
+                autoPlayAnimationDuration: widget.animationDuration,
+                autoPlayCurve: Curves.easeOutCubic,
+                pauseAutoPlayOnTouch: true,
+                onPageChanged: (index, _) {
+                  if (!mounted || _currentIndex == index) {
+                    return;
+                  }
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
               ),
             ),
-          );
-        }),
-        options: CarouselOptions(
-          height: height,
-          viewportFraction: viewportFraction.clamp(0.4, 1.0),
-          enlargeCenterPage: enlargeCenter,
-          enableInfiniteScroll: true,
-          autoPlay: autoPlay,
-          autoPlayInterval: autoPlayInterval,
-          autoPlayAnimationDuration: animationDuration,
-          autoPlayCurve: Curves.easeOutCubic,
-          pauseAutoPlayOnTouch: true,
-        ),
-      ),
+          ),
+        );
+      },
     );
+  }
+
+  double _resolveCarouselHeight(double width) {
+    if (widget.images.isEmpty || width <= 0) {
+      return widget.height;
+    }
+    final safeIndex = _currentIndex.clamp(0, widget.images.length - 1);
+    final url = widget.images[safeIndex];
+    final ratio = _aspectRatios[url];
+    if (ratio == null || ratio <= 0) {
+      return widget.height;
+    }
+    final computed = width / ratio;
+    if (!computed.isFinite || computed <= 0) {
+      return widget.height;
+    }
+    return computed;
+  }
+
+  void _ensureAspectRatio(String url) {
+    if (_aspectRatios.containsKey(url) || _pendingAspectRatio.contains(url)) {
+      return;
+    }
+    _pendingAspectRatio.add(url);
+    final provider = NetworkImage(url);
+    final stream = provider.resolve(const ImageConfiguration());
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (info, _) {
+        final width = info.image.width.toDouble();
+        final height = info.image.height.toDouble();
+        if (width > 0 && height > 0) {
+          _aspectRatios[url] = width / height;
+        }
+        _pendingAspectRatio.remove(url);
+        stream.removeListener(listener);
+        if (!mounted) {
+          return;
+        }
+        setState(() {});
+      },
+      onError: (_, __) {
+        _pendingAspectRatio.remove(url);
+        stream.removeListener(listener);
+      },
+    );
+    stream.addListener(listener);
   }
 }
 

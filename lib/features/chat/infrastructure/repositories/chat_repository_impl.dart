@@ -69,9 +69,13 @@ class ChatRepositoryImpl implements ChatRepository {
   String? _lastBlockedInput;
   String? _lastImageContextQuery;
   DateTime _lastImageContextAt = DateTime.fromMillisecondsSinceEpoch(0);
+  String? _lastKnowledgeDocQuery;
+  String? _lastKnowledgeDocName;
+  DateTime _lastKnowledgeDocAt = DateTime.fromMillisecondsSinceEpoch(0);
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
   static const Duration _recentTextWindow = Duration(seconds: 10);
   static const Duration _knowledgeVoiceCooldown = Duration(seconds: 6);
+  static const Duration _knowledgeDocCacheTtl = Duration(seconds: 6);
   static const Duration _imageContextTtl = Duration(minutes: 10);
   static const String _knowledgeMarker = '__KBCTX__';
   static const String _missingMqttCode = 'missing_mqtt';
@@ -340,6 +344,34 @@ class ChatRepositoryImpl implements ChatRepository {
     );
     final maxImageCount = (maxImages ?? AppConfig.chatRelatedImagesMaxCount)
         .clamp(1, 12);
+
+    AppLogger.event(
+      'ChatRepository',
+      'related_images_request',
+      fields: <String, Object?>{
+        'query': inputQuery,
+        'effective_query': effectiveQuery,
+      },
+    );
+
+    final docImages = await _fetchKnowledgeDocImages(
+      effectiveQuery,
+      maxImages: maxImageCount,
+    );
+    if (docImages.isNotEmpty) {
+      AppLogger.event(
+        'ChatRepository',
+        'related_images_doc_hit',
+        fields: <String, Object?>{
+          'query': inputQuery,
+          'effective_query': effectiveQuery,
+          'images': docImages.length,
+        },
+        level: 'D',
+      );
+      return docImages;
+    }
+
     final startedAt = DateTime.now();
     try {
       final result = await _callMcpTool(
@@ -349,6 +381,7 @@ class ChatRepositoryImpl implements ChatRepository {
           'top_k': topKValue,
           'max_images': maxImageCount,
         },
+        logRequest: true,
       );
       final payload = _decodeToolPayload(result);
       if (payload is! Map) {
@@ -472,6 +505,125 @@ class ChatRepositoryImpl implements ChatRepository {
       return const <RelatedChatImage>[];
     }
   }
+
+  Future<List<RelatedChatImage>> _fetchKnowledgeDocImages(
+    String query, {
+    required int maxImages,
+  }) async {
+    final normalized = _normalizeForKnowledge(query);
+    if (normalized.isEmpty) {
+      return const <RelatedChatImage>[];
+    }
+    final now = DateTime.now();
+    String? docName;
+    if (_lastKnowledgeDocQuery == normalized &&
+        now.difference(_lastKnowledgeDocAt) <= _knowledgeDocCacheTtl) {
+      docName = _lastKnowledgeDocName;
+    }
+    docName ??= await _findKnowledgeDocNameForQuery(query);
+    if (docName == null || docName.trim().isEmpty) {
+      return const <RelatedChatImage>[];
+    }
+    _lastKnowledgeDocQuery = normalized;
+    _lastKnowledgeDocName = docName;
+    _lastKnowledgeDocAt = now;
+    return _listImagesForDocument(docName, maxImages: maxImages);
+  }
+
+  Future<String?> _findKnowledgeDocNameForQuery(String query) async {
+    final response = await _callMcpTool(
+      name: 'self.knowledge.search',
+      arguments: <String, dynamic>{'query': query, 'top_k': 1},
+      logRequest: true,
+    );
+    final payload = _decodeToolPayload(response);
+    if (payload is! Map) {
+      return null;
+    }
+    final rows = payload['results'];
+    if (rows is! List || rows.isEmpty) {
+      return null;
+    }
+    for (final row in rows) {
+      if (row is! Map) {
+        continue;
+      }
+      final name = (row['name'] ?? '').toString().trim();
+      if (name.isNotEmpty) {
+        return name;
+      }
+      final title = (row['title'] ?? '').toString().trim();
+      if (title.isNotEmpty) {
+        return title;
+      }
+    }
+    return null;
+  }
+
+  Future<List<RelatedChatImage>> _listImagesForDocument(
+    String docName, {
+    required int maxImages,
+  }) async {
+    final trimmed = docName.trim();
+    if (trimmed.isEmpty) {
+      return const <RelatedChatImage>[];
+    }
+    final baseUri = _resolveWebHostBaseUri();
+    if (baseUri == null) {
+      return const <RelatedChatImage>[];
+    }
+    final result = await _callMcpTool(
+      name: 'self.knowledge.list_images',
+      arguments: <String, dynamic>{
+        'doc_name': trimmed,
+        'limit': maxImages,
+      },
+      logRequest: true,
+    );
+    final payload = _decodeToolPayload(result);
+    if (payload is! Map) {
+      return const <RelatedChatImage>[];
+    }
+    final rows = payload['images'];
+    if (rows is! List || rows.isEmpty) {
+      return const <RelatedChatImage>[];
+    }
+    final imagesById = <String, RelatedChatImage>{};
+    for (final row in rows) {
+      if (row is! Map) {
+        continue;
+      }
+      final item = Map<String, dynamic>.from(row);
+      final id = (item['id'] ?? '').toString().trim();
+      final urlRaw = (item['url'] ?? '').toString().trim();
+      if (id.isEmpty || urlRaw.isEmpty) {
+        continue;
+      }
+      final resolvedUrl = _resolveLocalImageUrl(urlRaw, baseUri);
+      if (resolvedUrl == null) {
+        continue;
+      }
+      final fileName = (item['file_name'] ?? '').toString().trim();
+      final doc = (item['doc_name'] ?? '').toString().trim();
+      imagesById[id] = RelatedChatImage(
+        id: id,
+        documentName: doc.isEmpty ? trimmed : doc,
+        fileName: fileName.isEmpty ? 'image' : fileName,
+        url: resolvedUrl,
+        mimeType: (item['mime_type'] ?? '').toString().trim(),
+        bytes: (item['bytes'] as num?)?.toInt() ?? 0,
+        score: 0,
+        createdAt: DateTime.tryParse(
+          (item['created_at'] ?? '').toString().trim(),
+        ),
+      );
+      if (imagesById.length >= maxImages) {
+        break;
+      }
+    }
+    return imagesById.values.toList(growable: false);
+  }
+
 
   void _handleIncomingJson(Map<String, dynamic> json) {
     final type = json['type'] as String? ?? '';
@@ -1248,11 +1400,18 @@ YEU_CAU_TRA_LOI:
     _lastBlockedReplyAt = now;
     _suppressBlockedTopicUntil = now.add(const Duration(seconds: 10));
 
+    final isLalaSchool = _isLalaSchoolPhrase(normalizedInput);
     final safeReply = (payload['response'] as String?)?.trim();
     final fallback =
         'Xin loi, minh chua nghe ro noi dung. Ban vui long dat lai cau hoi ngan gon de minh ho tro chinh xac hon.';
+    final lalaReply =
+        'Xin loi, minh nghe khong ro. Ban vui long noi lai giup minh nhe.';
     _responsesController.add(
-      ChatResponse(text: safeReply?.isNotEmpty == true ? safeReply! : fallback),
+      ChatResponse(
+        text: isLalaSchool
+            ? lalaReply
+            : (safeReply?.isNotEmpty == true ? safeReply! : fallback),
+      ),
     );
     AppLogger.event(
       'ChatRepository',
@@ -1295,18 +1454,31 @@ YEU_CAU_TRA_LOI:
   Future<Map<String, dynamic>?> _callMcpTool({
     required String name,
     Map<String, dynamic> arguments = const <String, dynamic>{},
+    bool logRequest = false,
   }) async {
     final requestId = _mcpRequestId++;
-    AppLogger.event(
-      'ChatRepository',
-      'mcp_tool_call',
-      fields: <String, Object?>{
-        'id': requestId,
-        'tool': name,
-        'arguments': arguments,
-      },
-      level: 'D',
-    );
+    if (logRequest) {
+      AppLogger.event(
+        'MCP',
+        'request',
+        fields: <String, Object?>{'method': 'tools/call', 'id': requestId},
+      );
+      AppLogger.log(
+        'MCP',
+        'request_body=${jsonEncode(<String, dynamic>{'jsonrpc': '2.0', 'id': requestId, 'method': 'tools/call', 'params': <String, dynamic>{'name': name, 'arguments': arguments}})}',
+      );
+    } else {
+      AppLogger.event(
+        'ChatRepository',
+        'mcp_tool_call',
+        fields: <String, Object?>{
+          'id': requestId,
+          'tool': name,
+          'arguments': arguments,
+        },
+        level: 'D',
+      );
+    }
     final response = await _mcpHandleMessage(<String, dynamic>{
       'jsonrpc': '2.0',
       'id': requestId,
@@ -1320,6 +1492,18 @@ YEU_CAU_TRA_LOI:
         fields: <String, Object?>{'id': requestId, 'tool': name},
         level: 'D',
       );
+      if (logRequest) {
+        AppLogger.event(
+          'MCP',
+          'ignored',
+          fields: <String, Object?>{
+            'reason': 'null_response',
+            'method': 'tools/call',
+            'id': requestId,
+          },
+          level: 'W',
+        );
+      }
       return null;
     }
     final error = response['error'];
@@ -1334,15 +1518,33 @@ YEU_CAU_TRA_LOI:
         },
         level: 'D',
       );
+      if (logRequest) {
+        AppLogger.event(
+          'MCP',
+          'response',
+          fields: <String, Object?>{'id': response['id'], 'has_error': true},
+          level: 'W',
+        );
+        AppLogger.log('MCP', 'response_body=${jsonEncode(response)}');
+      }
       return null;
     }
     final result = response['result'];
-    AppLogger.event(
-      'ChatRepository',
-      'mcp_tool_success',
-      fields: <String, Object?>{'id': requestId, 'tool': name},
-      level: 'D',
-    );
+    if (logRequest) {
+      AppLogger.event(
+        'MCP',
+        'response',
+        fields: <String, Object?>{'id': requestId, 'has_error': false},
+      );
+      AppLogger.log('MCP', 'response_body=${jsonEncode(response)}');
+    } else {
+      AppLogger.event(
+        'ChatRepository',
+        'mcp_tool_success',
+        fields: <String, Object?>{'id': requestId, 'tool': name},
+        level: 'D',
+      );
+    }
     if (result is Map<String, dynamic>) {
       return result;
     }
@@ -1397,11 +1599,18 @@ YEU_CAU_TRA_LOI:
       return false;
     }
     final normalized = _normalizeForKnowledge(text);
-    return normalized.contains('la la school') ||
-        normalized.contains('lalaschool') ||
+    return _isLalaSchoolPhrase(normalized) ||
         normalized.contains('subscribe') ||
         normalized.contains('dang ky kenh') ||
         normalized.contains('dang ky');
+  }
+
+  bool _isLalaSchoolPhrase(String normalized) {
+    if (normalized.isEmpty) {
+      return false;
+    }
+    return normalized.contains('la la school') ||
+        normalized.contains('lalaschool');
   }
 
   bool _shouldUseKnowledgeContext(String text) {
@@ -1526,10 +1735,9 @@ YEU_CAU_TRA_LOI:
     if (normalized.isEmpty) {
       return false;
     }
-    const intents = <String>{
+    final padded = ' $normalized ';
+    const phraseIntents = <String>[
       'hinh anh',
-      'hinh',
-      'anh',
       'hinh san pham',
       'anh san pham',
       'xem anh',
@@ -1538,18 +1746,26 @@ YEU_CAU_TRA_LOI:
       'cho toi hinh anh',
       'show image',
       'show images',
+    ];
+    for (final intent in phraseIntents) {
+      if (padded.contains(' $intent ')) {
+        return true;
+      }
+    }
+    final tokens = normalized
+        .split(RegExp(r'\s+'))
+        .where((token) => token.isNotEmpty)
+        .toSet();
+    const tokenIntents = <String>{
+      'hinh',
+      'anh',
       'image',
       'images',
       'photo',
       'photos',
       'gallery',
     };
-    for (final intent in intents) {
-      if (normalized.contains(intent)) {
-        return true;
-      }
-    }
-    return false;
+    return tokens.any(tokenIntents.contains);
   }
 
   String _normalizeQuestionForAgent(String input) {

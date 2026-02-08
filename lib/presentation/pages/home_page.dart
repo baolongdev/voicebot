@@ -1,5 +1,5 @@
-import 'dart:math' as math;
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -17,6 +17,7 @@ import '../../core/theme/forui/theme_tokens.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/chat/application/state/chat_state.dart';
 import '../../features/chat/domain/entities/chat_message.dart';
+import '../../features/chat/domain/entities/related_chat_image.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../features/home/application/state/home_state.dart';
 import '../../features/home/domain/entities/home_system_status.dart';
@@ -68,14 +69,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     null,
   );
   Timer? _faceConnectTimer;
+  Timer? _carouselHideTimer;
   bool _facePresent = false;
+  List<String> _carouselImages = const <String>[];
   static const Duration _faceConnectDelay = Duration(seconds: 3);
+  static const Duration _carouselDisplayDuration = Duration(minutes: 2);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(LocalWebHostService.instance.start(preferredPort: 8080));
+    final hostStart = LocalWebHostService.instance.start(preferredPort: 8080);
+    unawaited(hostStart);
     context.read<HomeCubit>().initialize();
     context.read<ChatCubit>().setTextSendMode(
       context.read<TextSendModeCubit>().state,
@@ -100,6 +105,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _detectFacesEnabled.dispose();
     _faceConnectProgress.dispose();
     _faceConnectTimer?.cancel();
+    _carouselHideTimer?.cancel();
     _chimePlayer.dispose();
     super.dispose();
   }
@@ -144,6 +150,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               _playChime();
             }
             _wasSpeaking = state.isSpeaking;
+          },
+        ),
+        BlocListener<ChatCubit, ChatState>(
+          listenWhen: (previous, current) =>
+              _relatedImagesSignature(previous.messages) !=
+              _relatedImagesSignature(current.messages),
+          listener: (context, state) {
+            _syncCarouselWithRelatedImages(state.messages);
           },
         ),
         BlocListener<HomeCubit, HomeState>(
@@ -327,6 +341,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             return HomeContent(
                                               palette: palette,
                                               connectionData: connectionData,
+                                              carouselImages: _carouselImages,
                                               cameraEnabled: cameraEnabled,
                                               cameraAspectRatio:
                                                   cameraAspectRatio,
@@ -779,6 +794,83 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _refreshNetworkStatus() async {
     await context.read<HomeCubit>().refreshNetworkStatus();
+  }
+
+  void _syncCarouselWithRelatedImages(List<ChatMessage> messages) {
+    final message = _findRelatedImagesMessage(messages);
+    if (message == null || message.relatedImages.isEmpty) {
+      _clearCarouselImages();
+      return;
+    }
+    final urls = _extractRelatedImageUrls(message.relatedImages);
+    if (urls.isEmpty) {
+      _clearCarouselImages();
+      return;
+    }
+    _carouselHideTimer?.cancel();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _carouselImages = List<String>.unmodifiable(urls);
+    });
+    _carouselHideTimer = Timer(_carouselDisplayDuration, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _carouselImages = const <String>[];
+      });
+    });
+  }
+
+  ChatMessage? _findRelatedImagesMessage(List<ChatMessage> messages) {
+    for (var i = messages.length - 1; i >= 0; i -= 1) {
+      final message = messages[i];
+      if (message.type == ChatMessageType.relatedImages) {
+        return message;
+      }
+    }
+    return null;
+  }
+
+  String _relatedImagesSignature(List<ChatMessage> messages) {
+    final message = _findRelatedImagesMessage(messages);
+    if (message == null) {
+      return 'none';
+    }
+    final query = message.relatedQuery ?? '';
+    return [
+      message.timestamp.microsecondsSinceEpoch.toString(),
+      query,
+      message.relatedImages.length.toString(),
+    ].join('|');
+  }
+
+  List<String> _extractRelatedImageUrls(List<RelatedChatImage> images) {
+    final urls = <String>[];
+    final seen = <String>{};
+    for (final image in images) {
+      final raw = image.url.trim();
+      if (raw.isEmpty) {
+        continue;
+      }
+      if (seen.add(raw)) {
+        urls.add(raw);
+      }
+    }
+    return urls;
+  }
+
+  void _clearCarouselImages() {
+    _carouselHideTimer?.cancel();
+    _carouselHideTimer = null;
+    if (_carouselImages.isEmpty || !mounted) {
+      return;
+    }
+    setState(() {
+      _carouselImages = const <String>[];
+    });
   }
 
   Future<void> _openSettingsSheet(BuildContext sheetContext) async {

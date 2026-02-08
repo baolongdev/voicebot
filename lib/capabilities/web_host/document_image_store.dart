@@ -86,6 +86,64 @@ class DocumentImageStore {
     return _toPublicMap(image);
   }
 
+  Future<Map<String, Object?>> saveImageFile({
+    required String docName,
+    required String fileName,
+    required String mimeType,
+    required File sourceFile,
+    required int bytes,
+    String? caption,
+  }) async {
+    await initialize();
+    final safeDocName = docName.trim();
+    if (safeDocName.isEmpty) {
+      throw Exception('Thiếu tên tài liệu.');
+    }
+    if (bytes <= 0) {
+      await _safeDelete(sourceFile);
+      throw Exception('File ảnh trống.');
+    }
+    if (bytes > maxFileBytes) {
+      await _safeDelete(sourceFile);
+      throw Exception(
+        'Kích thước ảnh vượt quá giới hạn ${maxFileBytes ~/ (1024 * 1024)}MB.',
+      );
+    }
+
+    final safeMime = mimeType.trim().toLowerCase();
+    final safeFileName = _sanitizeFileName(fileName);
+    final extension =
+        _resolveExtension(fileName: safeFileName, mimeType: safeMime);
+    final id =
+        '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
+    final storageFileName = '$id$extension';
+    final filePath =
+        '${_filesDirectory!.path}${Platform.pathSeparator}$storageFileName';
+    final target = File(filePath);
+    try {
+      await _moveToTarget(sourceFile, target);
+    } catch (error) {
+      await _safeDelete(target);
+      await _safeDelete(sourceFile);
+      throw Exception('Không thể lưu ảnh: $error');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final image = _StoredDocumentImage(
+      id: id,
+      docName: safeDocName,
+      fileName: safeFileName,
+      mimeType: safeMime,
+      bytes: bytes,
+      createdAt: now,
+      storageFileName: storageFileName,
+      caption: caption?.trim(),
+    );
+    _imagesById[id] = image;
+    await _persist();
+    return _toPublicMap(image);
+  }
+
   Future<List<Map<String, Object?>>> listImagesByDocument(String docName) async {
     await initialize();
     final safeDocName = docName.trim();
@@ -95,6 +153,13 @@ class DocumentImageStore {
     final items = _imagesById.values
         .where((item) => item.docName == safeDocName)
         .toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return items.map(_toPublicMap).toList();
+  }
+
+  Future<List<Map<String, Object?>>> listAllImages() async {
+    await initialize();
+    final items = _imagesById.values.toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return items.map(_toPublicMap).toList();
   }
@@ -301,6 +366,23 @@ class DocumentImageStore {
       return '';
     }
     return extension;
+  }
+
+  Future<void> _moveToTarget(File source, File target) async {
+    try {
+      await source.rename(target.path);
+    } on FileSystemException {
+      await source.copy(target.path);
+      await _safeDelete(source);
+    }
+  }
+
+  Future<void> _safeDelete(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
   }
 }
 

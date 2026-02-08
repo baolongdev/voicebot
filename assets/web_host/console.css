@@ -295,6 +295,55 @@ select,
   gap: 8px;
 }
 
+.data-tabs {
+  display: inline-flex;
+  gap: 6px;
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-soft);
+  padding: 4px;
+}
+
+.data-tab-btn {
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.data-tab-btn.active,
+.data-tab-btn:hover {
+  border-color: var(--line);
+  background: #000000;
+  color: #ffffff;
+}
+
+.data-tab-panel {
+  display: grid;
+  gap: 6px;
+  border: 2px solid var(--line);
+  background: var(--panel-soft);
+  padding: 8px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.checkbox-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: #000000;
+}
+
 .notes-scroll {
   min-height: 0;
   overflow-y: auto;
@@ -682,6 +731,14 @@ body.is-dragging-doc * {
 
 .editor-toolbar .toolbar-template-policy {
   background: #e8e8e8;
+}
+
+.editor-toolbar .toolbar-template-info {
+  background: #f7f7f7;
+}
+
+.editor-toolbar .toolbar-template-profile {
+  background: #f1f1f1;
 }
 
 .editor-toolbar .toolbar-attach {

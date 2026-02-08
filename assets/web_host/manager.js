@@ -35,6 +35,10 @@ const KDOC_SECTION_ORDER = [
   'KEYWORDS',
   'SUMMARY',
   'CONTENT',
+  'SERVICES',
+  'DAY_VISIT',
+  'STAY_PACKAGE',
+  'REGULATIONS',
   'USAGE',
   'FAQ',
   'SAFETY_NOTE',
@@ -48,7 +52,15 @@ const KDOC_SECTION_GROUPS = [
   },
   {
     title: 'Nội dung tri thức',
-    keys: ['SUMMARY', 'CONTENT', 'USAGE', 'FAQ', 'SAFETY_NOTE'],
+    keys: ['SUMMARY', 'CONTENT'],
+  },
+  {
+    title: 'Dịch vụ & trải nghiệm',
+    keys: ['SERVICES', 'DAY_VISIT', 'STAY_PACKAGE', 'REGULATIONS'],
+  },
+  {
+    title: 'Hướng dẫn & lưu ý',
+    keys: ['USAGE', 'FAQ', 'SAFETY_NOTE'],
   },
   {
     title: 'Theo dõi cập nhật',
@@ -64,10 +76,18 @@ const KDOC_SECTION_LABELS = {
   KEYWORDS: 'Từ khóa',
   SUMMARY: 'Tóm tắt',
   CONTENT: 'Nội dung chính',
+  SERVICES: 'Dịch vụ',
+  DAY_VISIT: 'Gói trong ngày',
+  STAY_PACKAGE: 'Gói lưu trú',
+  REGULATIONS: 'Quy định',
   USAGE: 'Hướng dẫn',
   FAQ: 'Câu hỏi thường gặp',
   SAFETY_NOTE: 'Lưu ý',
   LAST_UPDATED: 'Cập nhật',
+};
+
+const KDOC_SECTION_HINTS = {
+  DOC_TYPE: 'Giá trị hợp lệ: product | faq | policy | guide | info | company_profile',
 };
 
 function esc(text) {
@@ -355,8 +375,8 @@ function validateKdoc(text) {
   });
 
   const docType = String(sections.DOC_TYPE || '').trim().toLowerCase();
-  if (docType && !['product', 'faq', 'policy', 'guide'].includes(docType)) {
-    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide.');
+  if (docType && !['product', 'faq', 'policy', 'guide', 'info', 'company_profile'].includes(docType)) {
+    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide, info, company_profile.');
   }
 
   const lastUpdated = String(sections.LAST_UPDATED || '').trim();
@@ -384,9 +404,19 @@ function splitSectionLines(key, value) {
 function renderSectionContent(key, value) {
   const lines = splitSectionLines(key, value);
   if (lines.length === 0) {
-    return '<p class="manager-kdoc-empty">Chưa có nội dung.</p>';
+    const hint = KDOC_SECTION_HINTS[key];
+    return (
+      '<p class="manager-kdoc-empty">Chưa có nội dung.</p>' +
+      (hint ? '<p class="kdoc-field-hint">' + esc(hint) + '</p>' : '')
+    );
   }
-  return '<ul class="kdoc-lines">' + lines.map((line) => '<li>' + esc(line) + '</li>').join('') + '</ul>';
+  const hint = KDOC_SECTION_HINTS[key];
+  return (
+    '<ul class="kdoc-lines">' +
+    lines.map((line) => '<li>' + esc(line) + '</li>').join('') +
+    '</ul>' +
+    (hint ? '<p class="kdoc-field-hint">' + esc(hint) + '</p>' : '')
+  );
 }
 
 function renderKdocView(rawText) {

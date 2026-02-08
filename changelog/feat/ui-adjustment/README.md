@@ -1,5 +1,12 @@
 # Changelog - feat/ui-adjustment
 
+## 2026-02-08 (Web Host Import/Export + KDOC Profile + Carousel Updates)
+- Added web host export/import tabs with optional image bundles (base64 export, image restore on import).
+- Added `company_profile` doc type plus new KDOC sections (SERVICES, DAY_VISIT, STAY_PACKAGE, REGULATIONS) and a Profile template.
+- Added MCP `self.knowledge.list_images` tool and improved image storage/streaming for local web host uploads.
+- Updated carousel to show only related MCP images, auto-hide after 2 minutes, and render full images with adaptive height.
+- Improved related image flow: doc-based image lookup, safer generic image intent detection, and MCP tool request logging.
+
 ## 2026-02-08 (MCP Local-Only Image Retrieval + Non-Intrusive Chat Display)
 - Khối chat related images chạy qua MCP tool `self.knowledge.search_images`, ưu tiên ảnh upload nội bộ từ web host trên thiết bị.
 - Khóa lọc URL ảnh: chỉ chấp nhận `/api/documents/image/content?id=...` trên local web host (`127.0.0.1:<port>`), loại bỏ URL ngoài.

@@ -16,6 +16,10 @@ const clearBtn = document.getElementById('clearBtn');
 const exportAllBtn = document.getElementById('exportAllBtn');
 const importAllBtn = document.getElementById('importAllBtn');
 const importAllInput = document.getElementById('importAllInput');
+const exportIncludeImages = document.getElementById('exportIncludeImages');
+const importIncludeImages = document.getElementById('importIncludeImages');
+const dataTabButtons = document.querySelectorAll('[data-data-tab]');
+const dataTabPanels = document.querySelectorAll('[data-data-panel]');
 const uploadStatus = document.getElementById('uploadStatus');
 const docCount = document.getElementById('docCount');
 const docBody = document.getElementById('docBody');
@@ -81,7 +85,7 @@ const DRAFT_KEY = 'voicebot.webhost.editor.draft.v1';
 const VIEW_MODE_KEY = 'voicebot.webhost.editor.view_mode.v1';
 const FOLDER_STATE_KEY = 'voicebot.webhost.folder_state.v1';
 const TAG_STATE_KEY = 'voicebot.webhost.tag_state.v1';
-const EXPORT_SCHEMA = 'voicebot_webhost_export_v1';
+const EXPORT_SCHEMA = 'voicebot_webhost_export_v2';
 const KDOC_SECTION_ORDER = [
   'DOC_ID',
   'DOC_TYPE',
@@ -90,6 +94,10 @@ const KDOC_SECTION_ORDER = [
   'KEYWORDS',
   'SUMMARY',
   'CONTENT',
+  'SERVICES',
+  'DAY_VISIT',
+  'STAY_PACKAGE',
+  'REGULATIONS',
   'USAGE',
   'FAQ',
   'SAFETY_NOTE',
@@ -103,7 +111,15 @@ const KDOC_SECTION_GROUPS = [
   },
   {
     title: 'Nội dung tri thức',
-    keys: ['SUMMARY', 'CONTENT', 'USAGE', 'FAQ', 'SAFETY_NOTE'],
+    keys: ['SUMMARY', 'CONTENT'],
+  },
+  {
+    title: 'Dịch vụ & trải nghiệm',
+    keys: ['SERVICES', 'DAY_VISIT', 'STAY_PACKAGE', 'REGULATIONS'],
+  },
+  {
+    title: 'Hướng dẫn & lưu ý',
+    keys: ['USAGE', 'FAQ', 'SAFETY_NOTE'],
   },
   {
     title: 'Theo dõi cập nhật',
@@ -119,6 +135,10 @@ const KDOC_SECTION_LABELS = {
   KEYWORDS: 'Từ khóa',
   SUMMARY: 'Tóm tắt',
   CONTENT: 'Nội dung chính',
+  SERVICES: 'Dịch vụ',
+  DAY_VISIT: 'Gói trong ngày',
+  STAY_PACKAGE: 'Gói lưu trú',
+  REGULATIONS: 'Quy định',
   USAGE: 'Hướng dẫn',
   FAQ: 'FAQ',
   SAFETY_NOTE: 'Lưu ý',
@@ -127,12 +147,16 @@ const KDOC_SECTION_LABELS = {
 
 const KDOC_SECTION_HINTS = {
   DOC_ID: 'Định danh duy nhất, ví dụ: tinh_dau_chanh_chavi',
-  DOC_TYPE: 'Giá trị hợp lệ: product | faq | policy | guide',
+  DOC_TYPE: 'Giá trị hợp lệ: product | faq | policy | guide | info | company_profile',
   TITLE: 'Tên hiển thị chính thức của tài liệu',
   ALIASES: 'Tên gọi khác, phân tách bằng dấu | hoặc xuống dòng',
   KEYWORDS: 'Từ khóa hỗ trợ tìm kiếm, phân tách bằng dấu phẩy',
   SUMMARY: 'Tóm tắt ngắn gọn 1-3 câu',
   CONTENT: 'Thông tin chi tiết, có thể dùng dạng gạch đầu dòng',
+  SERVICES: 'Liệt kê dịch vụ/hoạt động nổi bật (gạch đầu dòng).',
+  DAY_VISIT: 'Thông tin gói trải nghiệm trong ngày.',
+  STAY_PACKAGE: 'Thông tin gói lưu trú (phòng/lều, dịch vụ kèm theo).',
+  REGULATIONS: 'Quy định khi tham gia dịch vụ.',
   USAGE: 'Hướng dẫn sử dụng hoặc thao tác',
   FAQ: 'Cặp câu hỏi / trả lời thường gặp',
   SAFETY_NOTE: 'Lưu ý quan trọng và giới hạn nội dung',
@@ -147,6 +171,10 @@ const KDOC_SECTION_PLACEHOLDERS = {
   KEYWORDS: 'từ khóa 1, từ khóa 2',
   SUMMARY: 'Nhập tóm tắt ngắn...',
   CONTENT: 'Nhập nội dung chi tiết...',
+  SERVICES: 'Ví dụ: - Tham quan, chụp hình ...',
+  DAY_VISIT: 'Ví dụ: - Vé combo ...',
+  STAY_PACKAGE: 'Ví dụ: - Hình thức lưu trú ...',
+  REGULATIONS: 'Ví dụ: - Mặc áo phao ...',
   USAGE: 'Nhập cách dùng...',
   FAQ: 'Q: ...\nA: ...',
   SAFETY_NOTE: 'Lưu ý an toàn / phạm vi thông tin',
@@ -247,6 +275,90 @@ Thông tin chính sách áp dụng cho khách hàng.
 - Vận chuyển:
 - Thanh toán:
 - Đổi trả:
+
+[LAST_UPDATED]
+${new Date().toISOString().split('T')[0]}
+=== END_KDOC ===`,
+  info: `=== KDOC:v1 ===
+[DOC_ID]
+info_new
+
+[DOC_TYPE]
+info
+
+[TITLE]
+Thông tin
+
+[ALIASES]
+thong tin | info
+
+[KEYWORDS]
+thông tin, hướng dẫn
+
+[SUMMARY]
+Thông tin tổng quan ngắn gọn.
+
+[CONTENT]
+- Điểm chính 1
+- Điểm chính 2
+
+[USAGE]
+- Hướng dẫn liên quan (nếu có)
+
+[FAQ]
+Q: ...
+A: ...
+
+[SAFETY_NOTE]
+Không khẳng định tác dụng y tế.
+
+[LAST_UPDATED]
+${new Date().toISOString().split('T')[0]}
+=== END_KDOC ===`,
+  company_profile: `=== KDOC:v1 ===
+[DOC_ID]
+company_profile_new
+
+[DOC_TYPE]
+company_profile
+
+[TITLE]
+Hồ sơ doanh nghiệp
+
+[ALIASES]
+tên gọi khác 1 | tên gọi khác 2
+
+[KEYWORDS]
+doanh nghiệp, giới thiệu, hồ sơ
+
+[SUMMARY]
+Tóm tắt ngắn gọn về đơn vị.
+
+[CONTENT]
+- Thông tin tổng quan
+- Lịch sử hình thành
+
+[SERVICES]
+- Dịch vụ nổi bật
+
+[DAY_VISIT]
+- Gói trải nghiệm trong ngày (nếu có)
+
+[STAY_PACKAGE]
+- Gói lưu trú (nếu có)
+
+[REGULATIONS]
+- Quy định/ lưu ý khi tham gia
+
+[USAGE]
+- Hướng dẫn liên hệ/đăng ký
+
+[FAQ]
+Q: ...
+A: ...
+
+[SAFETY_NOTE]
+Không khẳng định tác dụng y tế.
 
 [LAST_UPDATED]
 ${new Date().toISOString().split('T')[0]}
@@ -939,8 +1051,8 @@ function validateKdoc(text) {
     }
   });
   const docType = String(sections.DOC_TYPE || '').trim().toLowerCase();
-  if (docType && !['product', 'faq', 'policy', 'guide'].includes(docType)) {
-    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide.');
+  if (docType && !['product', 'faq', 'policy', 'guide', 'info', 'company_profile'].includes(docType)) {
+    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide, info, company_profile.');
   }
   const lastUpdated = String(sections.LAST_UPDATED || '').trim();
   if (lastUpdated && Number.isNaN(Date.parse(lastUpdated))) {
@@ -1000,6 +1112,7 @@ function buildFallbackKdocSections(rawText) {
 
 function fieldRowsForKey(key) {
   if (key === 'CONTENT') return 8;
+  if (key === 'SERVICES' || key === 'DAY_VISIT' || key === 'STAY_PACKAGE' || key === 'REGULATIONS') return 5;
   if (key === 'FAQ' || key === 'USAGE' || key === 'SUMMARY') return 4;
   if (key === 'SAFETY_NOTE') return 3;
   if (key === 'ALIASES' || key === 'KEYWORDS') return 2;
@@ -1199,9 +1312,41 @@ async function req(url, options) {
 
 function setBulkActionDisabled(disabled) {
   const flag = !!disabled;
-  [exportAllBtn, importAllBtn, importAllInput, refreshBtn, clearBtn, uploadBtn, newNoteBtn].forEach((el) => {
+  [
+    exportAllBtn,
+    importAllBtn,
+    importAllInput,
+    exportIncludeImages,
+    importIncludeImages,
+    refreshBtn,
+    clearBtn,
+    uploadBtn,
+    newNoteBtn,
+  ].forEach((el) => {
     if (!el) return;
     el.disabled = flag;
+  });
+  if (dataTabButtons && dataTabButtons.length > 0) {
+    dataTabButtons.forEach((btn) => {
+      btn.disabled = flag;
+    });
+  }
+}
+
+function setDataTab(tabName) {
+  if (!dataTabButtons || !dataTabPanels) return;
+  const target = String(tabName || '').trim();
+  dataTabButtons.forEach((btn) => {
+    const name = btn.getAttribute('data-data-tab');
+    const active = name === target;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  dataTabPanels.forEach((panel) => {
+    const name = panel.getAttribute('data-data-panel');
+    const active = name === target;
+    panel.classList.toggle('is-hidden', !active);
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
 }
 
@@ -1243,6 +1388,67 @@ async function collectDocumentsForExport() {
   return result;
 }
 
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = function () {
+      const result = String(reader.result || '');
+      const marker = 'base64,';
+      const idx = result.indexOf(marker);
+      if (idx < 0) {
+        reject(new Error('Không đọc được dữ liệu base64.'));
+        return;
+      }
+      resolve(result.substring(idx + marker.length));
+    };
+    reader.onerror = function () {
+      reject(new Error('Đọc dữ liệu ảnh thất bại.'));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function fetchImageBase64(imageId) {
+  const res = await fetch('/api/documents/image/content?id=' + encodeURIComponent(imageId));
+  if (!res.ok) {
+    throw new Error('Không tải được ảnh (HTTP ' + res.status + ').');
+  }
+  const blob = await res.blob();
+  return blobToBase64(blob);
+}
+
+async function collectImagesForExport(docs) {
+  const result = [];
+  const rows = Array.isArray(docs) ? docs : [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const docName = String(rows[i]?.name || '').trim();
+    if (!docName) continue;
+    setStatus('Đang kiểm tra ảnh (' + (i + 1) + '/' + rows.length + ')...', 'loading');
+    const list = await req('/api/documents/images?name=' + encodeURIComponent(docName), { retryCount: 1 });
+    const images = Array.isArray(list.images) ? list.images : [];
+    for (let j = 0; j < images.length; j += 1) {
+      const item = images[j] || {};
+      const imageId = String(item.id || '').trim();
+      if (!imageId) continue;
+      setStatus(
+        'Đang xuất ảnh ' + (j + 1) + '/' + images.length + ' (' + docName + ')...',
+        'loading',
+      );
+      const base64 = await fetchImageBase64(imageId);
+      result.push({
+        doc_name: docName,
+        file_name: String(item.file_name || 'image').trim() || 'image',
+        mime_type: String(item.mime_type || '').trim(),
+        bytes: Number(item.bytes || 0),
+        created_at: String(item.created_at || ''),
+        caption: item.caption || null,
+        data_base64: base64,
+      });
+    }
+  }
+  return result;
+}
+
 function downloadJsonFile(filename, payload) {
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -1260,11 +1466,16 @@ async function exportAllData() {
     setBulkActionDisabled(true);
     setStatus('Đang chuẩn bị gói xuất dữ liệu...', 'loading');
     const docs = await collectDocumentsForExport();
+    const includeImages = exportIncludeImages ? exportIncludeImages.checked : false;
+    const images = includeImages ? await collectImagesForExport(docs) : [];
     const payload = {
       schema: EXPORT_SCHEMA,
       exported_at: new Date().toISOString(),
       source: 'voicebot_web_host',
       documents: docs,
+      images: images,
+      image_count: images.length,
+      include_images: includeImages,
       folderState: folderState,
       noteTagState: noteTagState,
       uiState: {
@@ -1272,7 +1483,13 @@ async function exportAllData() {
       },
     };
     downloadJsonFile(makeExportFileName(), payload);
-    setStatus('Xuất dữ liệu thành công: ' + docs.length + ' tài liệu.', 'ok');
+    setStatus(
+      'Xuất dữ liệu thành công: ' +
+        docs.length +
+        ' tài liệu' +
+        (images.length > 0 ? ', ' + images.length + ' ảnh.' : '.'),
+      'ok',
+    );
   } catch (error) {
     setStatus('Xuất dữ liệu lỗi: ' + error.message, 'warn');
   } finally {
@@ -1295,9 +1512,20 @@ function parseImportPayload(rawText) {
   if (normalizedDocs.length === 0) {
     throw new Error('File import không có tài liệu hợp lệ.');
   }
+  const rawImages = Array.isArray(parsed.images) ? parsed.images : [];
+  const normalizedImages = rawImages
+    .map((img) => ({
+      doc_name: String(img?.doc_name || img?.name || '').trim(),
+      file_name: String(img?.file_name || 'image').trim() || 'image',
+      mime_type: String(img?.mime_type || '').trim(),
+      caption: img?.caption || null,
+      data_base64: String(img?.data_base64 || img?.data || '').trim(),
+    }))
+    .filter((img) => img.doc_name.length > 0 && img.data_base64.length > 0);
 
   return {
     documents: normalizedDocs,
+    images: normalizedImages,
     folderState: normalizeFolderState(parsed.folderState || {}),
     noteTagState: normalizeTagStateMap(parsed.noteTagState || {}),
     viewMode: String(parsed?.uiState?.viewMode || localStorage.getItem(VIEW_MODE_KEY) || 'text'),
@@ -1338,6 +1566,27 @@ async function importAllDataFromFile(file) {
       });
     }
 
+    const includeImages = importIncludeImages ? importIncludeImages.checked : true;
+    if (includeImages && data.images.length > 0) {
+      setStatus('Đang nhập ' + data.images.length + ' ảnh...', 'loading');
+      for (let i = 0; i < data.images.length; i += 1) {
+        const image = data.images[i];
+        setStatus('Đang nhập ảnh ' + (i + 1) + '/' + data.images.length + '...', 'loading');
+        await req('/api/documents/image', {
+          method: 'POST',
+          retryCount: 1,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: image.doc_name,
+            file_name: image.file_name,
+            mime_type: image.mime_type,
+            data_base64: image.data_base64,
+            caption: image.caption,
+          }),
+        });
+      }
+    }
+
     folderState = data.folderState;
     noteTagState = data.noteTagState;
     activeFolder = '__ALL__';
@@ -1365,7 +1614,13 @@ async function importAllDataFromFile(file) {
     if (documentsCache.length > 0) {
       await loadDocumentContent(documentsCache[0].name);
     }
-    setStatus('Nhập dữ liệu thành công: ' + data.documents.length + ' tài liệu.', 'ok');
+    setStatus(
+      'Nhập dữ liệu thành công: ' +
+        data.documents.length +
+        ' tài liệu' +
+        (includeImages && data.images.length > 0 ? ', ' + data.images.length + ' ảnh.' : '.'),
+      'ok',
+    );
   } catch (error) {
     setStatus('Nhập dữ liệu lỗi: ' + error.message, 'warn');
   } finally {
@@ -2110,6 +2365,16 @@ function bindEvents() {
     });
   }
 
+  if (dataTabButtons && dataTabButtons.length > 0) {
+    dataTabButtons.forEach((btn) => {
+      btn.addEventListener('click', function () {
+        const tab = btn.getAttribute('data-data-tab');
+        if (!tab) return;
+        setDataTab(tab);
+      });
+    });
+  }
+
   if (docFilterInput) {
     docFilterInput.addEventListener('input', function () {
       renderDocuments(documentsCache);
@@ -2288,6 +2553,7 @@ function bindEvents() {
   bindModalEvents();
   bindEvents();
   bindShortcuts();
+  setDataTab('export');
   loadDraft();
   await refreshHostInfo();
   try {

@@ -27,6 +27,9 @@ class AppConfig {
   static const int chatRelatedImagesSearchTopK = 3;
   static const bool chatRelatedImagesAnimationEnabled = true;
 
+  // Home carousel images pulled from MCP (limit per fetch).
+  static const int homeCarouselMaxImages = 8;
+
   // Timeout for local web-host calls used by chat related-images lookup.
   static const int chatRelatedImagesRequestTimeoutMs = 2500;
 }
