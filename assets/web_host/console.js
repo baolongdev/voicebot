@@ -1523,10 +1523,16 @@ function parseImportPayload(rawText) {
     }))
     .filter((img) => img.doc_name.length > 0 && img.data_base64.length > 0);
 
+  const hasFolderState = Object.prototype.hasOwnProperty.call(parsed, 'folderState');
+  const normalizedFolderState = hasFolderState
+    ? normalizeFolderState(parsed.folderState || {})
+    : null;
+
   return {
     documents: normalizedDocs,
     images: normalizedImages,
-    folderState: normalizeFolderState(parsed.folderState || {}),
+    folderState: normalizedFolderState,
+    hasFolderState: hasFolderState,
     noteTagState: normalizeTagStateMap(parsed.noteTagState || {}),
     viewMode: String(parsed?.uiState?.viewMode || localStorage.getItem(VIEW_MODE_KEY) || 'text'),
   };
@@ -1587,7 +1593,9 @@ async function importAllDataFromFile(file) {
       }
     }
 
-    folderState = data.folderState;
+    if (data.hasFolderState && data.folderState) {
+      folderState = data.folderState;
+    }
     noteTagState = data.noteTagState;
     activeFolder = '__ALL__';
     selectedDocName = '';
