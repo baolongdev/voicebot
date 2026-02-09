@@ -12,6 +12,7 @@ abstract class SessionCoordinator {
   Stream<bool> get speaking;
   int get serverSampleRate;
   ListeningMode get listeningMode;
+  void setPlaybackSuppressed(bool suppressed);
 
   Future<bool> connect(TransportClient transport);
   Future<void> disconnect();

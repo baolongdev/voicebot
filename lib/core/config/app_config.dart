@@ -15,6 +15,7 @@ class AppConfig {
 
   // Default text sent right after connection succeeds.
   static const String connectGreetingDefault = 'Xin chào';
+  static const bool autoReconnectEnabledDefault = true;
 
   // Max upload size for each web-host document image.
   static const int webHostImageUploadMaxMb = 100;

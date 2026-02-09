@@ -1,3 +1,8 @@
+## 2026-02-09
+- add auto-reconnect setting with persisted toggle and retry backoff on disconnect/failed connect
+- reorganize settings sections (new Chat section) and wire auto-reconnect into settings UI and DI
+- auto-suppress blocked phrase playback + MCP guard tweaks
+
 # Changelog - main
 
 ## 2026-02-09
@@ -40,3 +45,4 @@
 ## Notes
 - GitHub rulesets for branch naming were not enabled due to repo plan limits; enforced via workflow instead.
 - Labels created on GitHub: feat, fix, chore, refactor, perf, test, docs, ci, build, hotfix.
+

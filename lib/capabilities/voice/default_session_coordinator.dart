@@ -53,6 +53,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   int _playbackMinBytes = 0;
   bool _playbackStarted = false;
   int _playbackSampleRate = AudioConfig.sampleRate;
+  bool _suppressPlayback = false;
   bool _isListening = false;
   bool _canSendAudio = false;
   bool _isSpeaking = false;
@@ -90,6 +91,23 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   ListeningMode get listeningMode => _listeningMode;
 
   @override
+  void setPlaybackSuppressed(bool suppressed) {
+    if (_suppressPlayback == suppressed) {
+      return;
+    }
+    _suppressPlayback = suppressed;
+    if (suppressed) {
+      _playbackBuffer.clear();
+      _playbackStarted = false;
+      _audioOutput.resetBuffer();
+    }
+    AppLogger.event(
+      'SessionCoordinator',
+      suppressed ? 'playback_suppressed' : 'playback_resumed',
+    );
+  }
+
+  @override
   Future<bool> connect(TransportClient transport) async {
     try {
       await disconnect().timeout(const Duration(milliseconds: 500));
@@ -118,6 +136,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _canSendAudio = false;
     _isListening = false;
     _isSpeaking = false;
+    _suppressPlayback = false;
     _speakingEpoch += 1;
     _playbackBuffer.clear();
     _playbackStarted = false;
@@ -437,6 +456,9 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   void _handleIncomingAudio(Uint8List data) {
+    if (_suppressPlayback) {
+      return;
+    }
     _audioController.add(data);
     if (data.isEmpty || _opusInputController == null) {
       return;

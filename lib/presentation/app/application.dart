@@ -12,6 +12,7 @@ import '../../presentation/app/listening_mode_cubit.dart';
 import '../../presentation/app/carousel_settings_cubit.dart';
 import '../../presentation/app/text_send_mode_cubit.dart';
 import '../../presentation/app/connect_greeting_cubit.dart';
+import '../../presentation/app/auto_reconnect_cubit.dart';
 import '../../presentation/app/face_detection_settings_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
 import '../../presentation/app/theme_palette_cubit.dart';
@@ -40,6 +41,7 @@ class _ApplicationState extends State<Application> {
     getIt<ListeningModeCubit>().hydrate();
     getIt<TextSendModeCubit>().hydrate();
     getIt<ConnectGreetingCubit>().hydrate();
+    getIt<AutoReconnectCubit>().hydrate();
     getIt<CarouselSettingsCubit>().hydrate();
     getIt<FaceDetectionSettingsCubit>().hydrate();
   }
@@ -63,6 +65,9 @@ class _ApplicationState extends State<Application> {
         ),
         BlocProvider<ConnectGreetingCubit>.value(
           value: getIt<ConnectGreetingCubit>(),
+        ),
+        BlocProvider<AutoReconnectCubit>.value(
+          value: getIt<AutoReconnectCubit>(),
         ),
         BlocProvider<CarouselSettingsCubit>.value(
           value: getIt<CarouselSettingsCubit>(),

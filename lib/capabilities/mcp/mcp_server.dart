@@ -308,9 +308,12 @@ class McpServer {
             'la la school',
             'lalaschool',
             'subscribe',
+            'hay subscribe',
+            'sub kenh',
+            'hay sub',
+            'subcribe',
             'dang ky kenh',
             'dang ky',
-            'subcribe',
           ];
           final blocked = blockedPatterns.any(folded.contains);
           if (!blocked) {
@@ -323,7 +326,7 @@ class McpServer {
           return <String, dynamic>{
             'blocked': true,
             'response':
-                'Xin loi, minh chua nghe ro noi dung. Ban vui long dat lai cau hoi ngan gon de minh ho tro chinh xac hon.',
+                'Xin loi, minh nghe khong ro. Ban vui long noi lai giup minh nhe.',
             'reason': 'out_of_scope_phrase',
           };
         },

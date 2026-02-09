@@ -176,6 +176,9 @@ class _FakeSessionCoordinator implements SessionCoordinator {
   ListeningMode get listeningMode => ListeningMode.autoStop;
 
   @override
+  void setPlaybackSuppressed(bool suppressed) {}
+
+  @override
   Future<bool> connect(TransportClient transport) async => true;
 
   @override

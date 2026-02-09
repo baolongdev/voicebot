@@ -29,6 +29,7 @@ import '../app/listening_mode_cubit.dart';
 import '../app/carousel_settings_cubit.dart';
 import '../app/text_send_mode_cubit.dart';
 import '../app/connect_greeting_cubit.dart';
+import '../app/auto_reconnect_cubit.dart';
 import '../app/face_detection_settings_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
@@ -88,6 +89,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     context.read<ChatCubit>().setConnectGreeting(
       context.read<ConnectGreetingCubit>().state,
     );
+    context.read<ChatCubit>().setAutoReconnectEnabled(
+      context.read<AutoReconnectCubit>().state,
+    );
     _cameraEnabled.value = true;
     if (AppConfig.permissionsEnabled) {
       _schedulePermissionPrompt();
@@ -140,6 +144,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         BlocListener<ConnectGreetingCubit, String>(
           listener: (context, greeting) {
             context.read<ChatCubit>().setConnectGreeting(greeting);
+          },
+        ),
+        BlocListener<AutoReconnectCubit, bool>(
+          listener: (context, enabled) {
+            context.read<ChatCubit>().setAutoReconnectEnabled(enabled);
           },
         ),
         BlocListener<ChatCubit, ChatState>(
@@ -932,6 +941,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 >(
                                   builder: (context, connectGreeting) {
                                     return BlocBuilder<
+                                      AutoReconnectCubit,
+                                      bool
+                                    >(
+                                      builder: (context, autoReconnectEnabled) {
+                                    return BlocBuilder<
                                       CarouselSettingsCubit,
                                       CarouselSettings
                                     >(
@@ -1111,6 +1125,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                         ConnectGreetingCubit
                                                                       >()
                                                                       .setGreeting,
+                                                              autoReconnectEnabled:
+                                                                  autoReconnectEnabled,
+                                                              onAutoReconnectChanged:
+                                                                  sheetContext
+                                                                      .read<
+                                                                        AutoReconnectCubit
+                                                                      >()
+                                                                      .setEnabled,
                                                               carouselHeight:
                                                                   carouselSettings
                                                                       .height,
@@ -1179,6 +1201,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             );
                                           },
                                         );
+                                      },
+                                    );
                                       },
                                     );
                                   },

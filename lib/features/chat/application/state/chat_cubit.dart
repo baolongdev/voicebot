@@ -94,6 +94,16 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   bool _disposed = false;
   int _connectGeneration = 0;
   ChatConfig? _cachedConfig;
+  bool _autoReconnectEnabled = AppConfig.autoReconnectEnabledDefault;
+  Timer? _autoReconnectTimer;
+  int _autoReconnectAttempt = 0;
+  static const List<Duration> _autoReconnectDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 4),
+    Duration(seconds: 6),
+    Duration(seconds: 10),
+    Duration(seconds: 14),
+  ];
 
   double? _pendingIncomingLevel;
   double? _pendingOutgoingLevel;
@@ -139,6 +149,9 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   @override
   Future<void> disconnect({bool userInitiated = true}) async {
     _connectGeneration += 1;
+    if (userInitiated) {
+      _resetAutoReconnect();
+    }
     if (!_disposed && !isClosed) {
       emit(
         state.copyWith(
@@ -210,6 +223,16 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
 
   void setConnectGreeting(String value) {
     _connectGreeting = value;
+  }
+
+  void setAutoReconnectEnabled(bool enabled) {
+    if (_autoReconnectEnabled == enabled) {
+      return;
+    }
+    _autoReconnectEnabled = enabled;
+    if (!enabled) {
+      _resetAutoReconnect();
+    }
   }
 
   Future<void> stopListening() async {
@@ -420,9 +443,14 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     }
     if (isSocketClosed) {
       unawaited(disconnect(userInitiated: false));
+      _scheduleAutoReconnect(reason: failure.message, isNetworkIssue: true);
       return;
     }
     unawaited(disconnect(userInitiated: false));
+    _scheduleAutoReconnect(
+      reason: failure.message,
+      isNetworkIssue: isNetworkIssue,
+    );
   }
 
   void _handleSpeakingChanged(bool speaking) {
@@ -575,6 +603,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
             networkWarning: isNetworkIssue,
           ),
         );
+        _scheduleAutoReconnect(reason: message, isNetworkIssue: isNetworkIssue);
         return;
       }
       emit(
@@ -583,6 +612,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           status: ChatConnectionStatus.connected,
         ),
       );
+      _resetAutoReconnect();
       if (state.networkWarning) {
         _scheduleNetworkWarningClear();
       }
@@ -597,6 +627,10 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           connectionError: 'Kết nối quá lâu, vui lòng thử lại.',
           status: ChatConnectionStatus.error,
         ),
+      );
+      _scheduleAutoReconnect(
+        reason: 'connect_timeout',
+        isNetworkIssue: true,
       );
     } finally {
       _connectInFlight = false;
@@ -693,11 +727,57 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     return networkHints.any(lower.contains);
   }
 
+  void _scheduleAutoReconnect({
+    required String reason,
+    required bool isNetworkIssue,
+  }) {
+    if (!_autoReconnectEnabled || _disposed || isClosed || !isNetworkIssue) {
+      return;
+    }
+    if (_autoReconnectTimer != null) {
+      return;
+    }
+    final index = _autoReconnectAttempt
+        .clamp(0, _autoReconnectDelays.length - 1)
+        .toInt();
+    final delay = _autoReconnectDelays[index];
+    _autoReconnectAttempt = (_autoReconnectAttempt + 1)
+        .clamp(0, _autoReconnectDelays.length)
+        .toInt();
+    final generation = _connectGeneration;
+    _autoReconnectTimer = Timer(delay, () {
+      _autoReconnectTimer = null;
+      if (!_autoReconnectEnabled || _disposed || isClosed) {
+        return;
+      }
+      if (generation != _connectGeneration) {
+        return;
+      }
+      unawaited(connect());
+    });
+    AppLogger.event(
+      'ChatCubit',
+      'auto_reconnect_scheduled',
+      fields: <String, Object?>{
+        'delay_ms': delay.inMilliseconds,
+        'attempt': _autoReconnectAttempt,
+        'reason': reason,
+      },
+    );
+  }
+
+  void _resetAutoReconnect() {
+    _autoReconnectTimer?.cancel();
+    _autoReconnectTimer = null;
+    _autoReconnectAttempt = 0;
+  }
+
   @override
   Future<void> close() async {
     _disposed = true;
     _levelDebouncer.cancel();
     _networkWarningTimer?.cancel();
+    _resetAutoReconnect();
     await _responseSubscription?.cancel();
     await _errorSubscription?.cancel();
     await _speakingSubscription?.cancel();

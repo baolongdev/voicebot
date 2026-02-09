@@ -24,6 +24,7 @@ class UiSettingsStore {
   static const _faceLandmarksKey = 'ui_face_landmarks';
   static const _faceMeshKey = 'ui_face_mesh';
   static const _eyeTrackingKey = 'ui_eye_tracking';
+  static const _autoReconnectKey = 'ui_auto_reconnect';
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _storage.read(key: _themeModeKey);
@@ -115,6 +116,21 @@ class UiSettingsStore {
 
   Future<void> writeTextSendMode(TextSendMode mode) async {
     await _storage.write(key: _textSendModeKey, value: mode.name);
+  }
+
+  Future<bool?> readAutoReconnectEnabled() async {
+    final value = await _storage.read(key: _autoReconnectKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeAutoReconnectEnabled(bool enabled) async {
+    await _storage.write(
+      key: _autoReconnectKey,
+      value: enabled ? '1' : '0',
+    );
   }
 
   Future<double?> readCarouselHeight() async {

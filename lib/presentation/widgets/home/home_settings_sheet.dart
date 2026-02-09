@@ -29,6 +29,8 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onWifiRefresh,
     required this.onWifiSettings,
     required this.onWifiSelect,
+    required this.autoReconnectEnabled,
+    required this.onAutoReconnectChanged,
     required this.onVolumeChanged,
     required this.textScale,
     required this.onTextScaleChanged,
@@ -81,6 +83,8 @@ class HomeSettingsSheet extends StatefulWidget {
   final VoidCallback? onWifiRefresh;
   final VoidCallback? onWifiSettings;
   final ValueChanged<HomeWifiNetwork>? onWifiSelect;
+  final bool autoReconnectEnabled;
+  final ValueChanged<bool> onAutoReconnectChanged;
   final ValueChanged<double>? onVolumeChanged;
   final double textScale;
   final ValueChanged<double> onTextScaleChanged;
@@ -125,6 +129,7 @@ class HomeSettingsSheet extends StatefulWidget {
 
 enum _SettingsSection {
   connectivity,
+  chat,
   audio,
   camera,
   appearance,
@@ -191,6 +196,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
   late int _carouselAnimationIndex;
   late bool _carouselAutoPlayLocal;
   late bool _carouselEnlargeLocal;
+  late bool _autoReconnectLocal;
   final LocalWebHostService _webHost = LocalWebHostService.instance;
   StreamSubscription<LocalWebHostState>? _webHostStateSubscription;
   late LocalWebHostState _webHostState;
@@ -209,6 +215,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _listeningModeIndex = _listeningModeToIndex(widget.listeningMode);
     _textSendModeIndex = _textSendModeToIndex(widget.textSendMode);
     _greetingText = widget.connectGreeting;
+    _autoReconnectLocal = widget.autoReconnectEnabled;
     _carouselHeightIndex = _carouselHeightToIndex(widget.carouselHeight);
     _carouselViewportIndex = _carouselViewportToIndex(
       widget.carouselViewportFraction,
@@ -223,6 +230,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _carouselEnlargeLocal = widget.carouselEnlargeCenter;
     _sectionExpanded = {
       _SettingsSection.connectivity: false,
+      _SettingsSection.chat: false,
       _SettingsSection.audio: false,
       _SettingsSection.camera: false,
       _SettingsSection.appearance: false,
@@ -298,6 +306,11 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     if (_greetingText != widget.connectGreeting) {
       setState(() {
         _greetingText = widget.connectGreeting;
+      });
+    }
+    if (_autoReconnectLocal != widget.autoReconnectEnabled) {
+      setState(() {
+        _autoReconnectLocal = widget.autoReconnectEnabled;
       });
     }
     if (_cameraEnabledLocal != widget.cameraEnabled) {
@@ -613,7 +626,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
               ),
               const SizedBox(height: 2),
               Text(
-                'Kết nối, âm thanh, camera, giao diện, cỡ chữ',
+                'Kết nối, trò chuyện, âm thanh, camera, giao diện',
                 style: context.theme.typography.sm.copyWith(
                   color: context.theme.colors.mutedForeground,
                 ),
@@ -640,6 +653,48 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                       onPress: widget.onWifiSettings,
                     ),
                     FItem(
+                      prefix: Icon(Icons.sync, size: iconSize),
+                      title: const Text('Tự kết nối lại'),
+                      suffix: Text(
+                        _autoReconnectLocal ? 'Bật' : 'Tắt',
+                        style: context.theme.typography.base.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: FTabs(
+                          control: FTabControl.lifted(
+                            index: _autoReconnectLocal ? 1 : 0,
+                            onChange: (index) {
+                              final enabled = index == 1;
+                              setState(() {
+                                _autoReconnectLocal = enabled;
+                              });
+                              widget.onAutoReconnectChanged(enabled);
+                            },
+                          ),
+                          style: (style) =>
+                              style.copyWith(spacing: 0, height: tabHeight),
+                          children: const [
+                            FTabEntry(
+                              label: Text('Tắt'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Bật'),
+                              child: SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    FItem(
                       prefix: Icon(
                         batteryIcon(widget.batteryLevel, widget.batteryState),
                         size: iconSize,
@@ -657,46 +712,13 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('Âm thanh & nghe', _SettingsSection.audio),
+              sectionHeader('Trò chuyện', _SettingsSection.chat),
               sectionBody(
-                _SettingsSection.audio,
+                _SettingsSection.chat,
                 FItemGroup(
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                    FItem(
-                      prefix: Icon(audioIcon(_sliderValue), size: iconSize),
-                      title: const Text('Âm lượng'),
-                      suffix: Icon(volumeSuffixIcon, size: iconSize),
-                    ),
-                    FItem.raw(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: ThemeTokens.spaceSm,
-                        ),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FSlider(
-                            control: FSliderControl.liftedContinuous(
-                              value: FSliderValue(max: _sliderValue),
-                              onChange: (next) {
-                                setState(() {
-                                  _sliderValue = next.max;
-                                });
-                                widget.onVolumeChanged?.call(next.max);
-                              },
-                            ),
-                            marks: const [
-                              FSliderMark(value: 0, label: Text('0%')),
-                              FSliderMark(value: 0.25, tick: false),
-                              FSliderMark(value: 0.5),
-                              FSliderMark(value: 0.75, tick: false),
-                              FSliderMark(value: 1, label: Text('100%')),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
                     FItem(
                       prefix: Icon(FIcons.mic, size: iconSize),
                       title: const Text('Chế độ nghe'),
@@ -818,6 +840,50 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                               });
                               widget.onConnectGreetingChanged(value.text);
                             },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Âm thanh', _SettingsSection.audio),
+              sectionBody(
+                _SettingsSection.audio,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                    FItem(
+                      prefix: Icon(audioIcon(_sliderValue), size: iconSize),
+                      title: const Text('Âm lượng'),
+                      suffix: Icon(volumeSuffixIcon, size: iconSize),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FSlider(
+                            control: FSliderControl.liftedContinuous(
+                              value: FSliderValue(max: _sliderValue),
+                              onChange: (next) {
+                                setState(() {
+                                  _sliderValue = next.max;
+                                });
+                                widget.onVolumeChanged?.call(next.max);
+                              },
+                            ),
+                            marks: const [
+                              FSliderMark(value: 0, label: Text('0%')),
+                              FSliderMark(value: 0.25, tick: false),
+                              FSliderMark(value: 0.5),
+                              FSliderMark(value: 0.75, tick: false),
+                              FSliderMark(value: 1, label: Text('100%')),
+                            ],
                           ),
                         ),
                       ),

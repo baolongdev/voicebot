@@ -64,6 +64,7 @@ class ChatRepositoryImpl implements ChatRepository {
   DateTime _lastLocalVolumeAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _suppressVolumeFailureUntil = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime _suppressBlockedTopicUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _blockedSuppressionTimer;
   int? _lastLocalVolumeTarget;
   DateTime _lastBlockedReplyAt = DateTime.fromMillisecondsSinceEpoch(0);
   String? _lastBlockedInput;
@@ -232,6 +233,9 @@ class ChatRepositoryImpl implements ChatRepository {
   @override
   Future<void> disconnect() async {
     _isConnected = false;
+    _blockedSuppressionTimer?.cancel();
+    _blockedSuppressionTimer = null;
+    _sessionCoordinator.setPlaybackSuppressed(false);
     await _jsonSubscription?.cancel();
     await _audioSubscription?.cancel();
     await _errorSubscription?.cancel();
@@ -627,11 +631,21 @@ class ChatRepositoryImpl implements ChatRepository {
 
   void _handleIncomingJson(Map<String, dynamic> json) {
     final type = json['type'] as String? ?? '';
+    final suppressionActive = _isBlockedSuppressionActive();
     if (type == 'tts') {
       final state = json['state'] as String? ?? '';
       if (state == 'sentence_start') {
         final text = json['text'] as String? ?? '';
         if (text.isNotEmpty) {
+          if (suppressionActive) {
+            AppLogger.event(
+              'ChatRepository',
+              'suppress_blocked_topic_server_tts',
+              fields: <String, Object?>{'text': text, 'state': state},
+              level: 'D',
+            );
+            return;
+          }
           if (_shouldSuppressBlockedTopicText(text)) {
             AppLogger.event(
               'ChatRepository',
@@ -658,6 +672,14 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     if (type == 'llm') {
+      if (suppressionActive) {
+        AppLogger.event(
+          'ChatRepository',
+          'suppress_blocked_topic_server_llm',
+          level: 'D',
+        );
+        return;
+      }
       final emotion = json['emotion'] as String?;
       if (emotion != null && emotion.isNotEmpty) {
         _responsesController.add(
@@ -689,12 +711,24 @@ class ChatRepositoryImpl implements ChatRepository {
 
     final text = json['text'] as String? ?? '';
     if (text.isNotEmpty) {
+      if (suppressionActive) {
+        AppLogger.event(
+          'ChatRepository',
+          'suppress_blocked_topic_server_text',
+          fields: <String, Object?>{'text': text},
+          level: 'D',
+        );
+        return;
+      }
       _responsesController.add(ChatResponse(text: text, isUser: false));
     }
   }
 
   void dispose() {
     disconnect();
+    _blockedSuppressionTimer?.cancel();
+    _blockedSuppressionTimer = null;
+    _sessionCoordinator.setPlaybackSuppressed(false);
     _responsesController.close();
     _audioController.close();
     _errorController.close();
@@ -1377,6 +1411,11 @@ YEU_CAU_TRA_LOI:
   }
 
   Future<void> _tryHandleBlockedPhrase(String text) async {
+    final normalizedInput = _normalizeForKnowledge(text);
+    if (_isBlockedTopicPhrase(normalizedInput)) {
+      _applyBlockedResponse(text: text, normalizedInput: normalizedInput);
+      return;
+    }
     final response = await _callMcpTool(
       name: 'self.guard.blocked_phrase_check',
       arguments: <String, dynamic>{'text': text},
@@ -1389,34 +1428,10 @@ YEU_CAU_TRA_LOI:
     if (!blocked) {
       return;
     }
-
-    final normalizedInput = _normalizeForKnowledge(text);
-    final now = DateTime.now();
-    if (_lastBlockedInput == normalizedInput &&
-        now.difference(_lastBlockedReplyAt) < const Duration(seconds: 5)) {
-      return;
-    }
-    _lastBlockedInput = normalizedInput;
-    _lastBlockedReplyAt = now;
-    _suppressBlockedTopicUntil = now.add(const Duration(seconds: 10));
-
-    final isLalaSchool = _isLalaSchoolPhrase(normalizedInput);
-    final safeReply = (payload['response'] as String?)?.trim();
-    final fallback =
-        'Xin loi, minh chua nghe ro noi dung. Ban vui long dat lai cau hoi ngan gon de minh ho tro chinh xac hon.';
-    final lalaReply =
-        'Xin loi, minh nghe khong ro. Ban vui long noi lai giup minh nhe.';
-    _responsesController.add(
-      ChatResponse(
-        text: isLalaSchool
-            ? lalaReply
-            : (safeReply?.isNotEmpty == true ? safeReply! : fallback),
-      ),
-    );
-    AppLogger.event(
-      'ChatRepository',
-      'blocked_phrase_handled',
-      fields: <String, Object?>{'input': text},
+    _applyBlockedResponse(
+      text: text,
+      normalizedInput: normalizedInput,
+      safeReply: (payload['response'] as String?)?.trim(),
     );
   }
 
@@ -1595,14 +1610,11 @@ YEU_CAU_TRA_LOI:
   }
 
   bool _shouldSuppressBlockedTopicText(String text) {
-    if (DateTime.now().isAfter(_suppressBlockedTopicUntil)) {
+    if (!_isBlockedSuppressionActive()) {
       return false;
     }
     final normalized = _normalizeForKnowledge(text);
-    return _isLalaSchoolPhrase(normalized) ||
-        normalized.contains('subscribe') ||
-        normalized.contains('dang ky kenh') ||
-        normalized.contains('dang ky');
+    return _isBlockedTopicPhrase(normalized);
   }
 
   bool _isLalaSchoolPhrase(String normalized) {
@@ -1611,6 +1623,75 @@ YEU_CAU_TRA_LOI:
     }
     return normalized.contains('la la school') ||
         normalized.contains('lalaschool');
+  }
+
+  bool _isBlockedTopicPhrase(String normalized) {
+    if (normalized.isEmpty) {
+      return false;
+    }
+    return _isLalaSchoolPhrase(normalized) ||
+        normalized.contains('subscribe') ||
+        normalized.contains('hay subscribe') ||
+        normalized.contains('sub kenh') ||
+        normalized.contains('hay sub') ||
+        normalized.contains('dang ky kenh') ||
+        normalized.contains('dang ky');
+  }
+
+  void _applyBlockedResponse({
+    required String text,
+    required String normalizedInput,
+    String? safeReply,
+  }) {
+    final now = DateTime.now();
+    if (_lastBlockedInput == normalizedInput &&
+        now.difference(_lastBlockedReplyAt) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastBlockedInput = normalizedInput;
+    _lastBlockedReplyAt = now;
+    _activateBlockedSuppression(const Duration(seconds: 12));
+
+    final isLalaSchool = _isLalaSchoolPhrase(normalizedInput);
+    final fallback =
+        'Xin loi, minh chua nghe ro noi dung. Ban vui long dat lai cau hoi ngan gon de minh ho tro chinh xac hon.';
+    final lalaReply =
+        'Xin loi, minh nghe khong ro. Ban vui long noi lai giup minh nhe.';
+    _responsesController.add(
+      ChatResponse(
+        text: isLalaSchool
+            ? lalaReply
+            : (safeReply?.isNotEmpty == true ? safeReply! : fallback),
+      ),
+    );
+    AppLogger.event(
+      'ChatRepository',
+      'blocked_phrase_handled',
+      fields: <String, Object?>{'input': text},
+    );
+  }
+
+  bool _isBlockedSuppressionActive() {
+    return DateTime.now().isBefore(_suppressBlockedTopicUntil);
+  }
+
+  void _activateBlockedSuppression(Duration duration) {
+    final now = DateTime.now();
+    _suppressBlockedTopicUntil = now.add(duration);
+    _sessionCoordinator.setPlaybackSuppressed(true);
+    _blockedSuppressionTimer?.cancel();
+    _blockedSuppressionTimer = Timer(duration, _clearBlockedSuppressionIfReady);
+  }
+
+  void _clearBlockedSuppressionIfReady() {
+    final now = DateTime.now();
+    if (now.isBefore(_suppressBlockedTopicUntil)) {
+      final delay = _suppressBlockedTopicUntil.difference(now);
+      _blockedSuppressionTimer?.cancel();
+      _blockedSuppressionTimer = Timer(delay, _clearBlockedSuppressionIfReady);
+      return;
+    }
+    _sessionCoordinator.setPlaybackSuppressed(false);
   }
 
   bool _shouldUseKnowledgeContext(String text) {
