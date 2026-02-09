@@ -361,6 +361,34 @@ select,
   cursor: grab;
 }
 
+.note-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.note-delete-btn {
+  border: 2px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.note-delete-btn:hover {
+  background: #000000;
+  border-color: #000000;
+  color: #ffffff;
+}
+
 .note-item:hover {
   background: var(--panel-soft);
 }
@@ -378,6 +406,17 @@ select,
   color: #ffffff;
   border-color: #ffffff;
   background: transparent;
+}
+
+.note-item.active .note-delete-btn {
+  border-color: #ffffff;
+  color: #ffffff;
+  background: transparent;
+}
+
+.note-item.active .note-delete-btn:hover {
+  background: #ffffff;
+  color: #000000;
 }
 
 .note-date {
@@ -1189,6 +1228,12 @@ body.image-preview-open {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+
+.editor-footer-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 

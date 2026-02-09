@@ -577,8 +577,9 @@ class McpServer {
             '[VI] Mục đích: Tải nội dung văn bản trực tiếp vào kho tri thức '
             '(thêm mới/cập nhật theo tên tài liệu).\n'
             'Cách dùng: truyền `name` (tên tài liệu), `text` theo chuẩn '
-            '`KDOC v1` (có các block [DOC_ID], [DOC_TYPE], [TITLE], '
-            '[ALIASES], [SUMMARY], [CONTENT], [LAST_UPDATED]).\n'
+              '`KDOC v1` (có các block [DOC_ID], [DOC_TYPE], [TITLE], '
+              '[ALIASES], [KEYWORDS], [SUMMARY], [CONTENT], [FAQ], '
+              '[SAFETY_NOTE], [LAST_UPDATED]).\n'
             'Kết quả: JSON gồm trạng thái upload, metadata tài liệu và tổng '
             'số tài liệu.\n'
             '[EN] Purpose: Upload raw text to the knowledge base '
@@ -758,6 +759,33 @@ class McpServer {
             throw Exception('Document not found: $name');
           }
           return doc;
+        },
+        userOnly: true,
+      ),
+    );
+
+    addUserOnlyTool(
+      McpTool(
+        name: 'self.knowledge.delete_document',
+        description:
+            '[VI] Mục đích: Xóa một tài liệu theo tên.\n'
+            'Cách dùng: truyền `name` (tên tài liệu).\n'
+            'Kết quả: JSON gồm `deleted` và metadata tài liệu (nếu có).\n'
+            '[EN] Purpose: Delete a document by name.\n'
+            'Usage: provide `name` (document name).\n'
+            'Return: JSON with `deleted` and document metadata (if any).',
+        properties: const <McpProperty>[McpProperty.string('name')],
+        callback: (args) async {
+          final name = (args['name'] as String? ?? '').trim();
+          if (name.isEmpty) {
+            throw Exception('Missing valid argument: name');
+          }
+          final removed = await _knowledgeBase.deleteDocument(name);
+          return <String, dynamic>{
+            'deleted': removed != null,
+            'document': removed,
+            'documents_total': _knowledgeBase.count,
+          };
         },
         userOnly: true,
       ),
@@ -977,7 +1005,6 @@ class LocalKnowledgeBase {
     'product',
     'faq',
     'policy',
-    'guide',
     'info',
     'company_profile',
   };
@@ -1131,6 +1158,20 @@ class LocalKnowledgeBase {
       return null;
     }
     return <String, dynamic>{..._toMeta(doc), 'content': doc.rawContent};
+  }
+
+  Future<Map<String, dynamic>?> deleteDocument(String name) async {
+    await _ensureInitialized();
+    final key = name.trim();
+    if (key.isEmpty) {
+      return null;
+    }
+    final doc = _documents.remove(key);
+    if (doc == null) {
+      return null;
+    }
+    await _persist();
+    return _toMeta(doc);
   }
 
   Future<int> clear() async {

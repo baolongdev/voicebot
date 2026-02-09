@@ -13,6 +13,7 @@ const docText = document.getElementById('docText');
 const uploadBtn = document.getElementById('uploadBtn');
 const refreshBtn = document.getElementById('refreshBtn');
 const clearBtn = document.getElementById('clearBtn');
+const clearContentBtn = document.getElementById('clearContentBtn');
 const exportAllBtn = document.getElementById('exportAllBtn');
 const importAllBtn = document.getElementById('importAllBtn');
 const importAllInput = document.getElementById('importAllInput');
@@ -95,10 +96,14 @@ const KDOC_SECTION_ORDER = [
   'SUMMARY',
   'CONTENT',
   'SERVICES',
-  'DAY_VISIT',
-  'STAY_PACKAGE',
   'REGULATIONS',
   'USAGE',
+  'RAW_MATERIALS',
+  'PROCESS',
+  'FOOD_SAFETY',
+  'MARKET',
+  'DAY_VISIT',
+  'STAY_PACKAGE',
   'FAQ',
   'SAFETY_NOTE',
   'LAST_UPDATED',
@@ -110,16 +115,26 @@ const KDOC_SECTION_GROUPS = [
     keys: ['DOC_ID', 'DOC_TYPE', 'TITLE', 'ALIASES', 'KEYWORDS'],
   },
   {
-    title: 'Nội dung tri thức',
+    title: 'Nội dung nền tảng',
     keys: ['SUMMARY', 'CONTENT'],
   },
   {
-    title: 'Dịch vụ & trải nghiệm',
-    keys: ['SERVICES', 'DAY_VISIT', 'STAY_PACKAGE', 'REGULATIONS'],
+    title: 'Mở rộng theo loại',
+    keys: [
+      'SERVICES',
+      'REGULATIONS',
+      'USAGE',
+      'RAW_MATERIALS',
+      'PROCESS',
+      'FOOD_SAFETY',
+      'MARKET',
+      'DAY_VISIT',
+      'STAY_PACKAGE',
+    ],
   },
   {
-    title: 'Hướng dẫn & lưu ý',
-    keys: ['USAGE', 'FAQ', 'SAFETY_NOTE'],
+    title: 'Hỏi đáp & lưu ý',
+    keys: ['FAQ', 'SAFETY_NOTE'],
   },
   {
     title: 'Theo dõi cập nhật',
@@ -135,11 +150,15 @@ const KDOC_SECTION_LABELS = {
   KEYWORDS: 'Từ khóa',
   SUMMARY: 'Tóm tắt',
   CONTENT: 'Nội dung chính',
-  SERVICES: 'Dịch vụ',
+  SERVICES: 'Lĩnh vực hoạt động',
+  REGULATIONS: 'Quy định',
+  USAGE: 'Cách dùng / liên hệ',
+  RAW_MATERIALS: 'Nguyên liệu',
+  PROCESS: 'Quy trình',
+  FOOD_SAFETY: 'An toàn thực phẩm',
+  MARKET: 'Thị trường & phân phối',
   DAY_VISIT: 'Gói trong ngày',
   STAY_PACKAGE: 'Gói lưu trú',
-  REGULATIONS: 'Quy định',
-  USAGE: 'Hướng dẫn',
   FAQ: 'FAQ',
   SAFETY_NOTE: 'Lưu ý',
   LAST_UPDATED: 'Cập nhật',
@@ -147,17 +166,21 @@ const KDOC_SECTION_LABELS = {
 
 const KDOC_SECTION_HINTS = {
   DOC_ID: 'Định danh duy nhất, ví dụ: tinh_dau_chanh_chavi',
-  DOC_TYPE: 'Giá trị hợp lệ: product | faq | policy | guide | info | company_profile',
+  DOC_TYPE: 'Giá trị hợp lệ: product | company_profile | info | faq | policy',
   TITLE: 'Tên hiển thị chính thức của tài liệu',
   ALIASES: 'Tên gọi khác, phân tách bằng dấu | hoặc xuống dòng',
   KEYWORDS: 'Từ khóa hỗ trợ tìm kiếm, phân tách bằng dấu phẩy',
   SUMMARY: 'Tóm tắt ngắn gọn 1-3 câu',
   CONTENT: 'Thông tin chi tiết, có thể dùng dạng gạch đầu dòng',
-  SERVICES: 'Liệt kê dịch vụ/hoạt động nổi bật (gạch đầu dòng).',
-  DAY_VISIT: 'Thông tin gói trải nghiệm trong ngày.',
-  STAY_PACKAGE: 'Thông tin gói lưu trú (phòng/lều, dịch vụ kèm theo).',
-  REGULATIONS: 'Quy định khi tham gia dịch vụ.',
-  USAGE: 'Hướng dẫn sử dụng hoặc thao tác',
+  SERVICES: 'Lĩnh vực hoạt động/chuyên môn (không phải dịch vụ bán lẻ).',
+  REGULATIONS: 'Quy định/điều kiện hợp tác hoặc quy chuẩn nội bộ.',
+  USAGE: 'Cách dùng sản phẩm hoặc thông tin liên hệ/hợp tác.',
+  RAW_MATERIALS: 'Nguồn nguyên liệu, vùng trồng, tiêu chuẩn đầu vào.',
+  PROCESS: 'Quy trình sản xuất/kiểm soát chất lượng.',
+  FOOD_SAFETY: 'An toàn thực phẩm, chứng nhận, tiêu chuẩn kiểm định.',
+  MARKET: 'Thị trường mục tiêu và kênh phân phối.',
+  DAY_VISIT: 'Thông tin gói trải nghiệm trong ngày (du lịch).',
+  STAY_PACKAGE: 'Thông tin gói lưu trú (du lịch).',
   FAQ: 'Cặp câu hỏi / trả lời thường gặp',
   SAFETY_NOTE: 'Lưu ý quan trọng và giới hạn nội dung',
   LAST_UPDATED: 'Ngày cập nhật theo ISO-8601, ví dụ: 2026-02-08',
@@ -171,11 +194,15 @@ const KDOC_SECTION_PLACEHOLDERS = {
   KEYWORDS: 'từ khóa 1, từ khóa 2',
   SUMMARY: 'Nhập tóm tắt ngắn...',
   CONTENT: 'Nhập nội dung chi tiết...',
-  SERVICES: 'Ví dụ: - Tham quan, chụp hình ...',
+  SERVICES: 'Ví dụ: - Trồng & chế biến nông sản ...',
+  REGULATIONS: 'Ví dụ: - Điều kiện hợp tác ...',
+  USAGE: 'Ví dụ: - Liên hệ hợp tác qua ...',
+  RAW_MATERIALS: 'Ví dụ: - Chanh VietGAP từ ...',
+  PROCESS: 'Ví dụ: - Sơ chế, tiệt trùng, đóng gói ...',
+  FOOD_SAFETY: 'Ví dụ: - HACCP, ISO 22000 ...',
+  MARKET: 'Ví dụ: - Nội địa, xuất khẩu ...',
   DAY_VISIT: 'Ví dụ: - Vé combo ...',
   STAY_PACKAGE: 'Ví dụ: - Hình thức lưu trú ...',
-  REGULATIONS: 'Ví dụ: - Mặc áo phao ...',
-  USAGE: 'Nhập cách dùng...',
   FAQ: 'Q: ...\nA: ...',
   SAFETY_NOTE: 'Lưu ý an toàn / phạm vi thông tin',
   LAST_UPDATED: new Date().toISOString().split('T')[0],
@@ -249,6 +276,9 @@ A: ...
 Q: ...
 A: ...
 
+[SAFETY_NOTE]
+Không khẳng định tác dụng y tế.
+
 [LAST_UPDATED]
 ${new Date().toISOString().split('T')[0]}
 === END_KDOC ===`,
@@ -276,6 +306,13 @@ Thông tin chính sách áp dụng cho khách hàng.
 - Thanh toán:
 - Đổi trả:
 
+[FAQ]
+Q: ...
+A: ...
+
+[SAFETY_NOTE]
+Không khẳng định tác dụng y tế.
+
 [LAST_UPDATED]
 ${new Date().toISOString().split('T')[0]}
 === END_KDOC ===`,
@@ -302,8 +339,17 @@ Thông tin tổng quan ngắn gọn.
 - Điểm chính 1
 - Điểm chính 2
 
-[USAGE]
-- Hướng dẫn liên quan (nếu có)
+[RAW_MATERIALS]
+- Nguyên liệu đầu vào
+
+[PROCESS]
+- Quy trình sản xuất
+
+[FOOD_SAFETY]
+- An toàn thực phẩm / chứng nhận
+
+[MARKET]
+- Thị trường & kênh phân phối
 
 [FAQ]
 Q: ...
@@ -335,23 +381,19 @@ doanh nghiệp, giới thiệu, hồ sơ
 Tóm tắt ngắn gọn về đơn vị.
 
 [CONTENT]
-- Thông tin tổng quan
-- Lịch sử hình thành
+- Doanh nghiệp chuyên ...
+- Thành lập năm ...
+- Thương hiệu sản phẩm ...
+- Tổng diện tích vùng trồng/nhà máy ...
 
 [SERVICES]
-- Dịch vụ nổi bật
-
-[DAY_VISIT]
-- Gói trải nghiệm trong ngày (nếu có)
-
-[STAY_PACKAGE]
-- Gói lưu trú (nếu có)
+- Lĩnh vực hoạt động
 
 [REGULATIONS]
-- Quy định/ lưu ý khi tham gia
+- Quy định/tiêu chuẩn hợp tác
 
 [USAGE]
-- Hướng dẫn liên hệ/đăng ký
+- Liên hệ/hợp tác
 
 [FAQ]
 Q: ...
@@ -1051,8 +1093,8 @@ function validateKdoc(text) {
     }
   });
   const docType = String(sections.DOC_TYPE || '').trim().toLowerCase();
-  if (docType && !['product', 'faq', 'policy', 'guide', 'info', 'company_profile'].includes(docType)) {
-    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide, info, company_profile.');
+  if (docType && !['product', 'company_profile', 'info', 'faq', 'policy'].includes(docType)) {
+    errors.push('[DOC_TYPE] chỉ chấp nhận: product, company_profile, info, faq, policy.');
   }
   const lastUpdated = String(sections.LAST_UPDATED || '').trim();
   if (lastUpdated && Number.isNaN(Date.parse(lastUpdated))) {
@@ -1280,7 +1322,7 @@ function deriveTags(doc) {
   if (source.includes('faq')) tags.push('faq');
   if (source.includes('policy') || source.includes('chính sách')) tags.push('policy');
   if (source.includes('chanh') || source.includes('sản phẩm')) tags.push('product');
-  if (source.includes('hướng dẫn') || source.includes('guide')) tags.push('guide');
+  if (source.includes('thông tin') || source.includes('quy trình')) tags.push('info');
   if (tags.length === 0) tags.push('note');
   return tags.slice(0, 3);
 }
@@ -1312,17 +1354,18 @@ async function req(url, options) {
 
 function setBulkActionDisabled(disabled) {
   const flag = !!disabled;
-  [
-    exportAllBtn,
-    importAllBtn,
-    importAllInput,
-    exportIncludeImages,
-    importIncludeImages,
-    refreshBtn,
-    clearBtn,
-    uploadBtn,
-    newNoteBtn,
-  ].forEach((el) => {
+    [
+      exportAllBtn,
+      importAllBtn,
+      importAllInput,
+      exportIncludeImages,
+      importIncludeImages,
+      refreshBtn,
+      clearBtn,
+      clearContentBtn,
+      uploadBtn,
+      newNoteBtn,
+    ].forEach((el) => {
     if (!el) return;
     el.disabled = flag;
   });
@@ -1372,19 +1415,20 @@ async function collectDocumentsForExport() {
     : (await req('/api/documents', { retryCount: 1 })).documents || [];
   const normalized = Array.isArray(sourceDocs) ? sourceDocs : [];
   const result = [];
-  for (let i = 0; i < normalized.length; i += 1) {
-    const item = normalized[i];
-    const name = String(item.name || '').trim();
-    if (!name) continue;
-    const detail = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
-    const doc = detail.document || {};
-    result.push({
-      name: name,
-      content: String(doc.content || ''),
-      updated_at: String(doc.updated_at || item.updated_at || ''),
-      characters: Number(doc.characters || item.characters || 0),
-    });
-  }
+    for (let i = 0; i < normalized.length; i += 1) {
+      const item = normalized[i];
+      const name = String(item.name || '').trim();
+      if (!name) continue;
+      const detail = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
+      const doc = detail.document || {};
+      result.push({
+        name: name,
+        content: String(doc.content || ''),
+        updated_at: String(doc.updated_at || item.updated_at || ''),
+        characters: Number(doc.characters || item.characters || 0),
+        folder: getDocFolder(name),
+      });
+    }
   return result;
 }
 
@@ -1502,16 +1546,17 @@ function parseImportPayload(rawText) {
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('File import không đúng định dạng JSON object.');
   }
-  const docs = Array.isArray(parsed.documents) ? parsed.documents : [];
-  const normalizedDocs = docs
-    .map((doc) => ({
-      name: String(doc?.name || '').trim(),
-      text: String(doc?.content ?? doc?.text ?? ''),
-    }))
-    .filter((doc) => doc.name.length > 0 && doc.text.length > 0);
-  if (normalizedDocs.length === 0) {
-    throw new Error('File import không có tài liệu hợp lệ.');
-  }
+    const docs = Array.isArray(parsed.documents) ? parsed.documents : [];
+    const normalizedDocs = docs
+      .map((doc) => ({
+        name: String(doc?.name || '').trim(),
+        text: String(doc?.content ?? doc?.text ?? ''),
+        folder: String(doc?.folder || doc?.meta?.folder || '').trim(),
+      }))
+      .filter((doc) => doc.name.length > 0 && doc.text.length > 0);
+    if (normalizedDocs.length === 0) {
+      throw new Error('File import không có tài liệu hợp lệ.');
+    }
   const rawImages = Array.isArray(parsed.images) ? parsed.images : [];
   const normalizedImages = rawImages
     .map((img) => ({
@@ -1523,10 +1568,25 @@ function parseImportPayload(rawText) {
     }))
     .filter((img) => img.doc_name.length > 0 && img.data_base64.length > 0);
 
-  const hasFolderState = Object.prototype.hasOwnProperty.call(parsed, 'folderState');
-  const normalizedFolderState = hasFolderState
-    ? normalizeFolderState(parsed.folderState || {})
-    : null;
+    const hasFolderState = Object.prototype.hasOwnProperty.call(parsed, 'folderState');
+    let normalizedFolderState = hasFolderState
+      ? normalizeFolderState(parsed.folderState || {})
+      : null;
+    if (!normalizedFolderState) {
+      const fallback = { folders: ['Mặc định'], assignments: {} };
+      normalizedDocs.forEach((doc) => {
+        const folder = sanitizeFolderName(doc.folder);
+        if (folder && folder !== 'Tất cả') {
+          if (!fallback.folders.includes(folder)) {
+            fallback.folders.push(folder);
+          }
+          fallback.assignments[doc.name] = folder;
+        } else {
+          fallback.assignments[doc.name] = 'Mặc định';
+        }
+      });
+      normalizedFolderState = normalizeFolderState(fallback);
+    }
 
   return {
     documents: normalizedDocs,
@@ -1593,7 +1653,7 @@ async function importAllDataFromFile(file) {
       }
     }
 
-    if (data.hasFolderState && data.folderState) {
+    if (data.folderState) {
       folderState = data.folderState;
     }
     noteTagState = data.noteTagState;
@@ -1742,7 +1802,7 @@ function renderDocuments(items) {
     return;
   }
 
-  docBody.innerHTML = filtered
+    docBody.innerHTML = filtered
     .map(function (doc) {
       const name = esc(doc.name);
       const updated = esc(formatTimestamp(doc.updated_at));
@@ -1753,7 +1813,10 @@ function renderDocuments(items) {
       const folder = esc(getDocFolder(doc.name));
       return (
         '<article class="note-item' + activeClass + '" data-name="' + name + '" data-folder="' + folder + '" role="listitem" tabindex="0" draggable="true">' +
+        '<div class="note-head">' +
         '<div class="note-date">Cập nhật: ' + updated + ' • Độ dài: ' + chars + '</div>' +
+        '<button class="note-delete-btn" type="button" data-doc-delete="' + name + '" aria-label="Xóa tài liệu ' + name + '" title="Xóa tài liệu">×</button>' +
+        '</div>' +
         '<div class="note-title">' + name + '</div>' +
         '<div class="note-folder">📁 ' + folder + '</div>' +
         '<div class="note-preview">' + (preview || 'Không có đoạn xem trước.') + '</div>' +
@@ -1761,12 +1824,22 @@ function renderDocuments(items) {
         '</article>'
       );
     })
-    .join('');
+      .join('');
 
-  docBody.querySelectorAll('.note-item[data-name]').forEach(function (el) {
-    const noteName = el.getAttribute('data-name') || '';
-    const open = async function () {
-      const name = noteName;
+    docBody.querySelectorAll('[data-doc-delete]').forEach((btn) => {
+      btn.addEventListener('click', async function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const name = btn.getAttribute('data-doc-delete') || '';
+        if (!name) return;
+        await deleteSingleDocument(name);
+      });
+    });
+
+    docBody.querySelectorAll('.note-item[data-name]').forEach(function (el) {
+      const noteName = el.getAttribute('data-name') || '';
+      const open = async function () {
+        const name = noteName;
       if (name) {
         if (selectedDocName !== name && !(await canDiscardUnsaved('mở tài liệu khác'))) {
           return;
@@ -2028,8 +2101,8 @@ function scheduleImageFetch(docNameValue) {
 }
 
 async function uploadSingleImage(file, doc) {
-  const mime = String(file?.type || '').toLowerCase();
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
+  const mime = resolveImageMimeType(file);
+  if (!mime || !['image/jpeg', 'image/png', 'image/webp'].includes(mime)) {
     throw new Error('Ảnh "' + (file.name || '') + '" không đúng định dạng JPEG/PNG/WEBP.');
   }
   if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
@@ -2079,6 +2152,19 @@ function fileToBase64(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+
+function resolveImageMimeType(file) {
+  const raw = String(file?.type || '').trim().toLowerCase();
+  if (raw) {
+    if (raw === 'image/jpg' || raw === 'image/pjpeg') return 'image/jpeg';
+    return raw;
+  }
+  const name = String(file?.name || '').trim().toLowerCase();
+  if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+  if (name.endsWith('.png')) return 'image/png';
+  if (name.endsWith('.webp')) return 'image/webp';
+  return '';
 }
 
 async function uploadImageFiles(fileList) {
@@ -2233,6 +2319,83 @@ async function clearDocuments() {
   }
 }
 
+async function deleteSingleDocument(name) {
+  const safeName = String(name || '').trim();
+  if (!safeName) return;
+  if (selectedDocName === safeName && !(await canDiscardUnsaved('xóa tài liệu này'))) {
+    return;
+  }
+  const confirmed = await showConfirm('Bạn chắc chắn muốn xóa tài liệu "' + safeName + '"?', {
+    title: 'Xóa tài liệu',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy',
+    confirmTone: 'danger',
+  });
+  if (!confirmed) return;
+  try {
+    setStatus('Đang xóa tài liệu...', 'loading');
+    await req('/api/documents?name=' + encodeURIComponent(safeName), { method: 'DELETE' });
+    documentsCache = documentsCache.filter((doc) => doc.name !== safeName);
+    if (folderState.assignments[safeName]) {
+      delete folderState.assignments[safeName];
+      saveFolderState();
+    }
+    if (noteTagState[safeName]) {
+      delete noteTagState[safeName];
+      saveTagState();
+    }
+    if (selectedDocName === safeName) {
+      selectedDocName = '';
+      pendingFolderSelection = activeFolder !== '__ALL__' ? activeFolder : 'Mặc định';
+      if (docName) docName.value = '';
+      if (docText) docText.value = '';
+      if (docPreviewTitle) docPreviewTitle.textContent = 'Chưa đặt tên';
+      if (docPreviewContent) {
+        docPreviewContent.textContent =
+          'Nội dung tài liệu sẽ xuất hiện tại đây khi bạn chọn một tài liệu ở cột giữa.';
+      }
+      renderKdocOutline('');
+      setLastModified('-');
+      markEditorSaved();
+      saveDraft();
+      renderFolderSelect();
+      renderDocTagEditor();
+      resetImageGallery('Chưa có ảnh cho tài liệu này.');
+      setImageUploadStatus('Chưa có ảnh tải lên.', 'info');
+    }
+    renderFolderList();
+    renderDocuments(documentsCache);
+    setStatus('Đã xóa tài liệu "' + safeName + '".', 'ok');
+  } catch (e) {
+    setStatus('Xóa tài liệu lỗi: ' + e.message, 'warn');
+  }
+}
+
+async function clearCurrentDocumentContent() {
+  if (!docText) return;
+  const targetName = String(docName?.value || selectedDocName || '').trim();
+  const hasContent = String(docText.value || '').trim().length > 0;
+  if (hasContent) {
+    const confirmed = await showConfirm(
+      'Xóa nội dung tài liệu' + (targetName ? ' "' + targetName + '"' : '') + '? Nội dung sẽ bị xóa trong trình soạn thảo (chưa lưu).',
+      {
+        title: 'Xóa nội dung',
+        confirmText: 'Xóa nội dung',
+        cancelText: 'Hủy',
+        confirmTone: 'danger',
+      }
+    );
+    if (!confirmed) return;
+  }
+  docText.value = '';
+  if (docPreviewContent) {
+    docPreviewContent.textContent = '';
+  }
+  renderKdocOutline('');
+  onEditorInput();
+  setStatus('Đã xóa nội dung trong trình soạn thảo. Nhớ lưu để cập nhật.', 'info');
+}
+
 async function handleFile(file) {
   if (!file || !docText || !docName) return;
   try {
@@ -2355,6 +2518,11 @@ function bindEvents() {
   }
 
   if (clearBtn) clearBtn.addEventListener('click', clearDocuments);
+  if (clearContentBtn) {
+    clearContentBtn.addEventListener('click', async function () {
+      await clearCurrentDocumentContent();
+    });
+  }
 
   if (exportAllBtn) {
     exportAllBtn.addEventListener('click', function () {

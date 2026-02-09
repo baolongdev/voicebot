@@ -36,10 +36,14 @@ const KDOC_SECTION_ORDER = [
   'SUMMARY',
   'CONTENT',
   'SERVICES',
-  'DAY_VISIT',
-  'STAY_PACKAGE',
   'REGULATIONS',
   'USAGE',
+  'RAW_MATERIALS',
+  'PROCESS',
+  'FOOD_SAFETY',
+  'MARKET',
+  'DAY_VISIT',
+  'STAY_PACKAGE',
   'FAQ',
   'SAFETY_NOTE',
   'LAST_UPDATED',
@@ -51,16 +55,26 @@ const KDOC_SECTION_GROUPS = [
     keys: ['DOC_ID', 'DOC_TYPE', 'TITLE', 'ALIASES', 'KEYWORDS'],
   },
   {
-    title: 'Nội dung tri thức',
+    title: 'Nội dung nền tảng',
     keys: ['SUMMARY', 'CONTENT'],
   },
   {
-    title: 'Dịch vụ & trải nghiệm',
-    keys: ['SERVICES', 'DAY_VISIT', 'STAY_PACKAGE', 'REGULATIONS'],
+    title: 'Mở rộng theo loại',
+    keys: [
+      'SERVICES',
+      'REGULATIONS',
+      'USAGE',
+      'RAW_MATERIALS',
+      'PROCESS',
+      'FOOD_SAFETY',
+      'MARKET',
+      'DAY_VISIT',
+      'STAY_PACKAGE',
+    ],
   },
   {
-    title: 'Hướng dẫn & lưu ý',
-    keys: ['USAGE', 'FAQ', 'SAFETY_NOTE'],
+    title: 'Hỏi đáp & lưu ý',
+    keys: ['FAQ', 'SAFETY_NOTE'],
   },
   {
     title: 'Theo dõi cập nhật',
@@ -76,18 +90,22 @@ const KDOC_SECTION_LABELS = {
   KEYWORDS: 'Từ khóa',
   SUMMARY: 'Tóm tắt',
   CONTENT: 'Nội dung chính',
-  SERVICES: 'Dịch vụ',
+  SERVICES: 'Lĩnh vực hoạt động',
+  REGULATIONS: 'Quy định',
+  USAGE: 'Cách dùng / liên hệ',
+  RAW_MATERIALS: 'Nguyên liệu',
+  PROCESS: 'Quy trình',
+  FOOD_SAFETY: 'An toàn thực phẩm',
+  MARKET: 'Thị trường & phân phối',
   DAY_VISIT: 'Gói trong ngày',
   STAY_PACKAGE: 'Gói lưu trú',
-  REGULATIONS: 'Quy định',
-  USAGE: 'Hướng dẫn',
   FAQ: 'Câu hỏi thường gặp',
   SAFETY_NOTE: 'Lưu ý',
   LAST_UPDATED: 'Cập nhật',
 };
 
 const KDOC_SECTION_HINTS = {
-  DOC_TYPE: 'Giá trị hợp lệ: product | faq | policy | guide | info | company_profile',
+  DOC_TYPE: 'Giá trị hợp lệ: product | company_profile | info | faq | policy',
 };
 
 function esc(text) {
@@ -375,8 +393,8 @@ function validateKdoc(text) {
   });
 
   const docType = String(sections.DOC_TYPE || '').trim().toLowerCase();
-  if (docType && !['product', 'faq', 'policy', 'guide', 'info', 'company_profile'].includes(docType)) {
-    errors.push('[DOC_TYPE] chỉ chấp nhận: product, faq, policy, guide, info, company_profile.');
+  if (docType && !['product', 'company_profile', 'info', 'faq', 'policy'].includes(docType)) {
+    errors.push('[DOC_TYPE] chỉ chấp nhận: product, company_profile, info, faq, policy.');
   }
 
   const lastUpdated = String(sections.LAST_UPDATED || '').trim();

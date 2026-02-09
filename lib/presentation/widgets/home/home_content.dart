@@ -323,10 +323,10 @@ class _BottomCarouselState extends State<_BottomCarousel>
         }
         setState(() {});
       },
-      onError: (_, __) {
-        _pendingAspectRatio.remove(url);
-        stream.removeListener(listener);
-      },
+        onError: (_, _) {
+          _pendingAspectRatio.remove(url);
+          stream.removeListener(listener);
+        },
     );
     stream.addListener(listener);
   }

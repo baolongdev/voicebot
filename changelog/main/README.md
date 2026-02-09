@@ -1,5 +1,11 @@
 # Changelog - main
 
+## 2026-02-09
+- Updated KDOC templates/fields and doc type validation for web host (profile/info split and new sections).
+- Added per-document delete, editor clear-content action, and folder metadata export/import fallback.
+- Added single-document delete API + MCP tool and cleaned up image upload MIME handling.
+- Fixed lint warning in home content widget.
+
 ## 2026-02-03
 - Streamlined release workflow to manual dispatch that builds APK and Windows, zips Windows output, creates a tag from pubspec version + run number, and publishes release assets.
 - Removed AAB and Linux build jobs from the release workflow.

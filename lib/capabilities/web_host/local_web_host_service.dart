@@ -204,7 +204,12 @@ class LocalWebHostService {
       }
 
       if (path == '/api/documents' && method == 'DELETE') {
-        await _handleClearDocuments(request);
+        final name = (request.uri.queryParameters['name'] ?? '').trim();
+        if (name.isNotEmpty) {
+          await _handleDeleteDocument(request);
+        } else {
+          await _handleClearDocuments(request);
+        }
         return;
       }
 
@@ -349,6 +354,55 @@ class LocalWebHostService {
     });
   }
 
+  Future<void> _handleDeleteDocument(HttpRequest request) async {
+    final name = (request.uri.queryParameters['name'] ?? '').trim();
+    if (name.isEmpty) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Thiếu tên tài liệu.',
+      }, statusCode: HttpStatus.badRequest);
+      return;
+    }
+    final result = await _callTool(
+      name: 'self.knowledge.delete_document',
+      arguments: <String, dynamic>{'name': name},
+    );
+    final payload = _decodeToolPayload(result);
+    if (payload is! Map) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Không thể xóa tài liệu.',
+      }, statusCode: HttpStatus.internalServerError);
+      return;
+    }
+
+    final deleted = payload['deleted'] == true;
+    final imageStore = await _getImageStore();
+    final removedImages = await imageStore.clearDocument(name);
+    if (!deleted && removedImages == 0) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Tài liệu không tồn tại.',
+      }, statusCode: HttpStatus.notFound);
+      return;
+    }
+    AppLogger.event(
+      'WebHost',
+      'document_delete',
+      fields: <String, Object?>{
+        'name': name,
+        'deleted': deleted,
+        'removed_images': removedImages,
+      },
+    );
+    await _writeJson(request, <String, Object?>{
+      'ok': true,
+      'deleted': deleted,
+      'result': payload,
+      'removed_images': removedImages,
+    });
+  }
+
   Future<void> _handleUploadImage(HttpRequest request) async {
     final requestId = _nextHttpRequestId++;
     try {
@@ -357,8 +411,9 @@ class LocalWebHostService {
       final isJsonBody = mimeTypeHeader == 'application/json';
       if (isJsonBody) {
         final upload = await _readImageUploadJsonRequest(request);
-        final mimeType = upload.mimeType.trim().toLowerCase();
-        if (!_allowedImageMimeTypes.contains(mimeType)) {
+        final normalizedMimeType =
+            _normalizeImageMimeType(upload.mimeType, fileName: upload.fileName);
+        if (!_allowedImageMimeTypes.contains(normalizedMimeType)) {
           await _writeJson(request, <String, Object?>{
             'ok': false,
             'error': 'Định dạng ảnh không hỗ trợ. Chỉ chấp nhận JPEG/PNG/WEBP.',
@@ -378,7 +433,7 @@ class LocalWebHostService {
         final created = await imageStore.saveImage(
           docName: upload.docName,
           fileName: upload.fileName,
-          mimeType: mimeType,
+          mimeType: normalizedMimeType,
           bytes: upload.bytes,
           caption: upload.caption,
         );
@@ -395,7 +450,7 @@ class LocalWebHostService {
             'request_id': requestId,
             'doc': upload.docName,
             'image_id': imageId,
-            'mime': mimeType,
+            'mime': normalizedMimeType,
             'bytes': upload.bytes.length,
           },
         );
@@ -407,8 +462,9 @@ class LocalWebHostService {
       }
 
       final upload = await _readImageUploadMultipartRequest(request);
-      final mimeType = upload.mimeType.trim().toLowerCase();
-      if (!_allowedImageMimeTypes.contains(mimeType)) {
+      final normalizedMimeType =
+          _normalizeImageMimeType(upload.mimeType, fileName: upload.fileName);
+      if (!_allowedImageMimeTypes.contains(normalizedMimeType)) {
         await _safeDeleteFile(upload.file);
         await _writeJson(request, <String, Object?>{
           'ok': false,
@@ -421,7 +477,7 @@ class LocalWebHostService {
       final created = await imageStore.saveImageFile(
         docName: upload.docName,
         fileName: upload.fileName,
-        mimeType: mimeType,
+        mimeType: normalizedMimeType,
         sourceFile: upload.file,
         bytes: upload.bytes,
         caption: upload.caption,
@@ -438,7 +494,7 @@ class LocalWebHostService {
           'request_id': requestId,
           'doc': upload.docName,
           'image_id': imageId,
-          'mime': mimeType,
+          'mime': normalizedMimeType,
           'bytes': upload.bytes,
         },
       );
@@ -751,6 +807,20 @@ class LocalWebHostService {
       return 'image/webp';
     }
     return 'application/octet-stream';
+  }
+
+  String _normalizeImageMimeType(
+    String raw, {
+    String? fileName,
+  }) {
+    var lowered = raw.trim().toLowerCase();
+    if (lowered.isEmpty && fileName != null && fileName.trim().isNotEmpty) {
+      lowered = _guessMimeTypeFromFileName(fileName);
+    }
+    if (lowered == 'image/jpg' || lowered == 'image/pjpeg') {
+      return 'image/jpeg';
+    }
+    return lowered;
   }
 
   String? _extractDispositionValue(String header, String key) {
