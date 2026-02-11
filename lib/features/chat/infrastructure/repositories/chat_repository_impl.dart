@@ -288,6 +288,10 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<Result<bool>> sendMessage(String text) async {
+    final input = text.trim();
+    if (input.isEmpty) {
+      return Result.failure(const Failure(message: 'Nội dung trống'));
+    }
     if (!_isConnected) {
       if (_lastConfig == null) {
         return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
@@ -297,9 +301,19 @@ class ChatRepositoryImpl implements ChatRepository {
         return result;
       }
     }
-    final textWithKnowledge = _shouldUseKnowledgeContext(text)
-        ? await _buildKnowledgeContextPrompt(text)
-        : text;
+    final blocked = await _checkBlockedPhraseAndHandle(input);
+    if (blocked) {
+      AppLogger.event(
+        'ChatRepository',
+        'send_message_blocked',
+        fields: <String, Object?>{'text': input},
+        level: 'D',
+      );
+      return Result.success(true);
+    }
+    final textWithKnowledge = _shouldUseKnowledgeContext(input)
+        ? await _buildKnowledgeContextPrompt(input)
+        : input;
     return _textService.sendTextRequest(textWithKnowledge);
   }
 
@@ -578,10 +592,7 @@ class ChatRepositoryImpl implements ChatRepository {
     }
     final result = await _callMcpTool(
       name: 'self.knowledge.list_images',
-      arguments: <String, dynamic>{
-        'doc_name': trimmed,
-        'limit': maxImages,
-      },
+      arguments: <String, dynamic>{'doc_name': trimmed, 'limit': maxImages},
       logRequest: true,
     );
     final payload = _decodeToolPayload(result);
@@ -627,7 +638,6 @@ class ChatRepositoryImpl implements ChatRepository {
     }
     return imagesById.values.toList(growable: false);
   }
-
 
   void _handleIncomingJson(Map<String, dynamic> json) {
     final type = json['type'] as String? ?? '';
@@ -700,7 +710,7 @@ class ChatRepositoryImpl implements ChatRepository {
           return;
         }
         _responsesController.add(ChatResponse(text: text, isUser: true));
-        unawaited(_tryHandleBlockedPhrase(text));
+        unawaited(_checkBlockedPhraseAndHandle(text));
         unawaited(_tryHandleLocalVolumeCommand(text));
         if (_shouldUseKnowledgeContext(text)) {
           unawaited(_injectKnowledgeForVoice(text));
@@ -1410,29 +1420,36 @@ YEU_CAU_TRA_LOI:
     }
   }
 
-  Future<void> _tryHandleBlockedPhrase(String text) async {
-    final normalizedInput = _normalizeForKnowledge(text);
-    if (_isBlockedTopicPhrase(normalizedInput)) {
-      _applyBlockedResponse(text: text, normalizedInput: normalizedInput);
-      return;
+  Future<bool> _checkBlockedPhraseAndHandle(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return false;
     }
+    final normalizedInput = _normalizeForKnowledge(trimmed);
+    final localBlocked = _isBlockedTopicPhrase(normalizedInput);
+
     final response = await _callMcpTool(
       name: 'self.guard.blocked_phrase_check',
-      arguments: <String, dynamic>{'text': text},
+      arguments: <String, dynamic>{'text': trimmed},
     );
     final payload = _decodeToolPayload(response);
     if (payload is! Map) {
-      return;
+      if (localBlocked) {
+        _applyBlockedResponse(text: trimmed, normalizedInput: normalizedInput);
+        return true;
+      }
+      return false;
     }
     final blocked = payload['blocked'] == true;
     if (!blocked) {
-      return;
+      return false;
     }
     _applyBlockedResponse(
-      text: text,
+      text: trimmed,
       normalizedInput: normalizedInput,
       safeReply: (payload['response'] as String?)?.trim(),
     );
+    return true;
   }
 
   int? _extractVolumeTarget(String text) {
@@ -1480,7 +1497,12 @@ YEU_CAU_TRA_LOI:
       );
       AppLogger.log(
         'MCP',
-        'request_body=${jsonEncode(<String, dynamic>{'jsonrpc': '2.0', 'id': requestId, 'method': 'tools/call', 'params': <String, dynamic>{'name': name, 'arguments': arguments}})}',
+        'request_body=${jsonEncode(<String, dynamic>{
+          'jsonrpc': '2.0',
+          'id': requestId,
+          'method': 'tools/call',
+          'params': <String, dynamic>{'name': name, 'arguments': arguments},
+        })}',
       );
     } else {
       AppLogger.event(

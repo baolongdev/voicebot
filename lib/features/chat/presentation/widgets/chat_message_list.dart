@@ -50,10 +50,12 @@ class _MessageBubble extends StatelessWidget {
     if (message.type == ChatMessageType.relatedImages) {
       return _RelatedImagesBubble(message: message);
     }
-    final alignment =
-        message.isUser ? Alignment.centerRight : Alignment.centerLeft;
-    final crossAxis =
-        message.isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start;
+    final alignment = message.isUser
+        ? Alignment.centerRight
+        : Alignment.centerLeft;
+    final crossAxis = message.isUser
+        ? CrossAxisAlignment.end
+        : CrossAxisAlignment.start;
     return Align(
       alignment: alignment,
       child: Column(
@@ -64,10 +66,7 @@ class _MessageBubble extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 280),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(
-                  message.text,
-                  style: context.theme.typography.base,
-                ),
+                child: Text(message.text, style: context.theme.typography.base),
               ),
             ),
           ),
@@ -108,46 +107,56 @@ class _RelatedImagesBubble extends StatelessWidget {
               child: SlideTransition(position: slide, child: child),
             );
           },
-          child: images.isEmpty
-              ? const SizedBox.shrink(key: ValueKey<String>('related-empty'))
-              : FCard(
-                  key: const ValueKey<String>('related-content'),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            'Hình ảnh liên quan',
-                            style: context.theme.typography.sm.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          if (message.relatedQuery != null &&
-                              message.relatedQuery!.trim().isNotEmpty) ...<Widget>[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Theo truy vấn: ${message.relatedQuery}',
-                              style: context.theme.typography.xs.copyWith(
-                                color: context.theme.colors.muted,
-                              ),
-                            ),
-                          ],
-                          const SizedBox(height: 10),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: images
-                                .map((image) => _RelatedImageTile(image: image))
-                                .toList(growable: false),
-                          ),
-                        ],
+          child: FCard(
+            key: ValueKey<String>(
+              images.isEmpty ? 'related-empty' : 'related-content',
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 320),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      message.text.trim().isEmpty
+                          ? 'Hình ảnh liên quan'
+                          : message.text,
+                      style: context.theme.typography.sm.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
+                    if (message.relatedQuery != null &&
+                        message.relatedQuery!.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Theo truy vấn: ${message.relatedQuery}',
+                        style: context.theme.typography.xs.copyWith(
+                          color: context.theme.colors.muted,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    if (images.isEmpty)
+                      Text(
+                        'MCP không tìm thấy ảnh phù hợp trong kho dữ liệu.',
+                        style: context.theme.typography.xs.copyWith(
+                          color: context.theme.colors.muted,
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: images
+                            .map((image) => _RelatedImageTile(image: image))
+                            .toList(growable: false),
+                      ),
+                  ],
                 ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -157,50 +166,67 @@ class _RelatedImagesBubble extends StatelessWidget {
 class _RelatedImageTile extends StatelessWidget {
   const _RelatedImageTile({required this.image});
 
+  static const double _thumbnailWidthLarge = 213;
+  static const double _thumbnailHeightLarge = 120;
+  static const double _thumbnailWidthSmall = 160;
+  static const double _thumbnailHeightSmall = 90;
+  static const double _smallScreenWidthBreakpoint = 380;
+
   final RelatedChatImage image;
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final useSmallSize = screenWidth <= _smallScreenWidthBreakpoint;
+    final thumbnailWidth = useSmallSize
+        ? _thumbnailWidthSmall
+        : _thumbnailWidthLarge;
+    final thumbnailHeight = useSmallSize
+        ? _thumbnailHeightSmall
+        : _thumbnailHeightLarge;
     return GestureDetector(
       onTap: () => _showImagePreview(context, image),
       child: SizedBox(
-        width: 142,
+        width: thumbnailWidth,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Container(
                 color: context.theme.colors.background,
-                height: 92,
-                width: 142,
-                child: Image.network(
-                  image.url,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Center(
-                    child: Text(
-                      'Không tải được ảnh',
-                      textAlign: TextAlign.center,
-                      style: context.theme.typography.xs.copyWith(
-                        color: context.theme.colors.muted,
-                      ),
-                    ),
-                  ),
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) {
-                      return child;
-                    }
-                    return Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: context.theme.colors.primary,
+                child: SizedBox(
+                  width: thumbnailWidth,
+                  height: thumbnailHeight,
+                  child: Image.network(
+                    image.url,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) => Center(
+                      child: Text(
+                        'Không tải được ảnh',
+                        textAlign: TextAlign.center,
+                        style: context.theme.typography.xs.copyWith(
+                          color: context.theme.colors.muted,
                         ),
                       ),
-                    );
-                  },
+                    ),
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) {
+                        return child;
+                      }
+                      return Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: context.theme.colors.primary,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),

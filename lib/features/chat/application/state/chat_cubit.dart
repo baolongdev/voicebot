@@ -363,14 +363,15 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     );
     final nextPayload = List<RelatedChatImage>.unmodifiable(images);
     final hasImages = nextPayload.isNotEmpty;
+    final showNoImagesState = !hasImages && _isImageIntentQuery(query);
     if (index == -1) {
-      if (!hasImages) {
+      if (!hasImages && !showNoImagesState) {
         return;
       }
       nextMessages.add(
         ChatMessage(
           id: _relatedImagesMessageId,
-          text: 'Hình ảnh liên quan',
+          text: hasImages ? 'Hình ảnh liên quan' : 'Không có ảnh liên quan',
           isUser: false,
           timestamp: DateTime.now(),
           type: ChatMessageType.relatedImages,
@@ -384,7 +385,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       return;
     }
 
-    if (!hasImages) {
+    if (!hasImages && !showNoImagesState) {
       nextMessages.removeAt(index);
       emit(
         state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
@@ -394,7 +395,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
 
     final existing = nextMessages[index];
     nextMessages[index] = existing.copyWith(
-      text: hasImages ? 'Hình ảnh liên quan' : '',
+      text: hasImages ? 'Hình ảnh liên quan' : 'Không có ảnh liên quan',
       timestamp: DateTime.now(),
       type: ChatMessageType.relatedImages,
       relatedImages: nextPayload,
@@ -407,6 +408,32 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
 
   String _normalizeRelatedQuery(String value) {
     return value.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  bool _isImageIntentQuery(String value) {
+    final normalized = _normalizeRelatedQuery(value);
+    if (normalized.isEmpty) {
+      return false;
+    }
+    const phraseIntents = <String>[
+      'hinh anh',
+      'hinh san pham',
+      'anh san pham',
+      'xem anh',
+      'xem hinh',
+      'show image',
+      'show images',
+      'list image',
+      'list images',
+    ];
+    for (final phrase in phraseIntents) {
+      if (normalized.contains(phrase)) {
+        return true;
+      }
+    }
+    final tokens = normalized.split(' ');
+    const tokenIntents = <String>{'hinh', 'anh', 'image', 'images', 'photo'};
+    return tokens.any(tokenIntents.contains);
   }
 
   String _newMessageId() => DateTime.now().microsecondsSinceEpoch.toString();
@@ -628,10 +655,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           status: ChatConnectionStatus.error,
         ),
       );
-      _scheduleAutoReconnect(
-        reason: 'connect_timeout',
-        isNetworkIssue: true,
-      );
+      _scheduleAutoReconnect(reason: 'connect_timeout', isNetworkIssue: true);
     } finally {
       _connectInFlight = false;
       _connectCompleter?.complete();

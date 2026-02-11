@@ -6,6 +6,7 @@ class Routes {
   static const String form = '/form';
   static const String chat = '/chat';
   static const String mcpFlow = '/mcp-flow';
+  static const String update = '/update';
   static const String root = '/';
 }
 
@@ -17,6 +18,7 @@ class RouteNames {
   static const String form = 'form';
   static const String chat = 'chat';
   static const String mcpFlow = 'mcpFlow';
+  static const String update = 'update';
   static const String root = 'root';
 }
 
@@ -31,6 +33,7 @@ class RouteMeta {
 
   static const Set<String> protectedRoutes = <String>{
     Routes.home,
+    Routes.update,
   };
 
   static bool requiresAuth(String location) {

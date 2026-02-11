@@ -6,6 +6,7 @@ import '../features/form/presentation/pages/server_form_page.dart';
 import '../features/chat/presentation/pages/chat_page.dart';
 import '../presentation/pages/splash_page.dart';
 import '../presentation/pages/mcp_flow_page.dart';
+import '../presentation/pages/update_download_page.dart';
 import 'routes.dart';
 
 class AppRouter {
@@ -46,6 +47,11 @@ class AppRouter {
         path: Routes.mcpFlow,
         name: RouteNames.mcpFlow,
         builder: (context, state) => const McpFlowPage(),
+      ),
+      GoRoute(
+        path: Routes.update,
+        name: RouteNames.update,
+        builder: (context, state) => const UpdateDownloadPage(),
       ),
       GoRoute(
         path: Routes.root,

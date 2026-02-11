@@ -21,6 +21,7 @@ import '../presentation/app/theme_mode_cubit.dart';
 import '../presentation/app/theme_palette_cubit.dart';
 import '../presentation/app/text_scale_cubit.dart';
 import '../presentation/app/ui_settings_store.dart';
+import '../presentation/app/update_cubit.dart';
 import '../system/ota/ota_client.dart' as system_ota;
 import 'modules/feature_module.dart';
 import 'modules/permissions_module.dart';
@@ -98,12 +99,15 @@ Future<void> configureDependencies() async {
     );
   }
 
+  if (!getIt.isRegistered<UpdateCubit>()) {
+    getIt.registerLazySingleton<UpdateCubit>(UpdateCubit.new);
+  }
+
   if (!getIt.isRegistered<core_ota.OtaService>()) {
     getIt.registerLazySingleton<core_ota.OtaService>(
       () => _OtaAdapter(system_ota.OtaClient(DummyDataGenerator.generate())),
     );
   }
-
 
   registerRepositoryModule(getIt);
   registerChatFeature(getIt);
@@ -111,9 +115,7 @@ Future<void> configureDependencies() async {
   registerPermissions(getIt);
 
   if (!getIt.isRegistered<SubmitFormUseCase>()) {
-    getIt.registerFactory<SubmitFormUseCase>(
-      () => SubmitFormUseCase(getIt()),
-    );
+    getIt.registerFactory<SubmitFormUseCase>(() => SubmitFormUseCase(getIt()));
   }
   if (!getIt.isRegistered<ValidateFormUseCase>()) {
     getIt.registerFactory<ValidateFormUseCase>(ValidateFormUseCase.new);

@@ -31,6 +31,7 @@ import '../app/text_send_mode_cubit.dart';
 import '../app/connect_greeting_cubit.dart';
 import '../app/auto_reconnect_cubit.dart';
 import '../app/face_detection_settings_cubit.dart';
+import '../app/update_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
@@ -64,6 +65,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   double _headerHeight = 0;
   final Map<FLayout, FPersistentSheetController> _settingsSheetControllers = {};
   bool _settingsSheetVisible = false;
+  bool _updateRequested = false;
   final ValueNotifier<bool> _cameraEnabled = ValueNotifier(false);
   final ValueNotifier<double> _cameraAspectRatio = ValueNotifier(4 / 3);
   final ValueNotifier<bool> _detectFacesEnabled = ValueNotifier(true);
@@ -204,6 +206,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               previous.isChecking != current.isChecking),
           listener: (context, state) {
             _handlePermissionState(state);
+          },
+        ),
+        BlocListener<UpdateCubit, UpdateDownloadState>(
+          listenWhen: (previous, current) => previous.status != current.status,
+          listener: (context, state) {
+            _handleUpdateDownloadState(state);
           },
         ),
       ],
@@ -947,255 +955,260 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                       bool
                                     >(
                                       builder: (context, autoReconnectEnabled) {
-                                    return BlocBuilder<
-                                      CarouselSettingsCubit,
-                                      CarouselSettings
-                                    >(
-                                      builder: (context, carouselSettings) {
                                         return BlocBuilder<
-                                          FaceDetectionSettingsCubit,
-                                          FaceDetectionSettings
+                                          CarouselSettingsCubit,
+                                          CarouselSettings
                                         >(
-                                          builder: (context, faceSettings) {
-                                            return BlocSelector<
-                                              HomeCubit,
-                                              HomeState,
-                                              ({
-                                                double? volume,
-                                                HomeAudioDevice? audioDevice,
-                                                List<HomeConnectivity>?
-                                                connectivity,
-                                                String? wifiName,
-                                                String? carrierName,
-                                                List<HomeWifiNetwork>
-                                                wifiNetworks,
-                                                bool wifiLoading,
-                                                String? wifiError,
-                                                int? batteryLevel,
-                                                HomeBatteryState? batteryState,
-                                              })
+                                          builder: (context, carouselSettings) {
+                                            return BlocBuilder<
+                                              FaceDetectionSettingsCubit,
+                                              FaceDetectionSettings
                                             >(
-                                              selector: (state) => (
-                                                volume: state.volume,
-                                                audioDevice: state.audioDevice,
-                                                connectivity:
-                                                    state.connectivity,
-                                                wifiName: state.wifiName,
-                                                carrierName: state.carrierName,
-                                                wifiNetworks:
-                                                    state.wifiNetworks,
-                                                wifiLoading: state.wifiLoading,
-                                                wifiError: state.wifiError,
-                                                batteryLevel:
-                                                    state.batteryLevel,
-                                                batteryState:
-                                                    state.batteryState,
-                                              ),
-                                              builder: (context, data) {
-                                                return ValueListenableBuilder<
-                                                  bool
+                                              builder: (context, faceSettings) {
+                                                return BlocSelector<
+                                                  HomeCubit,
+                                                  HomeState,
+                                                  ({
+                                                    double? volume,
+                                                    HomeAudioDevice?
+                                                    audioDevice,
+                                                    List<HomeConnectivity>?
+                                                    connectivity,
+                                                    String? wifiName,
+                                                    String? carrierName,
+                                                    List<HomeWifiNetwork>
+                                                    wifiNetworks,
+                                                    bool wifiLoading,
+                                                    String? wifiError,
+                                                    int? batteryLevel,
+                                                    HomeBatteryState?
+                                                    batteryState,
+                                                  })
                                                 >(
-                                                  valueListenable:
-                                                      _cameraEnabled,
-                                                  builder: (context, cameraEnabled, _) {
+                                                  selector: (state) => (
+                                                    volume: state.volume,
+                                                    audioDevice:
+                                                        state.audioDevice,
+                                                    connectivity:
+                                                        state.connectivity,
+                                                    wifiName: state.wifiName,
+                                                    carrierName:
+                                                        state.carrierName,
+                                                    wifiNetworks:
+                                                        state.wifiNetworks,
+                                                    wifiLoading:
+                                                        state.wifiLoading,
+                                                    wifiError: state.wifiError,
+                                                    batteryLevel:
+                                                        state.batteryLevel,
+                                                    batteryState:
+                                                        state.batteryState,
+                                                  ),
+                                                  builder: (context, data) {
                                                     return ValueListenableBuilder<
-                                                      double
+                                                      bool
                                                     >(
                                                       valueListenable:
-                                                          _cameraAspectRatio,
-                                                      builder:
-                                                          (
-                                                            context,
-                                                            cameraAspectRatio,
-                                                            _,
-                                                          ) {
-                                                            return HomeSettingsSheet(
-                                                              volume:
-                                                                  data.volume,
-                                                              audioDevice: data
-                                                                  .audioDevice,
-                                                              connectivity: data
-                                                                  .connectivity,
-                                                              wifiName:
-                                                                  data.wifiName,
-                                                              carrierName: data
-                                                                  .carrierName,
-                                                              wifiNetworks: data
-                                                                  .wifiNetworks,
-                                                              wifiLoading: data
-                                                                  .wifiLoading,
-                                                              wifiError: data
-                                                                  .wifiError,
-                                                              batteryLevel: data
-                                                                  .batteryLevel,
-                                                              batteryState: data
-                                                                  .batteryState,
-                                                              onWifiRefresh:
-                                                                  _refreshWifiNetworks,
-                                                              onWifiSettings:
-                                                                  _openWifiSettings,
-                                                              onWifiSelect:
-                                                                  _openWifiPasswordSheet,
-                                                              onVolumeChanged:
-                                                                  _handleVolumeChanged,
-                                                              textScale:
-                                                                  textScale,
-                                                              onTextScaleChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        TextScaleCubit
-                                                                      >()
-                                                                      .setScale,
-                                                              cameraEnabled:
-                                                                  cameraEnabled,
-                                                              onCameraEnabledChanged:
-                                                                  _setCameraEnabled,
-                                                              cameraAspectRatio:
-                                                                  cameraAspectRatio,
-                                                              onCameraAspectChanged:
-                                                                  _setCameraAspectRatio,
-                                                              faceLandmarksEnabled:
-                                                                  faceSettings
-                                                                      .landmarksEnabled,
-                                                              faceMeshEnabled:
-                                                                  faceSettings
-                                                                      .meshEnabled,
-                                                              eyeTrackingEnabled:
-                                                                  faceSettings
-                                                                      .eyeTrackingEnabled,
-                                                              onFaceLandmarksChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        FaceDetectionSettingsCubit
-                                                                      >()
-                                                                      .setLandmarksEnabled,
-                                                              onFaceMeshChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        FaceDetectionSettingsCubit
-                                                                      >()
-                                                                      .setMeshEnabled,
-                                                              onEyeTrackingChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        FaceDetectionSettingsCubit
-                                                                      >()
-                                                                      .setEyeTrackingEnabled,
-                                                              themeMode:
-                                                                  themeMode,
-                                                              themePalette:
-                                                                  themePalette,
-                                                              onThemePaletteChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        ThemePaletteCubit
-                                                                      >()
-                                                                      .setPalette,
-                                                              onSetLight:
-                                                                  sheetContext
+                                                          _cameraEnabled,
+                                                      builder: (context, cameraEnabled, _) {
+                                                        return ValueListenableBuilder<
+                                                          double
+                                                        >(
+                                                          valueListenable:
+                                                              _cameraAspectRatio,
+                                                          builder:
+                                                              (
+                                                                context,
+                                                                cameraAspectRatio,
+                                                                _,
+                                                              ) {
+                                                                return HomeSettingsSheet(
+                                                                  volume: data
+                                                                      .volume,
+                                                                  audioDevice: data
+                                                                      .audioDevice,
+                                                                  connectivity:
+                                                                      data.connectivity,
+                                                                  wifiName: data
+                                                                      .wifiName,
+                                                                  carrierName: data
+                                                                      .carrierName,
+                                                                  wifiNetworks:
+                                                                      data.wifiNetworks,
+                                                                  wifiLoading: data
+                                                                      .wifiLoading,
+                                                                  wifiError: data
+                                                                      .wifiError,
+                                                                  batteryLevel:
+                                                                      data.batteryLevel,
+                                                                  batteryState:
+                                                                      data.batteryState,
+                                                                  onWifiRefresh:
+                                                                      _refreshWifiNetworks,
+                                                                  onWifiSettings:
+                                                                      _openWifiSettings,
+                                                                  onWifiSelect:
+                                                                      _openWifiPasswordSheet,
+                                                                  onVolumeChanged:
+                                                                      _handleVolumeChanged,
+                                                                  textScale:
+                                                                      textScale,
+                                                                  onTextScaleChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            TextScaleCubit
+                                                                          >()
+                                                                          .setScale,
+                                                                  cameraEnabled:
+                                                                      cameraEnabled,
+                                                                  onCameraEnabledChanged:
+                                                                      _setCameraEnabled,
+                                                                  cameraAspectRatio:
+                                                                      cameraAspectRatio,
+                                                                  onCameraAspectChanged:
+                                                                      _setCameraAspectRatio,
+                                                                  faceLandmarksEnabled:
+                                                                      faceSettings
+                                                                          .landmarksEnabled,
+                                                                  faceMeshEnabled:
+                                                                      faceSettings
+                                                                          .meshEnabled,
+                                                                  eyeTrackingEnabled:
+                                                                      faceSettings
+                                                                          .eyeTrackingEnabled,
+                                                                  onFaceLandmarksChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            FaceDetectionSettingsCubit
+                                                                          >()
+                                                                          .setLandmarksEnabled,
+                                                                  onFaceMeshChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            FaceDetectionSettingsCubit
+                                                                          >()
+                                                                          .setMeshEnabled,
+                                                                  onEyeTrackingChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            FaceDetectionSettingsCubit
+                                                                          >()
+                                                                          .setEyeTrackingEnabled,
+                                                                  themeMode:
+                                                                      themeMode,
+                                                                  themePalette:
+                                                                      themePalette,
+                                                                  onThemePaletteChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            ThemePaletteCubit
+                                                                          >()
+                                                                          .setPalette,
+                                                                  onSetLight: sheetContext
                                                                       .read<
                                                                         ThemeModeCubit
                                                                       >()
                                                                       .setLight,
-                                                              onSetDark:
-                                                                  sheetContext
+                                                                  onSetDark: sheetContext
                                                                       .read<
                                                                         ThemeModeCubit
                                                                       >()
                                                                       .setDark,
-                                                              listeningMode:
-                                                                  listeningMode,
-                                                              onListeningModeChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        ListeningModeCubit
-                                                                      >()
-                                                                      .setMode,
-                                                              textSendMode:
-                                                                  textSendMode,
-                                                              onTextSendModeChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        TextSendModeCubit
-                                                                      >()
-                                                                      .setMode,
-                                                              connectGreeting:
-                                                                  connectGreeting,
-                                                              onConnectGreetingChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        ConnectGreetingCubit
-                                                                      >()
-                                                                      .setGreeting,
-                                                              autoReconnectEnabled:
-                                                                  autoReconnectEnabled,
-                                                              onAutoReconnectChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        AutoReconnectCubit
-                                                                      >()
-                                                                      .setEnabled,
-                                                              carouselHeight:
-                                                                  carouselSettings
-                                                                      .height,
-                                                              carouselAutoPlay:
-                                                                  carouselSettings
-                                                                      .autoPlay,
-                                                              carouselAutoPlayInterval:
-                                                                  carouselSettings
-                                                                      .autoPlayInterval,
-                                                              carouselAnimationDuration:
-                                                                  carouselSettings
-                                                                      .animationDuration,
-                                                              carouselViewportFraction:
-                                                                  carouselSettings
-                                                                      .viewportFraction,
-                                                              carouselEnlargeCenter:
-                                                                  carouselSettings
-                                                                      .enlargeCenter,
-                                                              onCarouselHeightChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setHeight,
-                                                              onCarouselAutoPlayChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setAutoPlay,
-                                                              onCarouselIntervalChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setInterval,
-                                                              onCarouselAnimationChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setAnimationDuration,
-                                                              onCarouselViewportChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setViewportFraction,
-                                                              onCarouselEnlargeChanged:
-                                                                  sheetContext
-                                                                      .read<
-                                                                        CarouselSettingsCubit
-                                                                      >()
-                                                                      .setEnlargeCenter,
-                                                              onOpenMcpFlow: () =>
-                                                                  _openMcpFlow(
-                                                                    controller,
-                                                                    sheetContext,
-                                                                  ),
-                                                            );
-                                                          },
+                                                                  listeningMode:
+                                                                      listeningMode,
+                                                                  onListeningModeChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            ListeningModeCubit
+                                                                          >()
+                                                                          .setMode,
+                                                                  textSendMode:
+                                                                      textSendMode,
+                                                                  onTextSendModeChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            TextSendModeCubit
+                                                                          >()
+                                                                          .setMode,
+                                                                  connectGreeting:
+                                                                      connectGreeting,
+                                                                  onConnectGreetingChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            ConnectGreetingCubit
+                                                                          >()
+                                                                          .setGreeting,
+                                                                  autoReconnectEnabled:
+                                                                      autoReconnectEnabled,
+                                                                  onAutoReconnectChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            AutoReconnectCubit
+                                                                          >()
+                                                                          .setEnabled,
+                                                                  carouselHeight:
+                                                                      carouselSettings
+                                                                          .height,
+                                                                  carouselAutoPlay:
+                                                                      carouselSettings
+                                                                          .autoPlay,
+                                                                  carouselAutoPlayInterval:
+                                                                      carouselSettings
+                                                                          .autoPlayInterval,
+                                                                  carouselAnimationDuration:
+                                                                      carouselSettings
+                                                                          .animationDuration,
+                                                                  carouselViewportFraction:
+                                                                      carouselSettings
+                                                                          .viewportFraction,
+                                                                  carouselEnlargeCenter:
+                                                                      carouselSettings
+                                                                          .enlargeCenter,
+                                                                  onCarouselHeightChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setHeight,
+                                                                  onCarouselAutoPlayChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setAutoPlay,
+                                                                  onCarouselIntervalChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setInterval,
+                                                                  onCarouselAnimationChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setAnimationDuration,
+                                                                  onCarouselViewportChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setViewportFraction,
+                                                                  onCarouselEnlargeChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            CarouselSettingsCubit
+                                                                          >()
+                                                                          .setEnlargeCenter,
+                                                                  onOpenMcpFlow: () =>
+                                                                      _openMcpFlow(
+                                                                        controller,
+                                                                        sheetContext,
+                                                                      ),
+                                                                );
+                                                              },
+                                                        );
+                                                      },
                                                     );
                                                   },
                                                 );
@@ -1203,8 +1216,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             );
                                           },
                                         );
-                                      },
-                                    );
                                       },
                                     );
                                   },
@@ -1286,7 +1297,66 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       title: const Text('Đang kiểm tra cập nhật'),
       description: const Text('Vui lòng chờ một chút.'),
     );
-    unawaited(GithubUpdater().checkAndUpdateIfNeeded());
+    _updateRequested = true;
+    if (mounted) {
+      context.go(Routes.update);
+    }
+    unawaited(context.read<UpdateCubit>().checkForUpdates());
+  }
+
+  void _handleUpdateDownloadState(UpdateDownloadState state) {
+    if (!mounted || !_updateRequested) {
+      return;
+    }
+    if (state.status == UpdateDownloadStatus.failed) {
+      _updateRequested = false;
+      final error = state.error?.trim();
+      showFToast(
+        context: context,
+        alignment: FToastAlignment.topRight,
+        duration: const Duration(seconds: 2),
+        icon: const Icon(FIcons.triangleAlert),
+        title: const Text('Cập nhật thất bại'),
+        description: Text(
+          error?.isNotEmpty == true ? error! : 'Tải xuống lỗi.',
+        ),
+      );
+    } else if (state.status == UpdateDownloadStatus.completed) {
+      _updateRequested = false;
+      showFToast(
+        context: context,
+        alignment: FToastAlignment.topRight,
+        duration: const Duration(seconds: 2),
+        icon: const Icon(Icons.system_update_alt_rounded),
+        title: const Text('Đã tải xong'),
+        description: const Text('Đang chuẩn bị cài đặt.'),
+      );
+    } else if (state.status == UpdateDownloadStatus.updateAvailable) {
+      _updateRequested = false;
+      final version = state.latestVersion?.trim();
+      showFToast(
+        context: context,
+        alignment: FToastAlignment.topRight,
+        duration: const Duration(seconds: 2),
+        icon: const Icon(Icons.system_update_alt_rounded),
+        title: const Text('Có bản cập nhật mới'),
+        description: Text(
+          version?.isNotEmpty == true
+              ? 'Phiên bản $version đã sẵn sàng.'
+              : 'Đã có bản cập nhật mới.',
+        ),
+      );
+    } else if (state.status == UpdateDownloadStatus.idle && _updateRequested) {
+      _updateRequested = false;
+      showFToast(
+        context: context,
+        alignment: FToastAlignment.topRight,
+        duration: const Duration(seconds: 2),
+        icon: const Icon(Icons.system_update_alt_rounded),
+        title: const Text('Không có cập nhật'),
+        description: const Text('Bạn đang dùng phiên bản mới nhất.'),
+      );
+    }
   }
 
   bool _shouldAutoConnect(HomeState state) =>

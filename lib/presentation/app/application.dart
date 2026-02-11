@@ -17,6 +17,7 @@ import '../../presentation/app/face_detection_settings_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
 import '../../presentation/app/theme_palette_cubit.dart';
 import '../../presentation/app/text_scale_cubit.dart';
+import '../../presentation/app/update_cubit.dart';
 import '../../system/permissions/permission_notifier.dart';
 import '../../theme/theme_palette.dart';
 
@@ -78,6 +79,7 @@ class _ApplicationState extends State<Application> {
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),
         BlocProvider<HomeCubit>.value(value: getIt<HomeCubit>()),
+        BlocProvider<UpdateCubit>.value(value: getIt<UpdateCubit>()),
       ],
       child: BlocBuilder<ThemePaletteCubit, AppThemePalette>(
         builder: (context, palette) {
@@ -92,7 +94,8 @@ class _ApplicationState extends State<Application> {
                     theme: lightTheme.toApproximateMaterialTheme(),
                     darkTheme: darkTheme.toApproximateMaterialTheme(),
                     themeMode: themeMode,
-                    localizationsDelegates: FLocalizations.localizationsDelegates,
+                    localizationsDelegates:
+                        FLocalizations.localizationsDelegates,
                     supportedLocales: FLocalizations.supportedLocales,
                     builder: (context, child) {
                       final brightness = _resolveBrightness(context, themeMode);

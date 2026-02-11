@@ -41,11 +41,12 @@ class AppConfig {
   static const String githubAssetNameContains = '';
   static const String githubAssetExtension = '.apk';
   static const int githubUpdateCheckTimeoutMs = 20000;
+  static const int githubDownloadTimeoutMs = 120000;
   static const String githubToken = String.fromEnvironment(
     'GITHUB_TOKEN',
     defaultValue: '',
   );
   // update.json URL (raw) - used to check latest version info.
   static const String githubUpdateJsonUrl =
-      'https://raw.githubusercontent.com/baolongdev/voicebot/main/update.json';
+      'https://raw.githubusercontent.com/baolongdev/voicebot/refs/heads/main/update.json';
 }

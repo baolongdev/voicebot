@@ -155,8 +155,7 @@ class _BottomCarousel extends StatefulWidget {
 
 class _BottomCarouselState extends State<_BottomCarousel>
     with TickerProviderStateMixin {
-  final Map<String, double> _aspectRatios = <String, double>{};
-  final Set<String> _pendingAspectRatio = <String>{};
+  static const double _carouselAspectRatio = 16 / 9;
   int _currentIndex = 0;
 
   @override
@@ -164,12 +163,6 @@ class _BottomCarouselState extends State<_BottomCarousel>
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.images, widget.images)) {
       _currentIndex = 0;
-      _pendingAspectRatio.removeWhere(
-        (url) => !widget.images.contains(url),
-      );
-      _aspectRatios.removeWhere(
-        (url, _) => !widget.images.contains(url),
-      );
     }
   }
 
@@ -190,7 +183,6 @@ class _BottomCarouselState extends State<_BottomCarousel>
               itemCount: widget.images.length,
               itemBuilder: (context, index, _) {
                 final imageUrl = widget.images[index];
-                _ensureAspectRatio(imageUrl);
                 return GestureDetector(
                   onTap: () => _openImagePreview(context, imageUrl),
                   child: Container(
@@ -215,8 +207,9 @@ class _BottomCarouselState extends State<_BottomCarousel>
                             child: Text(
                               'Hình ảnh lỗi',
                               style: context.theme.typography.sm.copyWith(
-                                color:
-                                    widget.palette.controlForeground(context),
+                                color: widget.palette.controlForeground(
+                                  context,
+                                ),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -229,8 +222,9 @@ class _BottomCarouselState extends State<_BottomCarousel>
                               child: Text(
                                 'Đang tải...',
                                 style: context.theme.typography.sm.copyWith(
-                                  color:
-                                      widget.palette.controlForeground(context),
+                                  color: widget.palette.controlForeground(
+                                    context,
+                                  ),
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -285,50 +279,15 @@ class _BottomCarouselState extends State<_BottomCarousel>
   }
 
   double _resolveCarouselHeight(double width) {
-    if (widget.images.isEmpty || width <= 0) {
+    if (width <= 0) {
       return widget.height;
     }
-    final safeIndex = _currentIndex.clamp(0, widget.images.length - 1);
-    final url = widget.images[safeIndex];
-    final ratio = _aspectRatios[url];
-    if (ratio == null || ratio <= 0) {
-      return widget.height;
-    }
-    final computed = width / ratio;
+    final computed = width / _carouselAspectRatio;
     if (!computed.isFinite || computed <= 0) {
       return widget.height;
     }
-    return computed;
-  }
-
-  void _ensureAspectRatio(String url) {
-    if (_aspectRatios.containsKey(url) || _pendingAspectRatio.contains(url)) {
-      return;
-    }
-    _pendingAspectRatio.add(url);
-    final provider = NetworkImage(url);
-    final stream = provider.resolve(const ImageConfiguration());
-    late final ImageStreamListener listener;
-    listener = ImageStreamListener(
-      (info, _) {
-        final width = info.image.width.toDouble();
-        final height = info.image.height.toDouble();
-        if (width > 0 && height > 0) {
-          _aspectRatios[url] = width / height;
-        }
-        _pendingAspectRatio.remove(url);
-        stream.removeListener(listener);
-        if (!mounted) {
-          return;
-        }
-        setState(() {});
-      },
-        onError: (_, _) {
-          _pendingAspectRatio.remove(url);
-          stream.removeListener(listener);
-        },
-    );
-    stream.addListener(listener);
+    // Keep the user-tunable height as upper bound while enforcing stable ratio.
+    return computed > widget.height ? widget.height : computed;
   }
 }
 

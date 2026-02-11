@@ -1,4 +1,12 @@
 ## 2026-02-11
+- Refactored update flow to use `UpdateCubit` and unified status handling across Home and Update pages.
+- Hardened auto-update version gating to download only when versionCode/semantic version is truly newer.
+- Enforced `self.guard.blocked_phrase_check` before every user text send and blocked unsafe prompts at source.
+- Improved related-image UX: show explicit "no image" state when MCP returns no match for image-intent queries.
+- Optimized incoming audio decode/playback pipeline to reduce lag by cutting unnecessary copies and buffering overhead.
+- Standardized related-image tile sizing to fixed 16:9 presets (213x120, fallback 160x90 on narrow screens).
+
+## 2026-02-11
 - Added update.json-based GitHub update check and APK install flow with direct download and FileProvider setup.
 - Added update check button in home header and wired manual update trigger.
 - Added Android method channel to install APK and best-effort real MAC lookup (fallbacks retained).

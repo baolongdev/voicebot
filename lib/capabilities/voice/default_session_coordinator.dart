@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -48,7 +49,8 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   StreamSubscription<Uint8List>? _encodeSubscription;
   StreamController<Uint8List>? _opusInputController;
 
-  final BytesBuilder _playbackBuffer = BytesBuilder(copy: false);
+  final ListQueue<Uint8List> _playbackPcmQueue = ListQueue<Uint8List>();
+  int _playbackQueuedBytes = 0;
   int _playbackFrameBytes = 0;
   int _playbackMinBytes = 0;
   bool _playbackStarted = false;
@@ -97,8 +99,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     }
     _suppressPlayback = suppressed;
     if (suppressed) {
-      _playbackBuffer.clear();
-      _playbackStarted = false;
+      _resetPlaybackBuffer();
       _audioOutput.resetBuffer();
     }
     AppLogger.event(
@@ -138,8 +139,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _isSpeaking = false;
     _suppressPlayback = false;
     _speakingEpoch += 1;
-    _playbackBuffer.clear();
-    _playbackStarted = false;
+    _resetPlaybackBuffer();
     _sentAudioFrames = 0;
     _receivedAudioFrames = 0;
     _emitIncomingLevel(0);
@@ -291,7 +291,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
             2) ~/
         1000;
     _playbackMinBytes = _playbackFrameBytes * 3;
-    _playbackStarted = false;
+    _resetPlaybackBuffer();
     await _audioOutput.start(
       sampleRate: playbackSampleRate,
       channels: AudioConfig.channels,
@@ -303,7 +303,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _decodeSubscription?.cancel();
     _decodeSubscription = null;
     _opusInputController?.close();
-    _opusInputController = StreamController<Uint8List>();
+    _opusInputController = StreamController<Uint8List>(sync: true);
     try {
       _decodeSubscription = _opusInputController!.stream
           .cast<Uint8List?>()
@@ -332,7 +332,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
     final pcmStream = _audioInput.start().map((pcm) {
-      _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm));
+      _emitOutgoingLevelFromPcm(pcm);
       return pcm;
     });
     try {
@@ -459,7 +459,9 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (_suppressPlayback) {
       return;
     }
-    _audioController.add(data);
+    if (_audioController.hasListener) {
+      _audioController.add(data);
+    }
     if (data.isEmpty || _opusInputController == null) {
       return;
     }
@@ -475,7 +477,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
         level: 'D',
       );
     }
-    _opusInputController!.add(Uint8List.fromList(data));
+    _opusInputController!.add(data);
   }
 
   void _handleError(String error) {
@@ -530,30 +532,57 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   void _enqueuePcmForPlayback(Uint8List pcm) {
-    _emitIncomingLevel(_estimateLevelFromPcmChunk(pcm));
+    _emitIncomingLevelFromPcm(pcm);
     if (_playbackFrameBytes <= 0) {
       return;
     }
-    _playbackBuffer.add(pcm);
-    var buffer = _playbackBuffer.takeBytes();
-    if (!_playbackStarted && buffer.length < _playbackMinBytes) {
-      _playbackBuffer.add(buffer);
+    _playbackPcmQueue.addLast(pcm);
+    _playbackQueuedBytes += pcm.length;
+    if (!_playbackStarted && _playbackQueuedBytes < _playbackMinBytes) {
       return;
     }
     _playbackStarted = true;
-    var offset = 0;
-    while (buffer.length - offset >= _playbackFrameBytes) {
-      final frame = Uint8List.sublistView(
-        buffer,
-        offset,
-        offset + _playbackFrameBytes,
-      );
-      _audioOutput.enqueue(Uint8List.fromList(frame));
-      offset += _playbackFrameBytes;
+    while (_playbackQueuedBytes >= _playbackFrameBytes) {
+      final frame = _takePlaybackFrame();
+      if (frame == null) {
+        break;
+      }
+      _audioOutput.enqueue(frame);
     }
-    if (offset < buffer.length) {
-      _playbackBuffer.add(Uint8List.sublistView(buffer, offset));
+  }
+
+  Uint8List? _takePlaybackFrame() {
+    if (_playbackQueuedBytes < _playbackFrameBytes ||
+        _playbackPcmQueue.isEmpty) {
+      return null;
     }
+    final first = _playbackPcmQueue.first;
+    if (first.length == _playbackFrameBytes) {
+      _playbackPcmQueue.removeFirst();
+      _playbackQueuedBytes -= first.length;
+      return first;
+    }
+
+    final frame = Uint8List(_playbackFrameBytes);
+    var written = 0;
+    while (written < _playbackFrameBytes && _playbackPcmQueue.isNotEmpty) {
+      final chunk = _playbackPcmQueue.first;
+      final needed = _playbackFrameBytes - written;
+      if (chunk.length <= needed) {
+        frame.setRange(written, written + chunk.length, chunk);
+        written += chunk.length;
+        _playbackQueuedBytes -= chunk.length;
+        _playbackPcmQueue.removeFirst();
+        continue;
+      }
+      frame.setRange(written, written + needed, chunk);
+      final remain = Uint8List.sublistView(chunk, needed);
+      _playbackPcmQueue.removeFirst();
+      _playbackPcmQueue.addFirst(remain);
+      _playbackQueuedBytes -= needed;
+      written += needed;
+    }
+    return frame;
   }
 
   double _estimateLevelFromPcmChunk(List<int> bytes) {
@@ -598,5 +627,33 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     }
     _lastOutgoingLevelMs = now;
     _outgoingLevelController.add(level);
+  }
+
+  void _emitIncomingLevelFromPcm(Uint8List pcm) {
+    if (!_incomingLevelController.hasListener) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastIncomingLevelMs < 80) {
+      return;
+    }
+    _emitIncomingLevel(_estimateLevelFromPcmChunk(pcm));
+  }
+
+  void _emitOutgoingLevelFromPcm(Uint8List pcm) {
+    if (!_outgoingLevelController.hasListener) {
+      return;
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastOutgoingLevelMs < 80) {
+      return;
+    }
+    _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm));
+  }
+
+  void _resetPlaybackBuffer() {
+    _playbackPcmQueue.clear();
+    _playbackQueuedBytes = 0;
+    _playbackStarted = false;
   }
 }
