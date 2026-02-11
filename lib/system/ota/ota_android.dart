@@ -27,4 +27,9 @@ class OtaAndroidPlatform implements OtaPlatform {
   Future<String?> getDeviceId() async {
     return _channel.invokeMethod<String>('getDeviceId');
   }
+
+  @override
+  Future<String?> getMacAddress() async {
+    return _channel.invokeMethod<String>('getMacAddress');
+  }
 }

@@ -43,6 +43,7 @@ import '../widgets/home/home_header.dart';
 import '../widgets/home/home_settings_sheet.dart';
 import '../widgets/home/wifi_password_sheet.dart';
 import '../../routing/routes.dart';
+import '../../system/update/github_updater.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -292,6 +293,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                 now: data.now,
                                 onOpenSettings: () =>
                                     _openSettingsSheet(context),
+                                onCheckUpdate: _checkForUpdates,
                               );
                             },
                           ),
@@ -1273,6 +1275,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_shouldAutoConnect(state)) {
       _startFaceCountdown();
     }
+  }
+
+  void _checkForUpdates() {
+    showFToast(
+      context: context,
+      alignment: FToastAlignment.topRight,
+      duration: const Duration(seconds: 1),
+      icon: const Icon(Icons.system_update_alt_rounded),
+      title: const Text('Đang kiểm tra cập nhật'),
+      description: const Text('Vui lòng chờ một chút.'),
+    );
+    unawaited(GithubUpdater().checkAndUpdateIfNeeded());
   }
 
   bool _shouldAutoConnect(HomeState state) =>

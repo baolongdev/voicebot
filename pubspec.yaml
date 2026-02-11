@@ -46,6 +46,7 @@ dependencies:
   face_detection_tflite: ^4.4.1
   image: ^4.2.0
   mime: ^2.0.0
+  package_info_plus: ^8.0.2
 
 dev_dependencies:
   flutter_test:

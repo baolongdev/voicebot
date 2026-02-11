@@ -272,10 +272,33 @@ class OtaClient {
     return buffer.toString();
   }
 
+  bool _isInvalidMac(String macAddress) {
+    final normalized = _normalizeMac(macAddress);
+    return normalized == '02:00:00:00:00:00' ||
+        normalized == '00:00:00:00:00:00';
+  }
+
   Future<_DeviceIdentity> _loadOrCreateIdentity() async {
     const macKey = 'ota_device_mac';
     const uuidKey = 'ota_device_uuid';
+    final platformMac = await _platform.getMacAddress();
     final deviceId = await _platform.getDeviceId();
+    if (platformMac != null &&
+        platformMac.isNotEmpty &&
+        !_isInvalidMac(platformMac)) {
+      final normalizedMac = _normalizeMac(platformMac);
+      final uuid = (deviceId != null && deviceId.isNotEmpty)
+          ? _uuidFromDeviceId(deviceId)
+          : _uuidFromDeviceId(normalizedMac);
+      final identity = _DeviceIdentity(
+        macAddress: normalizedMac,
+        uuid: uuid,
+      );
+      await _storage.write(key: macKey, value: normalizedMac);
+      await _storage.write(key: uuidKey, value: uuid);
+      _syncDeviceInfo(identity);
+      return identity;
+    }
     if (deviceId != null && deviceId.isNotEmpty) {
       final identity = _DeviceIdentity(
         macAddress: _macFromDeviceId(deviceId),
@@ -295,8 +318,8 @@ class OtaClient {
       return identity;
     }
 
-    final macAddress = _normalizeMac(DummyDataGenerator.generateMacAddress());
     final uuid = _generateUuidV4(Random());
+    final macAddress = _normalizeMac(_macFromDeviceId(uuid));
     await _storage.write(key: macKey, value: macAddress);
     await _storage.write(key: uuidKey, value: uuid);
     final identity = _DeviceIdentity(macAddress: macAddress, uuid: uuid);

@@ -10,6 +10,7 @@ jobs:
   build-android:
     name: Build Android
     runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +44,7 @@ jobs:
   build-windows:
     name: Build Windows EXE
     runs-on: windows-latest
+    if: github.actor != 'github-actions[bot]'
     steps:
       - uses: actions/checkout@v4
 
@@ -74,6 +76,7 @@ jobs:
     name: Publish Release Artifacts
     needs: [build-android, build-windows]
     runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
     permissions:
       contents: write
     steps:
@@ -88,6 +91,8 @@ jobs:
           base=${version%%+*}
           tag="v${base}+${GITHUB_RUN_NUMBER}"
           echo "tag=$tag" >> $GITHUB_OUTPUT
+          build=${version##*+}
+          echo "build=$build" >> $GITHUB_OUTPUT
 
       - name: Create and push tag
         run: |
@@ -112,6 +117,34 @@ jobs:
         run: |
           cd dist/windows
           zip -r ../windows-release.zip .
+
+      - name: Update update.json and push
+        run: |
+          RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          BASE=${VERSION%%+*}
+          BUILD=${VERSION##*+}
+          COMMIT_MESSAGE=$(git log -1 --pretty=%s)
+          cat > update.json << EOF
+          {
+            "latestVersion": "${BASE}",
+            "latestVersionCode": ${BUILD},
+            "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/${{ steps.tag.outputs.tag }}/app-release.apk",
+            "releaseNotes": "Update to version ${BASE}",
+            "commitMessage": "${COMMIT_MESSAGE}",
+            "mandatory": false,
+            "releasedAt": "${RELEASE_DATE}"
+          }
+          EOF
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add update.json
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update to version ${BASE}"
+            git push origin main
+          else
+            echo "No update.json changes"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

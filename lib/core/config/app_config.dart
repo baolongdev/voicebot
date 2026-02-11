@@ -33,4 +33,19 @@ class AppConfig {
 
   // Timeout for local web-host calls used by chat related-images lookup.
   static const int chatRelatedImagesRequestTimeoutMs = 2500;
+
+  // GitHub auto-update configuration (Android).
+  static const bool githubAutoUpdateEnabled = true;
+  static const String githubOwner = 'baolongdev';
+  static const String githubRepo = 'voicebot';
+  static const String githubAssetNameContains = '';
+  static const String githubAssetExtension = '.apk';
+  static const int githubUpdateCheckTimeoutMs = 20000;
+  static const String githubToken = String.fromEnvironment(
+    'GITHUB_TOKEN',
+    defaultValue: '',
+  );
+  // update.json URL (raw) - used to check latest version info.
+  static const String githubUpdateJsonUrl =
+      'https://raw.githubusercontent.com/baolongdev/voicebot/main/update.json';
 }

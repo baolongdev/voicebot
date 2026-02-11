@@ -1,3 +1,9 @@
+## 2026-02-11
+- Added update.json-based GitHub update check and APK install flow with direct download and FileProvider setup.
+- Added update check button in home header and wired manual update trigger.
+- Added Android method channel to install APK and best-effort real MAC lookup (fallbacks retained).
+- Updated release workflow to generate and push update.json alongside GitHub releases.
+
 ## 2026-02-09
 - add auto-reconnect setting with persisted toggle and retry backoff on disconnect/failed connect
 - reorganize settings sections (new Chat section) and wire auto-reconnect into settings UI and DI

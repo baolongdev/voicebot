@@ -10,10 +10,12 @@ class HomeHeader extends StatelessWidget {
     super.key,
     required this.now,
     required this.onOpenSettings,
+    required this.onCheckUpdate,
   });
 
   final DateTime now;
   final VoidCallback onOpenSettings;
+  final VoidCallback onCheckUpdate;
 
   @override
   Widget build(BuildContext context) {
@@ -59,24 +61,48 @@ class HomeHeader extends StatelessWidget {
               Expanded(
                 child: Align(
                   alignment: Alignment.centerRight,
-                  child: FButton.icon(
-                    onPress: onOpenSettings,
-                    style: FButtonStyle.ghost(
-                      (style) => style.copyWith(
-                        contentStyle: (content) => content.copyWith(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: ThemeTokens.spaceXs,
-                            vertical: 2,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FButton.icon(
+                        onPress: onCheckUpdate,
+                        style: FButtonStyle.ghost(
+                          (style) => style.copyWith(
+                            contentStyle: (content) => content.copyWith(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: ThemeTokens.spaceXs,
+                                vertical: 2,
+                              ),
+                            ),
                           ),
                         ),
+                        child: Icon(
+                          Icons.system_update_alt_rounded,
+                          size: scaledIconSize(context, 18),
+                          color: headerTextColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    child: Icon(
-                      FIcons.bolt,
-                      size: scaledIconSize(context, 18),
-                      color: headerTextColor,
-                      fontWeight: FontWeight.w700,
-                    ),
+                      FButton.icon(
+                        onPress: onOpenSettings,
+                        style: FButtonStyle.ghost(
+                          (style) => style.copyWith(
+                            contentStyle: (content) => content.copyWith(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: ThemeTokens.spaceXs,
+                                vertical: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        child: Icon(
+                          FIcons.bolt,
+                          size: scaledIconSize(context, 18),
+                          color: headerTextColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

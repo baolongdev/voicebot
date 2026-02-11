@@ -10,6 +10,7 @@ import 'package:voicebot/presentation/app/application.dart';
 import 'package:voicebot/core/config/app_config.dart';
 import 'package:voicebot/core/opus/opus_loader.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
+import 'package:voicebot/system/update/github_updater.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +30,7 @@ Future<void> main() async {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
   await configureDependencies();
+  _kickoffGithubUpdateCheck();
   runApp(const Application());
 }
 
@@ -40,4 +42,12 @@ Future<void> _initOpus() async {
     // Keep app alive; audio will be disabled if libopus is missing.
     AppLogger.log('Opus', 'init failed: $e', level: 'E');
   }
+}
+
+void _kickoffGithubUpdateCheck() {
+  if (!AppConfig.githubAutoUpdateEnabled) {
+    return;
+  }
+  final updater = GithubUpdater();
+  updater.checkAndUpdateIfNeeded();
 }

@@ -5,6 +5,7 @@ abstract class OtaPlatform {
   Future<void> installFirmware(File file);
   Future<void> restartApp();
   Future<String?> getDeviceId();
+  Future<String?> getMacAddress();
 }
 
 class OtaNoopPlatform implements OtaPlatform {
@@ -22,6 +23,11 @@ class OtaNoopPlatform implements OtaPlatform {
 
   @override
   Future<String?> getDeviceId() async {
+    return null;
+  }
+
+  @override
+  Future<String?> getMacAddress() async {
     return null;
   }
 }
