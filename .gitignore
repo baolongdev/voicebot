@@ -43,6 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+/upload-keystore.jks
 
 # Local Gradle cache from vendored flutter_sound plugin
 /third_party/flutter_sound/android/.gradle/
