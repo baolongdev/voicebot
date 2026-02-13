@@ -1,9 +1,9 @@
 {
-  "latestVersion": "1.0.1",
+  "latestVersion": "1.0.2",
   "latestVersionCode": 0,
-  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.1/app-release.apk",
-  "releaseNotes": "Update to version 1.0.1",
-  "commitMessage": "fix: resolve release keystore path from android root",
+  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.2/app-release.apk",
+  "releaseNotes": "Update to version 1.0.2",
+  "commitMessage": "test update",
   "mandatory": false,
-  "releasedAt": "2026-02-13T09:11:46Z"
+  "releasedAt": "2026-02-13T09:29:15Z"
 }
