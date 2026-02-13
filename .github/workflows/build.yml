@@ -29,6 +29,39 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
+      - name: Validate Android signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          missing=0
+          for key in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Prepare Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
+          cat > android/key.properties << EOF
+          storePassword=$ANDROID_STORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../upload-keystore.jks
+          EOF
+
       - name: Accept Android licenses
         run: yes | flutter doctor --android-licenses
 
@@ -89,17 +122,26 @@ jobs:
         run: |
           version=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           base=${version%%+*}
-          tag="v${base}+${GITHUB_RUN_NUMBER}"
+          tag="v${base}"
           echo "tag=$tag" >> $GITHUB_OUTPUT
-          build=${version##*+}
+          if [[ "$version" == *"+"* ]]; then
+            build=${version##*+}
+          else
+            build=0
+          fi
           echo "build=$build" >> $GITHUB_OUTPUT
 
       - name: Create and push tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ steps.tag.outputs.tag }}"
-          git push origin "${{ steps.tag.outputs.tag }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q .; then
+            echo "Tag ${TAG} already exists on origin. Reusing."
+          else
+            git tag "${TAG}"
+            git push origin "${TAG}"
+          fi
 
       - name: Download APK
         uses: actions/download-artifact@v4
@@ -123,7 +165,11 @@ jobs:
           RELEASE_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}')
           BASE=${VERSION%%+*}
-          BUILD=${VERSION##*+}
+          if [[ "$VERSION" == *"+"* ]]; then
+            BUILD=${VERSION##*+}
+          else
+            BUILD=0
+          fi
           COMMIT_MESSAGE=$(git log -1 --pretty=%s)
           cat > update.json << EOF
           {

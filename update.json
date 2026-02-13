@@ -1,9 +1,9 @@
 {
   "latestVersion": "1.0.1",
-  "latestVersionCode": 1.0.1,
+  "latestVersionCode": 0,
   "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.1+22/app-release.apk",
   "releaseNotes": "Update to version 1.0.1",
-  "commitMessage": "chore: update to version 1.0.1",
+  "commitMessage": "Build Release Artifacts",
   "mandatory": false,
-  "releasedAt": "2026-02-13T08:16:32Z"
+  "releasedAt": "2026-02-13T08:16:40Z"
 }

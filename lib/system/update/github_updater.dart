@@ -660,25 +660,20 @@ bool _isNewerVersion(PackageInfo info, _UpdateInfo update) {
   final currentVersion = _normalizeTagToVersion(info.version.trim());
   final updateVersion = _normalizeTagToVersion(update.latestVersion.trim());
 
-  if (updateCode > 0) {
-    if (currentCode > 0 && updateCode > currentCode) {
-      return true;
-    }
-    if (currentCode > 0 && updateCode < currentCode) {
-      return false;
-    }
-    if (currentCode > 0 && updateCode == currentCode) {
-      return _compareSemver(updateVersion, currentVersion) > 0;
-    }
-    if (currentCode == 0) {
-      return true;
-    }
-  }
-
   if (updateVersion.isEmpty || currentVersion.isEmpty) {
     return false;
   }
-  return _compareSemver(updateVersion, currentVersion) > 0;
+  final versionCompare = _compareSemver(updateVersion, currentVersion);
+  if (versionCompare > 0) {
+    return true;
+  }
+  if (versionCompare < 0) {
+    return false;
+  }
+  if (updateCode > 0 && currentCode > 0) {
+    return updateCode > currentCode;
+  }
+  return false;
 }
 
 Map<String, dynamic>? _pickApkAsset(List<Map<String, dynamic>> assets) {
