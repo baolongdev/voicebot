@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter/services.dart';
+// import 'package:flutter/services.dart';
 
 import '../../capabilities/protocol/protocol.dart';
 import '../../capabilities/web_host/local_web_host_service.dart';
@@ -74,7 +74,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool? _cameraEnabledBeforeSpeak;
   bool? _detectFacesBeforeSpeak;
   bool _showConnectButton = true;
-  static const MethodChannel _kioskChannel = MethodChannel('voicebot/kiosk');
+  // static const MethodChannel _kioskChannel = MethodChannel('voicebot/kiosk');
   final ValueNotifier<double?> _faceConnectProgress = ValueNotifier<double?>(
     null,
   );
@@ -89,6 +89,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // unawaited(_enterKioskMode());
     final hostStart = LocalWebHostService.instance.start(preferredPort: 8080);
     unawaited(hostStart);
     context.read<HomeCubit>().initialize();
@@ -247,11 +248,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await context.read<ChatCubit>().stopListening();
   }
 
-  Future<void> _enterKioskMode() async {
-    try {
-      await _kioskChannel.invokeMethod<void>('startLockTask');
-    } catch (_) {}
-  }
+  // Future<void> _enterKioskMode() async {
+  //   try {
+  //     await _kioskChannel.invokeMethod<void>('startLockTask');
+  //   } catch (_) {}
+  // }
 
   void _handleSpeakingState(bool isSpeaking) {
     if (isSpeaking) {
@@ -1212,8 +1213,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                         controller,
                                                                         sheetContext,
                                                                       ),
-                                                                  onEnterKioskMode:
-                                                                      _enterKioskMode,
+                                                                  // onEnterKioskMode:
+                                                                  //     _enterKioskMode,
                                                                 );
                                                               },
                                                         );

@@ -68,7 +68,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onCarouselViewportChanged,
     required this.onCarouselEnlargeChanged,
     required this.onOpenMcpFlow,
-    required this.onEnterKioskMode,
+    // required this.onEnterKioskMode,
   });
 
   final double? volume;
@@ -123,7 +123,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<double> onCarouselViewportChanged;
   final ValueChanged<bool> onCarouselEnlargeChanged;
   final VoidCallback onOpenMcpFlow;
-  final VoidCallback onEnterKioskMode;
+  // final VoidCallback onEnterKioskMode;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
@@ -1638,31 +1638,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
                   children: [
-                    FItem(
-                      prefix: Icon(Icons.lock_outline, size: iconSize),
-                      title: const Text('Chế độ khóa ứng dụng'),
-                      details: Text(
-                        'Dùng cho kiosk: chặn Home/Recents. Cần device owner.',
-                        style: context.theme.typography.sm.copyWith(
-                          color: context.theme.colors.mutedForeground,
-                        ),
-                      ),
-                    ),
-                    FItem.raw(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: ThemeTokens.spaceSm,
-                        ),
-                        child: SizedBox(
-                          width: double.infinity,
-                          height: ThemeTokens.buttonHeight,
-                          child: FButton(
-                            onPress: widget.onEnterKioskMode,
-                            child: const Text('Bật khóa ứng dụng'),
-                          ),
-                        ),
-                      ),
-                    ),
+                    // Kiosk controls temporarily disabled.
                   ],
                 ),
               ),

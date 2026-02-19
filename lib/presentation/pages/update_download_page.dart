@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+// import 'package:flutter/services.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
@@ -18,11 +19,20 @@ class UpdateDownloadPage extends StatefulWidget {
 }
 
 class _UpdateDownloadPageState extends State<UpdateDownloadPage> {
+  // static const MethodChannel _kioskChannel = MethodChannel('voicebot/kiosk');
+
   @override
   void initState() {
     super.initState();
+    // _exitKioskMode();
     context.read<UpdateCubit>().checkForUpdates();
   }
+
+  // Future<void> _exitKioskMode() async {
+  //   try {
+  //     await _kioskChannel.invokeMethod<void>('stopLockTask');
+  //   } catch (_) {}
+  // }
 
   @override
   Widget build(BuildContext context) {
