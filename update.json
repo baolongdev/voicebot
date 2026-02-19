@@ -1,9 +1,9 @@
 {
-  "latestVersion": "1.0.2",
+  "latestVersion": "1.0.3",
   "latestVersionCode": 0,
-  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.2/app-release.apk",
-  "releaseNotes": "Update to version 1.0.2",
-  "commitMessage": "test update",
+  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.3/app-release.apk",
+  "releaseNotes": "Update to version 1.0.3",
+  "commitMessage": "feat: kiosk mode and ui updates",
   "mandatory": false,
-  "releasedAt": "2026-02-13T09:29:15Z"
+  "releasedAt": "2026-02-19T07:28:02Z"
 }
