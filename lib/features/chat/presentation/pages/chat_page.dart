@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
+import '../../../../core/theme/forui/theme_tokens.dart';
 import '../../application/state/chat_cubit.dart';
 import '../../application/state/chat_state.dart';
 import '../../domain/entities/chat_message.dart';
@@ -55,8 +56,10 @@ class _ChatPageState extends State<ChatPage> {
         child: Column(
           children: [
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: ThemeTokens.spaceMd,
+                vertical: ThemeTokens.spaceSm,
+              ),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -73,8 +76,8 @@ class _ChatPageState extends State<ChatPage> {
                 }
                 return Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16.0,
-                    vertical: 8.0,
+                    horizontal: ThemeTokens.spaceMd,
+                    vertical: ThemeTokens.spaceSm,
                   ),
                   child: Text(
                     error,

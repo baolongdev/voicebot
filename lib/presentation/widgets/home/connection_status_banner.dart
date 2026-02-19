@@ -154,7 +154,7 @@ class _ConnectionStatusBannerState extends State<ConnectionStatusBanner> {
         children: [
           FBadge(style: badgeStyle.call, child: Text(label)),
           if (warningBadge != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: ThemeTokens.spaceXs),
             warningBadge,
           ],
         ],

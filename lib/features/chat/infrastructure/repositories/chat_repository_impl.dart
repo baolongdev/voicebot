@@ -950,8 +950,9 @@ YEU_CAU_TRA_LOI:
 - Neu chua khop truc tiep, goi y nguoi dung chon san pham/chu de gan nhat trong danh sach tai lieu.
 - Khong tra loi "khong tim thay thong tin" khi danh sach tai lieu khong rong.
 - Neu da co du lieu lien quan, phai bat dau cau dau tien bang: "Theo du lieu noi bo cua Chanh Viet,".
+- Bo qua cac cau tra loi chung chung truoc do neu chua dua tren du lieu noi bo.
 ''';
-      await _textService.sendTextRequest(assistPrompt, useTextType: true);
+      await _textService.sendTextRequest(assistPrompt, useTextType: false);
       AppLogger.event(
         'ChatRepository',
         'knowledge_voice_context_sent',

@@ -40,7 +40,7 @@ class WifiPasswordSheet extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: context.theme.colors.background,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(ThemeTokens.radiusLg),
               border: Border.all(color: context.theme.colors.border),
             ),
             child: Padding(

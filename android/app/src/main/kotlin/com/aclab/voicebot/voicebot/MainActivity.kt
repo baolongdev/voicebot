@@ -1,13 +1,20 @@
 package com.aclab.voicebot.voicebot
 
 import android.Manifest
+import android.app.ActivityManager
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
-import android.util.Log
 import android.provider.Settings
+import android.util.Log
+import android.view.WindowManager
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,15 +31,34 @@ class MainActivity : FlutterActivity() {
     private val audioChannelName = "voicebot/audio_player"
     private val otaChannelName = "voicebot/ota"
     private val updateChannelName = "voicebot/update"
+    private val kioskChannelName = "voicebot/kiosk"
+    private var backCallback: OnBackInvokedCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         Log.i("XIAOZHI", "[XIAOZHI] MainActivity onCreate")
         val granted = ContextCompat.checkSelfPermission(
             this,
             Manifest.permission.RECORD_AUDIO,
         ) == PackageManager.PERMISSION_GRANTED
         Log.i("XIAOZHI", "[XIAOZHI] Mic permission granted=$granted")
+        setupKioskIfPossible()
+        registerBackCallback()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        setupKioskIfPossible()
+    }
+
+    override fun onBackPressed() {
+        // Disabled: prevent exiting via back button.
+    }
+
+    override fun onDestroy() {
+        unregisterBackCallback()
+        super.onDestroy()
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -129,6 +155,23 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, kioskChannelName)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "startLockTask" -> {
+                        setupKioskIfPossible()
+                        tryStartLockTask()
+                        result.success(null)
+                    }
+                    "stopLockTask" -> {
+                        try {
+                            stopLockTask()
+                        } catch (_: Exception) {}
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun initAudioTrack(sampleRate: Int, channels: Int, bufferSize: Int) {
@@ -187,5 +230,57 @@ class MainActivity : FlutterActivity() {
             Log.w("XIAOZHI", "Failed to read MAC address", e)
         }
         return null
+    }
+
+    private fun registerBackCallback() {
+        if (Build.VERSION.SDK_INT < 33 || backCallback != null) {
+            return
+        }
+        backCallback = OnBackInvokedCallback {
+            // Disabled: prevent exiting via back gesture.
+        }
+        onBackInvokedDispatcher.registerOnBackInvokedCallback(
+            OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+            backCallback!!
+        )
+    }
+
+    private fun unregisterBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) {
+            return
+        }
+        val callback = backCallback ?: return
+        onBackInvokedDispatcher.unregisterOnBackInvokedCallback(callback)
+        backCallback = null
+    }
+
+    private fun setupKioskIfPossible() {
+        val dpm = getSystemService(DevicePolicyManager::class.java) ?: return
+        val admin = ComponentName(this, KioskDeviceAdminReceiver::class.java)
+        if (dpm.isDeviceOwnerApp(packageName)) {
+            dpm.setLockTaskPackages(admin, arrayOf(packageName))
+        }
+        if (dpm.isLockTaskPermitted(packageName)) {
+            tryStartLockTask()
+        }
+    }
+
+    private fun tryStartLockTask() {
+        try {
+            if (!isInLockTaskMode()) {
+                startLockTask()
+                Log.i("XIAOZHI", "[XIAOZHI] Lock task started")
+            }
+        } catch (e: Exception) {
+            Log.w("XIAOZHI", "[XIAOZHI] Lock task failed: ${e.message}")
+        }
+    }
+
+    private fun isInLockTaskMode(): Boolean {
+        if (Build.VERSION.SDK_INT < 23) {
+            return false
+        }
+        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        return am.lockTaskModeState != ActivityManager.LOCK_TASK_MODE_NONE
     }
 }

@@ -238,7 +238,7 @@ class _DebugPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return FCard(
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(ThemeTokens.spaceMd),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -246,7 +246,7 @@ class _DebugPanel extends StatelessWidget {
               'Dữ liệu gửi',
               style: context.theme.typography.base,
             ),
-            const SizedBox(height: 8.0),
+            const SizedBox(height: ThemeTokens.spaceSm),
             _InfoRow(label: 'Loại', value: formData.serverType.name),
             _InfoRow(
               label: 'WebSocket',
@@ -261,12 +261,12 @@ class _DebugPanel extends StatelessWidget {
               label: 'Truyền tải',
               value: _transportType(formData),
             ),
-            const SizedBox(height: 12.0),
+            const SizedBox(height: ThemeTokens.spaceMd),
             Text(
               'Trạng thái',
               style: context.theme.typography.base,
             ),
-            const SizedBox(height: 8.0),
+            const SizedBox(height: ThemeTokens.spaceSm),
             _InfoRow(
               label: 'UI',
               value: uiState.status.name,
@@ -277,12 +277,12 @@ class _DebugPanel extends StatelessWidget {
                 value: uiState.message!,
               ),
             if (validationErrors.isNotEmpty) ...[
-              const SizedBox(height: 12.0),
+              const SizedBox(height: ThemeTokens.spaceMd),
               Text(
                 'Lỗi kiểm tra',
                 style: context.theme.typography.base,
               ),
-              const SizedBox(height: 8.0),
+              const SizedBox(height: ThemeTokens.spaceSm),
               ...validationErrors.entries.map(
                 (entry) => _InfoRow(
                   label: entry.key,
@@ -290,12 +290,12 @@ class _DebugPanel extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 12.0),
+            const SizedBox(height: ThemeTokens.spaceMd),
             Text(
               'Kết quả trả về',
               style: context.theme.typography.base,
             ),
-            const SizedBox(height: 8.0),
+            const SizedBox(height: ThemeTokens.spaceSm),
             ..._resultLines(lastResult).map(
               (line) => _InfoRow(label: line.$1, value: line.$2),
             ),
@@ -348,7 +348,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2.0),
+      padding: const EdgeInsets.symmetric(vertical: ThemeTokens.spaceXs),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

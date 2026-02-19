@@ -68,6 +68,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onCarouselViewportChanged,
     required this.onCarouselEnlargeChanged,
     required this.onOpenMcpFlow,
+    required this.onEnterKioskMode,
   });
 
   final double? volume;
@@ -122,6 +123,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<double> onCarouselViewportChanged;
   final ValueChanged<bool> onCarouselEnlargeChanged;
   final VoidCallback onOpenMcpFlow;
+  final VoidCallback onEnterKioskMode;
 
   @override
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
@@ -129,13 +131,11 @@ class HomeSettingsSheet extends StatefulWidget {
 
 enum _SettingsSection {
   connectivity,
-  chat,
   audio,
+  chat,
   camera,
-  appearance,
-  text,
-  carousel,
-  mcp,
+  display,
+  advanced,
 }
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet>
@@ -230,13 +230,11 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _carouselEnlargeLocal = widget.carouselEnlargeCenter;
     _sectionExpanded = {
       _SettingsSection.connectivity: false,
-      _SettingsSection.chat: false,
       _SettingsSection.audio: false,
+      _SettingsSection.chat: false,
       _SettingsSection.camera: false,
-      _SettingsSection.appearance: false,
-      _SettingsSection.text: false,
-      _SettingsSection.carousel: false,
-      _SettingsSection.mcp: false,
+      _SettingsSection.display: false,
+      _SettingsSection.advanced: false,
     };
     _sectionControllers = {
       for (final section in _SettingsSection.values)
@@ -626,7 +624,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
               ),
               const SizedBox(height: 2),
               Text(
-                'Kết nối, trò chuyện, âm thanh, camera, giao diện',
+                'Kết nối, trò chuyện, âm thanh, camera, hiển thị, nâng cao',
                 style: context.theme.typography.sm.copyWith(
                   color: context.theme.colors.mutedForeground,
                 ),
@@ -705,6 +703,50 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                         style: context.theme.typography.base.copyWith(
                           fontWeight: FontWeight.w700,
                           color: context.theme.colors.foreground,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: ThemeTokens.spaceMd),
+              sectionHeader('Âm thanh', _SettingsSection.audio),
+              sectionBody(
+                _SettingsSection.audio,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                    FItem(
+                      prefix: Icon(audioIcon(_sliderValue), size: iconSize),
+                      title: const Text('Âm lượng'),
+                      suffix: Icon(volumeSuffixIcon, size: iconSize),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FSlider(
+                            control: FSliderControl.liftedContinuous(
+                              value: FSliderValue(max: _sliderValue),
+                              onChange: (next) {
+                                setState(() {
+                                  _sliderValue = next.max;
+                                });
+                                widget.onVolumeChanged?.call(next.max);
+                              },
+                            ),
+                            marks: const [
+                              FSliderMark(value: 0, label: Text('0%')),
+                              FSliderMark(value: 0.25, tick: false),
+                              FSliderMark(value: 0.5),
+                              FSliderMark(value: 0.75, tick: false),
+                              FSliderMark(value: 1, label: Text('100%')),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -840,50 +882,6 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                               });
                               widget.onConnectGreetingChanged(value.text);
                             },
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('Âm thanh', _SettingsSection.audio),
-              sectionBody(
-                _SettingsSection.audio,
-                FItemGroup(
-                  divider: FItemDivider.none,
-                  style: itemGroupStyle,
-                  children: [
-                    FItem(
-                      prefix: Icon(audioIcon(_sliderValue), size: iconSize),
-                      title: const Text('Âm lượng'),
-                      suffix: Icon(volumeSuffixIcon, size: iconSize),
-                    ),
-                    FItem.raw(
-                      child: Padding(
-                        padding: const EdgeInsets.only(
-                          bottom: ThemeTokens.spaceSm,
-                        ),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FSlider(
-                            control: FSliderControl.liftedContinuous(
-                              value: FSliderValue(max: _sliderValue),
-                              onChange: (next) {
-                                setState(() {
-                                  _sliderValue = next.max;
-                                });
-                                widget.onVolumeChanged?.call(next.max);
-                              },
-                            ),
-                            marks: const [
-                              FSliderMark(value: 0, label: Text('0%')),
-                              FSliderMark(value: 0.25, tick: false),
-                              FSliderMark(value: 0.5),
-                              FSliderMark(value: 0.75, tick: false),
-                              FSliderMark(value: 1, label: Text('100%')),
-                            ],
                           ),
                         ),
                       ),
@@ -1123,9 +1121,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('Giao diện', _SettingsSection.appearance),
+              sectionHeader('Hiển thị', _SettingsSection.display),
               sectionBody(
-                _SettingsSection.appearance,
+                _SettingsSection.display,
                 FItemGroup(
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
@@ -1216,10 +1214,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   ],
                 ),
               ),
-              const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('Cỡ chữ', _SettingsSection.text),
               sectionBody(
-                _SettingsSection.text,
+                _SettingsSection.display,
                 FItemGroup(
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
@@ -1281,10 +1277,8 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                   ],
                 ),
               ),
-              const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('Carousel', _SettingsSection.carousel),
               sectionBody(
-                _SettingsSection.carousel,
+                _SettingsSection.display,
                 FItemGroup(
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
@@ -1584,9 +1578,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                 ),
               ),
               const SizedBox(height: ThemeTokens.spaceMd),
-              sectionHeader('MCP', _SettingsSection.mcp),
+              sectionHeader('Nâng cao', _SettingsSection.advanced),
               sectionBody(
-                _SettingsSection.mcp,
+                _SettingsSection.advanced,
                 FItemGroup(
                   divider: FItemDivider.none,
                   style: itemGroupStyle,
@@ -1631,6 +1625,40 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                           child: FButton(
                             onPress: widget.onOpenMcpFlow,
                             child: const Text('Mở MCP Manager'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              sectionBody(
+                _SettingsSection.advanced,
+                FItemGroup(
+                  divider: FItemDivider.none,
+                  style: itemGroupStyle,
+                  children: [
+                    FItem(
+                      prefix: Icon(Icons.lock_outline, size: iconSize),
+                      title: const Text('Chế độ khóa ứng dụng'),
+                      details: Text(
+                        'Dùng cho kiosk: chặn Home/Recents. Cần device owner.',
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: widget.onEnterKioskMode,
+                            child: const Text('Bật khóa ứng dụng'),
                           ),
                         ),
                       ),

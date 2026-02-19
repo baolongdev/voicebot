@@ -67,6 +67,11 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   final Throttler _recvLogThrottle = Throttler(25000);
   int _lastIncomingLevelMs = 0;
   int _lastOutgoingLevelMs = 0;
+  static const int _levelEmitIntervalMs = 160;
+  static const int _levelSampleStride = 4;
+  static const int _levelSampleStrideSpeaking = 8;
+  static const int _levelEmitIntervalSpeakingMs = 260;
+  bool _playbackDrainScheduled = false;
 
   @override
   Stream<Map<String, dynamic>> get incomingJson => _jsonController.stream;
@@ -303,7 +308,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _decodeSubscription?.cancel();
     _decodeSubscription = null;
     _opusInputController?.close();
-    _opusInputController = StreamController<Uint8List>(sync: true);
+    _opusInputController = StreamController<Uint8List>();
     try {
       _decodeSubscription = _opusInputController!.stream
           .cast<Uint8List?>()
@@ -538,16 +543,49 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     }
     _playbackPcmQueue.addLast(pcm);
     _playbackQueuedBytes += pcm.length;
+    _schedulePlaybackDrain();
+  }
+
+  void _schedulePlaybackDrain() {
+    if (_playbackDrainScheduled) {
+      return;
+    }
+    _playbackDrainScheduled = true;
+    scheduleMicrotask(() {
+      _playbackDrainScheduled = false;
+      _drainPlayback();
+    });
+  }
+
+  void _drainPlayback() {
     if (!_playbackStarted && _playbackQueuedBytes < _playbackMinBytes) {
       return;
     }
     _playbackStarted = true;
+    if (Platform.isAndroid) {
+      _drainPlaybackAndroid();
+      return;
+    }
     while (_playbackQueuedBytes >= _playbackFrameBytes) {
       final frame = _takePlaybackFrame();
       if (frame == null) {
         break;
       }
       _audioOutput.enqueue(frame);
+    }
+  }
+
+  void _drainPlaybackAndroid() {
+    final targetChunkBytes = _playbackMinBytes;
+    while (_playbackQueuedBytes >= _playbackFrameBytes) {
+      final chunkSize = _playbackQueuedBytes >= targetChunkBytes
+          ? targetChunkBytes
+          : _playbackFrameBytes;
+      final chunk = _takePlaybackChunk(chunkSize);
+      if (chunk == null) {
+        break;
+      }
+      _audioOutput.enqueue(chunk);
     }
   }
 
@@ -585,7 +623,48 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     return frame;
   }
 
-  double _estimateLevelFromPcmChunk(List<int> bytes) {
+  Uint8List? _takePlaybackChunk(int bytes) {
+    if (_playbackQueuedBytes < bytes || _playbackPcmQueue.isEmpty) {
+      return null;
+    }
+    final first = _playbackPcmQueue.first;
+    if (first.length == bytes) {
+      _playbackPcmQueue.removeFirst();
+      _playbackQueuedBytes -= first.length;
+      return first;
+    }
+    if (first.length > bytes) {
+      final chunk = Uint8List.sublistView(first, 0, bytes);
+      final remain = Uint8List.sublistView(first, bytes);
+      _playbackPcmQueue.removeFirst();
+      _playbackPcmQueue.addFirst(remain);
+      _playbackQueuedBytes -= bytes;
+      return chunk;
+    }
+
+    final chunk = Uint8List(bytes);
+    var written = 0;
+    while (written < bytes && _playbackPcmQueue.isNotEmpty) {
+      final chunkSource = _playbackPcmQueue.first;
+      final needed = bytes - written;
+      if (chunkSource.length <= needed) {
+        chunk.setRange(written, written + chunkSource.length, chunkSource);
+        written += chunkSource.length;
+        _playbackQueuedBytes -= chunkSource.length;
+        _playbackPcmQueue.removeFirst();
+        continue;
+      }
+      chunk.setRange(written, written + needed, chunkSource);
+      final remain = Uint8List.sublistView(chunkSource, needed);
+      _playbackPcmQueue.removeFirst();
+      _playbackPcmQueue.addFirst(remain);
+      _playbackQueuedBytes -= needed;
+      written += needed;
+    }
+    return chunk;
+  }
+
+  double _estimateLevelFromPcmChunk(List<int> bytes, int stride) {
     if (bytes.isEmpty) {
       return 0;
     }
@@ -594,7 +673,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return 0;
     }
     var sumSquares = 0.0;
-    for (var i = 0; i < length; i += 2) {
+    for (var i = 0; i < length; i += 2 * stride) {
       final lo = bytes[i];
       final hi = bytes[i + 1];
       var sample = (hi << 8) | lo;
@@ -604,7 +683,8 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       final normalized = sample / 32768.0;
       sumSquares += normalized * normalized;
     }
-    final rms = math.sqrt(sumSquares / (length / 2));
+    final samples = (length / 2 / stride).floor().clamp(1, 1 << 30);
+    final rms = math.sqrt(sumSquares / samples);
     if (rms.isNaN || rms.isInfinite) {
       return 0;
     }
@@ -613,7 +693,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
   void _emitIncomingLevel(double level) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastIncomingLevelMs < 80) {
+    final minInterval = _isSpeaking
+        ? _levelEmitIntervalSpeakingMs
+        : _levelEmitIntervalMs;
+    if (now - _lastIncomingLevelMs < minInterval) {
       return;
     }
     _lastIncomingLevelMs = now;
@@ -622,7 +705,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
   void _emitOutgoingLevel(double level) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastOutgoingLevelMs < 80) {
+    if (now - _lastOutgoingLevelMs < _levelEmitIntervalMs) {
       return;
     }
     _lastOutgoingLevelMs = now;
@@ -630,14 +713,23 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   void _emitIncomingLevelFromPcm(Uint8List pcm) {
+    if (_isSpeaking) {
+      return;
+    }
     if (!_incomingLevelController.hasListener) {
       return;
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastIncomingLevelMs < 80) {
+    final minInterval = _isSpeaking
+        ? _levelEmitIntervalSpeakingMs
+        : _levelEmitIntervalMs;
+    if (now - _lastIncomingLevelMs < minInterval) {
       return;
     }
-    _emitIncomingLevel(_estimateLevelFromPcmChunk(pcm));
+    final stride = _isSpeaking
+        ? _levelSampleStrideSpeaking
+        : _levelSampleStride;
+    _emitIncomingLevel(_estimateLevelFromPcmChunk(pcm, stride));
   }
 
   void _emitOutgoingLevelFromPcm(Uint8List pcm) {
@@ -645,10 +737,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastOutgoingLevelMs < 80) {
+    if (now - _lastOutgoingLevelMs < _levelEmitIntervalMs) {
       return;
     }
-    _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm));
+    _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm, _levelSampleStride));
   }
 
   void _resetPlaybackBuffer() {

@@ -1,9 +1,12 @@
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import '../../../core/theme/forui/theme_tokens.dart';
+import '../../../features/chat/application/state/chat_cubit.dart';
+import '../../../features/chat/application/state/chat_state.dart';
 import 'connection_status_banner.dart';
 import 'emotion_palette.dart';
 import 'home_camera_overlay.dart';
@@ -12,7 +15,6 @@ class HomeContent extends StatelessWidget {
   const HomeContent({
     super.key,
     required this.palette,
-    required this.connectionData,
     required this.carouselImages,
     required this.cameraEnabled,
     required this.cameraAspectRatio,
@@ -28,10 +30,10 @@ class HomeContent extends StatelessWidget {
     required this.carouselAnimationDuration,
     required this.carouselViewportFraction,
     required this.carouselEnlargeCenter,
+    required this.hideCameraOverlay,
   });
 
   final EmotionPalette palette;
-  final ConnectionStatusData connectionData;
   final List<String> carouselImages;
   final bool cameraEnabled;
   final double cameraAspectRatio;
@@ -47,13 +49,14 @@ class HomeContent extends StatelessWidget {
   final Duration carouselAnimationDuration;
   final double carouselViewportFraction;
   final bool carouselEnlargeCenter;
+  final bool hideCameraOverlay;
 
   static const double audioActiveThreshold = 0.02;
   @override
   Widget build(BuildContext context) {
     final images = carouselImages;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(ThemeTokens.radiusSm),
       child: Container(
         width: double.infinity,
         color: palette.surface,
@@ -65,10 +68,21 @@ class HomeContent extends StatelessWidget {
                   child: Column(
                     children: [
                       const SizedBox(height: ThemeTokens.spaceSm),
-                      ConnectionStatusBanner(
-                        palette: palette,
-                        audioThreshold: audioActiveThreshold,
-                        data: connectionData,
+                      BlocSelector<ChatCubit, ChatState, ConnectionStatusData>(
+                        selector: (state) => ConnectionStatusData(
+                          status: state.status,
+                          isSpeaking: state.isSpeaking,
+                          outgoingLevel: state.outgoingLevel,
+                          error: state.connectionError,
+                          networkWarning: state.networkWarning,
+                        ),
+                        builder: (context, data) {
+                          return ConnectionStatusBanner(
+                            palette: palette,
+                            audioThreshold: audioActiveThreshold,
+                            data: data,
+                          );
+                        },
                       ),
                       const SizedBox(height: ThemeTokens.spaceSm),
                       Expanded(
@@ -108,17 +122,18 @@ class HomeContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                HomeCameraOverlay(
-                  areaSize: Size(constraints.maxWidth, constraints.maxHeight),
-                  enabled: cameraEnabled,
-                  onEnabledChanged: onCameraEnabledChanged,
-                  onFacePresenceChanged: onFacePresenceChanged,
-                  detectFacesEnabled: detectFacesEnabled,
-                  aspectRatio: cameraAspectRatio,
-                  faceLandmarksEnabled: faceLandmarksEnabled,
-                  faceMeshEnabled: faceMeshEnabled,
-                  eyeTrackingEnabled: eyeTrackingEnabled,
-                ),
+                if (!hideCameraOverlay)
+                  HomeCameraOverlay(
+                    areaSize: Size(constraints.maxWidth, constraints.maxHeight),
+                    enabled: cameraEnabled,
+                    onEnabledChanged: onCameraEnabledChanged,
+                    onFacePresenceChanged: onFacePresenceChanged,
+                    detectFacesEnabled: detectFacesEnabled,
+                    aspectRatio: cameraAspectRatio,
+                    faceLandmarksEnabled: faceLandmarksEnabled,
+                    faceMeshEnabled: faceMeshEnabled,
+                    eyeTrackingEnabled: eyeTrackingEnabled,
+                  ),
               ],
             );
           },
@@ -191,7 +206,9 @@ class _BottomCarouselState extends State<_BottomCarousel>
                     ),
                     decoration: BoxDecoration(
                       color: widget.palette.controlBackground(context),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(
+                        ThemeTokens.radiusLg,
+                      ),
                       border: Border.all(
                         color: widget.palette.controlBorder(context),
                       ),
@@ -200,27 +217,13 @@ class _BottomCarouselState extends State<_BottomCarousel>
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => Center(
-                            child: Text(
-                              'Hình ảnh lỗi',
-                              style: context.theme.typography.sm.copyWith(
-                                color: widget.palette.controlForeground(
-                                  context,
-                                ),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) {
-                              return child;
-                            }
-                            return Center(
+                        Positioned.fill(
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Center(
                               child: Text(
-                                'Đang tải...',
+                                'Hình ảnh lỗi',
                                 style: context.theme.typography.sm.copyWith(
                                   color: widget.palette.controlForeground(
                                     context,
@@ -228,8 +231,24 @@ class _BottomCarouselState extends State<_BottomCarousel>
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            );
-                          },
+                            ),
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) {
+                                return child;
+                              }
+                              return Center(
+                                child: Text(
+                                  'Đang tải...',
+                                  style: context.theme.typography.sm.copyWith(
+                                    color: widget.palette.controlForeground(
+                                      context,
+                                    ),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                         Container(
                           decoration: BoxDecoration(

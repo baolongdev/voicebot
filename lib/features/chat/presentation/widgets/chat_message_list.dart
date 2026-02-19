@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:forui/forui.dart';
 
 import '../../../../core/config/app_config.dart';
+import '../../../../core/theme/forui/theme_tokens.dart';
 import '../../domain/entities/chat_message.dart';
 import '../../domain/entities/related_chat_image.dart';
 
@@ -19,18 +20,40 @@ class ChatMessageList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (messages.isEmpty) {
       return Center(
-        child: Text(
-          'Chưa có tin nhắn',
-          style: context.theme.typography.base.copyWith(
-            color: context.theme.colors.muted,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              FIcons.messageCircle,
+              size: ThemeTokens.spaceLg,
+              color: context.theme.colors.muted,
+            ),
+            const SizedBox(height: ThemeTokens.spaceSm),
+            Text(
+              'Chưa có tin nhắn',
+              style: context.theme.typography.base.copyWith(
+                color: context.theme.colors.muted,
+              ),
+            ),
+            const SizedBox(height: ThemeTokens.spaceXs),
+            Text(
+              'Hãy bắt đầu trò chuyện để xem nội dung ở đây.',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.muted,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       );
     }
 
     return ListView.builder(
       controller: scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.symmetric(
+        horizontal: ThemeTokens.spaceMd,
+        vertical: ThemeTokens.spaceMd,
+      ),
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final message = messages[index];
@@ -65,12 +88,12 @@ class _MessageBubble extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 280),
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(ThemeTokens.spaceMd),
                 child: Text(message.text, style: context.theme.typography.base),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: ThemeTokens.spaceSm),
         ],
       ),
     );
@@ -114,7 +137,7 @@ class _RelatedImagesBubble extends StatelessWidget {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 320),
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(ThemeTokens.spaceSm),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
@@ -128,7 +151,7 @@ class _RelatedImagesBubble extends StatelessWidget {
                     ),
                     if (message.relatedQuery != null &&
                         message.relatedQuery!.trim().isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 4),
+                      const SizedBox(height: ThemeTokens.spaceXs),
                       Text(
                         'Theo truy vấn: ${message.relatedQuery}',
                         style: context.theme.typography.xs.copyWith(
@@ -136,7 +159,7 @@ class _RelatedImagesBubble extends StatelessWidget {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 10),
+                    const SizedBox(height: ThemeTokens.spaceSm),
                     if (images.isEmpty)
                       Text(
                         'MCP không tìm thấy ảnh phù hợp trong kho dữ liệu.',
@@ -146,8 +169,8 @@ class _RelatedImagesBubble extends StatelessWidget {
                       )
                     else
                       Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                        spacing: ThemeTokens.spaceSm,
+                        runSpacing: ThemeTokens.spaceSm,
                         children: images
                             .map((image) => _RelatedImageTile(image: image))
                             .toList(growable: false),
@@ -193,7 +216,7 @@ class _RelatedImageTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             ClipRRect(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
               child: Container(
                 color: context.theme.colors.background,
                 child: SizedBox(
@@ -230,7 +253,7 @@ class _RelatedImageTile extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: ThemeTokens.spaceXs),
             Text(
               image.fileName,
               maxLines: 1,
@@ -259,8 +282,11 @@ void _showImagePreview(BuildContext context, RelatedChatImage image) {
     context: context,
     builder: (context) {
       return Dialog(
-        insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
-        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.symmetric(
+          horizontal: ThemeTokens.spaceSm,
+          vertical: ThemeTokens.spaceLg,
+        ),
+        backgroundColor: context.theme.colors.background,
         child: Stack(
           children: <Widget>[
             Positioned.fill(
@@ -274,7 +300,7 @@ void _showImagePreview(BuildContext context, RelatedChatImage image) {
                     child: Text(
                       'Không tải được ảnh',
                       style: context.theme.typography.base.copyWith(
-                        color: Colors.white,
+                        color: context.theme.colors.foreground,
                       ),
                     ),
                   ),
@@ -282,8 +308,8 @@ void _showImagePreview(BuildContext context, RelatedChatImage image) {
               ),
             ),
             Positioned(
-              top: 12,
-              right: 12,
+              top: ThemeTokens.spaceSm,
+              right: ThemeTokens.spaceSm,
               child: FButton.icon(
                 onPress: () => Navigator.of(context).pop(),
                 child: const Icon(FIcons.x),

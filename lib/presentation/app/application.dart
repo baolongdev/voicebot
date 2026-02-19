@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter/foundation.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
@@ -103,7 +104,6 @@ class _ApplicationState extends State<Application> {
                         brightness,
                         palette,
                       );
-                      final topInset = MediaQuery.paddingOf(context).top;
                       final mediaQuery = MediaQuery.of(context);
                       final iconSize = 24 * textScale;
 
@@ -115,15 +115,9 @@ class _ApplicationState extends State<Application> {
                           data: IconThemeData(size: iconSize),
                           child: FAnimatedTheme(
                             data: theme,
-                            child: FToaster(
-                              style: (style) => style.copyWith(
-                                padding: EdgeInsets.fromLTRB(
-                                  16,
-                                  topInset + 24,
-                                  16,
-                                  16,
-                                ),
-                              ),
+                            child: WillPopScope(
+                              onWillPop: () async =>
+                                  defaultTargetPlatform != TargetPlatform.android,
                               child: child ?? const SizedBox.shrink(),
                             ),
                           ),

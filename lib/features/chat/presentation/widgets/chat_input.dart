@@ -21,7 +21,7 @@ class ChatInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return FCard(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(ThemeTokens.spaceMd),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
@@ -45,7 +45,7 @@ class ChatInput extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8.0),
+            const SizedBox(width: ThemeTokens.spaceSm),
             SizedBox(
               height: ThemeTokens.buttonHeight,
               child: FButton(

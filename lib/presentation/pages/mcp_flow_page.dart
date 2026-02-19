@@ -36,6 +36,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
 
   List<Map<String, dynamic>> _documents = <Map<String, dynamic>>[];
   List<Map<String, dynamic>> _searchResults = <Map<String, dynamic>>[];
+  bool _searchAttempted = false;
 
   @override
   void initState() {
@@ -297,6 +298,9 @@ class _McpFlowPageState extends State<McpFlowPage> {
         if (_searchResults.isNotEmpty) ...[
           const SizedBox(height: ThemeTokens.spaceMd),
           _SearchResults(results: _searchResults),
+        ] else if (_searchAttempted) ...[
+          const SizedBox(height: ThemeTokens.spaceMd),
+          _EmptySearchResult(query: _query),
         ],
         const SizedBox(height: ThemeTokens.spaceLg),
         Text(
@@ -380,6 +384,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
       }
       setState(() {
         _searchResults = rows;
+        _searchAttempted = true;
       });
     }, successMessage: 'Đã tìm kiếm dữ liệu.');
   }
@@ -393,6 +398,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
       setState(() {
         _documents = <Map<String, dynamic>>[];
         _searchResults = <Map<String, dynamic>>[];
+        _searchAttempted = false;
       });
     }, successMessage: 'Đã xoá toàn bộ tài liệu.');
   }
@@ -680,11 +686,29 @@ class _ToolList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tools.isEmpty) {
-      return Text(
-        'Chưa có công cụ.',
-        style: context.theme.typography.sm.copyWith(
-          color: context.theme.colors.mutedForeground,
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.build_outlined,
+            size: ThemeTokens.spaceLg,
+            color: context.theme.colors.mutedForeground,
+          ),
+          const SizedBox(height: ThemeTokens.spaceSm),
+          Text(
+            'Chưa có công cụ.',
+            style: context.theme.typography.sm.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: ThemeTokens.spaceXs),
+          Text(
+            'Hãy kiểm tra cấu hình MCP hoặc khởi động lại ứng dụng.',
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ],
       );
     }
 
@@ -767,11 +791,29 @@ class _DocumentList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (documents.isEmpty) {
-      return Text(
-        'Chưa có tài liệu nào.',
-        style: context.theme.typography.sm.copyWith(
-          color: context.theme.colors.mutedForeground,
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.folder_outlined,
+            size: ThemeTokens.spaceLg,
+            color: context.theme.colors.mutedForeground,
+          ),
+          const SizedBox(height: ThemeTokens.spaceSm),
+          Text(
+            'Chưa có tài liệu nào.',
+            style: context.theme.typography.sm.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: ThemeTokens.spaceXs),
+          Text(
+            'Tải lên file hoặc nhập nội dung để bắt đầu.',
+            style: context.theme.typography.xs.copyWith(
+              color: context.theme.colors.mutedForeground,
+            ),
+          ),
+        ],
       );
     }
     return Column(
@@ -870,6 +912,42 @@ class _SearchResults extends StatelessWidget {
           if (row != results.last) const SizedBox(height: ThemeTokens.spaceSm),
         ],
       ],
+    );
+  }
+}
+
+class _EmptySearchResult extends StatelessWidget {
+  const _EmptySearchResult({required this.query});
+
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = query.trim();
+    return FCard(
+      child: Padding(
+        padding: const EdgeInsets.all(ThemeTokens.spaceMd),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Không tìm thấy kết quả',
+              style: context.theme.typography.base.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: ThemeTokens.spaceXs),
+            Text(
+              normalized.isEmpty
+                  ? 'Hãy thử tìm với từ khóa cụ thể hơn.'
+                  : 'Không có dữ liệu khớp với "$normalized".',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

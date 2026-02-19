@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 
 import '../../capabilities/protocol/protocol.dart';
 import '../../capabilities/web_host/local_web_host_service.dart';
@@ -36,7 +37,6 @@ import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
 import '../../system/permissions/permission_state.dart';
-import '../widgets/home/connection_status_banner.dart';
 import '../widgets/home/emotion_palette.dart';
 import '../widgets/home/home_content.dart';
 import '../widgets/home/home_footer.dart';
@@ -63,12 +63,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _hasRequestedPermissionsOnce = false;
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
+  bool _headerMeasureScheduled = false;
   final Map<FLayout, FPersistentSheetController> _settingsSheetControllers = {};
   bool _settingsSheetVisible = false;
   bool _updateRequested = false;
   final ValueNotifier<bool> _cameraEnabled = ValueNotifier(false);
   final ValueNotifier<double> _cameraAspectRatio = ValueNotifier(4 / 3);
   final ValueNotifier<bool> _detectFacesEnabled = ValueNotifier(true);
+  final ValueNotifier<bool> _hideCameraOverlay = ValueNotifier(false);
+  bool? _cameraEnabledBeforeSpeak;
+  bool? _detectFacesBeforeSpeak;
+  bool _showConnectButton = true;
+  static const MethodChannel _kioskChannel = MethodChannel('voicebot/kiosk');
   final ValueNotifier<double?> _faceConnectProgress = ValueNotifier<double?>(
     null,
   );
@@ -110,6 +116,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _cameraEnabled.dispose();
     _cameraAspectRatio.dispose();
     _detectFacesEnabled.dispose();
+    _hideCameraOverlay.dispose();
     _faceConnectProgress.dispose();
     _faceConnectTimer?.cancel();
     _carouselHideTimer?.cancel();
@@ -158,6 +165,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           listenWhen: (previous, current) =>
               previous.isSpeaking != current.isSpeaking,
           listener: (context, state) {
+            _handleSpeakingState(state.isSpeaking);
             if (_wasSpeaking && !state.isSpeaking) {
               _playChime();
             }
@@ -189,14 +197,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             }
             final error = state.errorMessage;
             if (error != null && error.isNotEmpty) {
-              showFToast(
-                context: context,
-                alignment: FToastAlignment.topRight,
-                duration: const Duration(seconds: 1),
-                icon: const Icon(FIcons.triangleAlert),
-                title: const Text('Không thể kết nối'),
-                description: Text(error),
-              );
+              // Toast disabled.
             }
           },
         ),
@@ -220,6 +221,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _handleConnectChat() async {
+    if (_showConnectButton) {
+      setState(() {
+        _showConnectButton = false;
+      });
+    }
     final homeCubit = context.read<HomeCubit>();
     final permissionCubit = context.read<PermissionCubit>();
     if (AppConfig.permissionsEnabled) {
@@ -241,6 +247,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await context.read<ChatCubit>().stopListening();
   }
 
+  Future<void> _enterKioskMode() async {
+    try {
+      await _kioskChannel.invokeMethod<void>('startLockTask');
+    } catch (_) {}
+  }
+
+  void _handleSpeakingState(bool isSpeaking) {
+    if (isSpeaking) {
+      _hideCameraOverlay.value = true;
+      _cameraEnabledBeforeSpeak ??= _cameraEnabled.value;
+      _detectFacesBeforeSpeak ??= _detectFacesEnabled.value;
+      if (_cameraEnabled.value) {
+        _cameraEnabled.value = false;
+      }
+      if (_detectFacesEnabled.value) {
+        _detectFacesEnabled.value = false;
+      }
+      return;
+    }
+    final restoreCamera = _cameraEnabledBeforeSpeak;
+    final restoreDetect = _detectFacesBeforeSpeak;
+    _cameraEnabledBeforeSpeak = null;
+    _detectFacesBeforeSpeak = null;
+    _hideCameraOverlay.value = false;
+    if (restoreCamera != null && _cameraEnabled.value != restoreCamera) {
+      _cameraEnabled.value = restoreCamera;
+    }
+    if (restoreDetect != null && _detectFacesEnabled.value != restoreDetect) {
+      _detectFacesEnabled.value = restoreDetect;
+    }
+  }
+
   Future<void> _handleVolumeChanged(double value) async {
     await context.read<HomeCubit>().setVolume(value);
   }
@@ -259,12 +297,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               child: Column(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(ThemeTokens.radiusSm),
                     child: Container(
                       key: _headerKey,
                       width: double.infinity,
                       color: context.theme.brand.headerBackground,
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(ThemeTokens.spaceSm),
                       child:
                           BlocSelector<
                             HomeCubit,
@@ -308,38 +346,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     ),
                   ),
                   SizedBox(height: _headerSpacing()),
-                  BlocSelector<
-                    ChatCubit,
-                    ChatState,
-                    ({
-                      String? emotion,
-                      ChatConnectionStatus status,
-                      bool isSpeaking,
-                      double outgoing,
-                      String? error,
-                      bool networkWarning,
-                    })
-                  >(
-                    selector: (state) => (
-                      emotion: state.currentEmotion,
-                      status: state.status,
-                      isSpeaking: state.isSpeaking,
-                      outgoing: state.outgoingLevel,
-                      error: state.connectionError,
-                      networkWarning: state.networkWarning,
-                    ),
-                    builder: (context, data) {
-                      final palette = EmotionPalette.resolve(
-                        context,
-                        data.emotion,
-                      );
-                      final connectionData = ConnectionStatusData(
-                        status: data.status,
-                        isSpeaking: data.isSpeaking,
-                        outgoingLevel: data.outgoing,
-                        error: data.error,
-                        networkWarning: data.networkWarning,
-                      );
+                  BlocSelector<ChatCubit, ChatState, String?>(
+                    selector: (state) => state.currentEmotion,
+                    builder: (context, emotion) {
+                      final palette = EmotionPalette.resolve(context, emotion);
                       return Expanded(
                         child: BlocBuilder<CarouselSettingsCubit, CarouselSettings>(
                           builder: (context, carouselSettings) {
@@ -357,40 +367,51 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                         return ValueListenableBuilder<bool>(
                                           valueListenable: _detectFacesEnabled,
                                           builder: (context, detectFaces, _) {
-                                            return HomeContent(
-                                              palette: palette,
-                                              connectionData: connectionData,
-                                              carouselImages: _carouselImages,
-                                              cameraEnabled: cameraEnabled,
-                                              cameraAspectRatio:
-                                                  cameraAspectRatio,
-                                              onCameraEnabledChanged:
-                                                  _setCameraEnabled,
-                                              onFacePresenceChanged:
-                                                  _handleFacePresenceChanged,
-                                              detectFacesEnabled: detectFaces,
-                                              faceLandmarksEnabled:
-                                                  faceSettings.landmarksEnabled,
-                                              faceMeshEnabled:
-                                                  faceSettings.meshEnabled,
-                                              eyeTrackingEnabled: faceSettings
-                                                  .eyeTrackingEnabled,
-                                              carouselHeight:
-                                                  carouselSettings.height,
-                                              carouselAutoPlay:
-                                                  carouselSettings.autoPlay,
-                                              carouselAutoPlayInterval:
-                                                  carouselSettings
-                                                      .autoPlayInterval,
-                                              carouselAnimationDuration:
-                                                  carouselSettings
-                                                      .animationDuration,
-                                              carouselViewportFraction:
-                                                  carouselSettings
-                                                      .viewportFraction,
-                                              carouselEnlargeCenter:
-                                                  carouselSettings
-                                                      .enlargeCenter,
+                                            return ValueListenableBuilder<bool>(
+                                              valueListenable:
+                                                  _hideCameraOverlay,
+                                              builder: (context, hide, _) {
+                                                return HomeContent(
+                                                  palette: palette,
+                                                  carouselImages:
+                                                      _carouselImages,
+                                                  cameraEnabled: cameraEnabled,
+                                                  cameraAspectRatio:
+                                                      cameraAspectRatio,
+                                                  onCameraEnabledChanged:
+                                                      _setCameraEnabled,
+                                                  onFacePresenceChanged:
+                                                      _handleFacePresenceChanged,
+                                                  detectFacesEnabled:
+                                                      detectFaces,
+                                                  faceLandmarksEnabled:
+                                                      faceSettings
+                                                          .landmarksEnabled,
+                                                  faceMeshEnabled:
+                                                      faceSettings.meshEnabled,
+                                                  eyeTrackingEnabled:
+                                                      faceSettings
+                                                          .eyeTrackingEnabled,
+                                                  carouselHeight:
+                                                      carouselSettings.height,
+                                                  carouselAutoPlay:
+                                                      carouselSettings
+                                                          .autoPlay,
+                                                  carouselAutoPlayInterval:
+                                                      carouselSettings
+                                                          .autoPlayInterval,
+                                                  carouselAnimationDuration:
+                                                      carouselSettings
+                                                          .animationDuration,
+                                                  carouselViewportFraction:
+                                                      carouselSettings
+                                                          .viewportFraction,
+                                                  carouselEnlargeCenter:
+                                                      carouselSettings
+                                                          .enlargeCenter,
+                                                  hideCameraOverlay: hide,
+                                                );
+                                              },
                                             );
                                           },
                                         );
@@ -433,9 +454,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           ChatMessage? message,
                           int? ttsDurationMs,
                           String? ttsText,
-                          double incoming,
-                          double outgoing,
-                          bool isSpeaking,
                         })
                       >(
                         selector: (state) => (
@@ -443,9 +461,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                           message: _lastTranscriptMessage(state.messages),
                           ttsDurationMs: state.lastTtsDurationMs,
                           ttsText: state.lastTtsText,
-                          incoming: state.incomingLevel,
-                          outgoing: state.outgoingLevel,
-                          isSpeaking: state.isSpeaking,
                         ),
                         builder: (context, chatData) {
                           return BlocBuilder<ListeningModeCubit, ListeningMode>(
@@ -464,15 +479,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     onManualSend: _handleManualSend,
                                     isConnecting: homeData.isConnecting,
                                     isConnected: homeData.isConnected,
+                                    showConnectButton: _showConnectButton,
                                     listeningMode: listeningMode,
                                     currentEmotion: chatData.emotion,
                                     lastMessage: chatData.message,
                                     lastTtsDurationMs: chatData.ttsDurationMs,
                                     lastTtsText: chatData.ttsText,
                                     faceConnectProgress: progress,
-                                    incomingLevel: chatData.incoming,
-                                    outgoingLevel: chatData.outgoing,
-                                    isSpeaking: chatData.isSpeaking,
                                   );
                                 },
                               );
@@ -608,25 +621,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _showPermissionRequiredToast(PermissionState state) {
-    if (!mounted) {
-      return;
-    }
-    showFToast(
-      context: context,
-      alignment: FToastAlignment.topRight,
-      duration: const Duration(seconds: 2),
-      icon: const Icon(FIcons.shieldAlert),
-      title: const Text('Cần cấp quyền'),
-      description: Text(
-        state.hasPermanentlyDenied
-            ? 'Quyền đã bị từ chối vĩnh viễn. Vui lòng bật lại trong Cài đặt hệ thống.'
-            : 'Vui lòng cho phép quyền micro để tiếp tục trò chuyện.',
-      ),
-    );
+    // Toast disabled.
   }
 
   void _scheduleHeaderMeasure() {
+    if (_headerMeasureScheduled) {
+      return;
+    }
+    _headerMeasureScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasureScheduled = false;
       if (!mounted) {
         return;
       }
@@ -934,7 +938,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ),
           clipBehavior: Clip.antiAlias,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: ThemeTokens.spaceMd,
+              vertical: ThemeTokens.spaceSm,
+            ),
             child: BlocBuilder<ThemeModeCubit, ThemeMode>(
               builder: (context, themeMode) {
                 return BlocBuilder<ThemePaletteCubit, AppThemePalette>(
@@ -1205,6 +1212,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                         controller,
                                                                         sheetContext,
                                                                       ),
+                                                                  onEnterKioskMode:
+                                                                      _enterKioskMode,
                                                                 );
                                                               },
                                                         );
@@ -1289,14 +1298,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _checkForUpdates() {
-    showFToast(
-      context: context,
-      alignment: FToastAlignment.topRight,
-      duration: const Duration(seconds: 1),
-      icon: const Icon(Icons.system_update_alt_rounded),
-      title: const Text('Đang kiểm tra cập nhật'),
-      description: const Text('Vui lòng chờ một chút.'),
-    );
     _updateRequested = true;
     if (mounted) {
       context.go(Routes.update);
@@ -1310,52 +1311,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (state.status == UpdateDownloadStatus.failed) {
       _updateRequested = false;
-      final error = state.error?.trim();
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 2),
-        icon: const Icon(FIcons.triangleAlert),
-        title: const Text('Cập nhật thất bại'),
-        description: Text(
-          error?.isNotEmpty == true ? error! : 'Tải xuống lỗi.',
-        ),
-      );
     } else if (state.status == UpdateDownloadStatus.completed) {
       _updateRequested = false;
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 2),
-        icon: const Icon(Icons.system_update_alt_rounded),
-        title: const Text('Đã tải xong'),
-        description: const Text('Đang chuẩn bị cài đặt.'),
-      );
     } else if (state.status == UpdateDownloadStatus.updateAvailable) {
       _updateRequested = false;
-      final version = state.latestVersion?.trim();
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 2),
-        icon: const Icon(Icons.system_update_alt_rounded),
-        title: const Text('Có bản cập nhật mới'),
-        description: Text(
-          version?.isNotEmpty == true
-              ? 'Phiên bản $version đã sẵn sàng.'
-              : 'Đã có bản cập nhật mới.',
-        ),
-      );
     } else if (state.status == UpdateDownloadStatus.idle && _updateRequested) {
       _updateRequested = false;
-      showFToast(
-        context: context,
-        alignment: FToastAlignment.topRight,
-        duration: const Duration(seconds: 2),
-        icon: const Icon(Icons.system_update_alt_rounded),
-        title: const Text('Không có cập nhật'),
-        description: const Text('Bạn đang dùng phiên bản mới nhất.'),
-      );
     }
   }
 

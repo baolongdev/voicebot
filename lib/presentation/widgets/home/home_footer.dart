@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 
 import '../../../capabilities/protocol/protocol.dart';
 import '../../../core/system/ota/model/ota_result.dart';
 import '../../../core/theme/forui/theme_tokens.dart';
+import '../../../features/chat/application/state/chat_cubit.dart';
+import '../../../features/chat/application/state/chat_state.dart';
 import '../../../features/chat/domain/entities/chat_message.dart';
 import '../../../presentation/widgets/audio_wave_indicator.dart';
 import '../../../theme/theme_extensions.dart';
@@ -22,15 +25,13 @@ class HomeFooter extends StatelessWidget {
     required this.onManualSend,
     required this.isConnecting,
     required this.isConnected,
+    required this.showConnectButton,
     required this.listeningMode,
     required this.currentEmotion,
     required this.lastMessage,
     required this.lastTtsDurationMs,
     required this.lastTtsText,
     required this.faceConnectProgress,
-    required this.incomingLevel,
-    required this.outgoingLevel,
-    required this.isSpeaking,
   });
 
   final Activation? activation;
@@ -41,15 +42,13 @@ class HomeFooter extends StatelessWidget {
   final VoidCallback onManualSend;
   final bool isConnecting;
   final bool isConnected;
+  final bool showConnectButton;
   final ListeningMode listeningMode;
   final String? currentEmotion;
   final ChatMessage? lastMessage;
   final int? lastTtsDurationMs;
   final String? lastTtsText;
   final double? faceConnectProgress;
-  final double incomingLevel;
-  final double outgoingLevel;
-  final bool isSpeaking;
 
   static const double _audioActiveThreshold = 0.02;
 
@@ -79,6 +78,8 @@ class HomeFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final transcriptHeight = (screenHeight * 0.16).clamp(96.0, 200.0);
     final headerBackground = context.theme.brand.headerBackground;
     final headerForeground = context.theme.brand.headerForeground;
     final palette = EmotionPalette.resolve(context, currentEmotion);
@@ -126,15 +127,25 @@ class HomeFooter extends StatelessWidget {
             _TranscriptPanel(
               message: lastTranscript,
               faceConnectProgress: faceConnectProgress,
+              height: transcriptHeight,
             ),
           ],
           const SizedBox(height: ThemeTokens.spaceSm),
-          _AudioLevelBar(
-            incomingLevel: incomingLevel,
-            outgoingLevel: outgoingLevel,
-            isSpeaking: isSpeaking,
-            isConnected: isConnected,
-            threshold: _audioActiveThreshold,
+          BlocSelector<ChatCubit, ChatState, ({double incoming, double outgoing, bool isSpeaking})>(
+            selector: (state) => (
+              incoming: state.incomingLevel,
+              outgoing: state.outgoingLevel,
+              isSpeaking: state.isSpeaking,
+            ),
+            builder: (context, levels) {
+              return _AudioLevelBar(
+                incomingLevel: levels.incoming,
+                outgoingLevel: levels.outgoing,
+                isSpeaking: levels.isSpeaking,
+                isConnected: isConnected,
+                threshold: _audioActiveThreshold,
+              );
+            },
           ),
           const SizedBox(height: ThemeTokens.spaceSm),
           Align(
@@ -154,71 +165,72 @@ class HomeFooter extends StatelessWidget {
                   child: Stack(
                     alignment: Alignment.center,
                     children: [
-                      SizedBox(
-                        width: connectWidth,
-                        height: ThemeTokens.buttonHeight,
-                        child: FButton(
-                          onPress: isConnected
-                              ? onDisconnect
-                              : isConnecting
-                              ? null
-                              : onConnect,
-                          style: isConnected
-                              ? FButtonStyle.secondary(
-                                  (style) => style.copyWith(
-                                    contentStyle: (content) => content.copyWith(
-                                      textStyle: content.textStyle.map(
-                                        (style) => style.copyWith(
-                                          fontWeight: FontWeight.w700,
+                      if (showConnectButton)
+                        SizedBox(
+                          width: connectWidth,
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: isConnected
+                                ? onDisconnect
+                                : isConnecting
+                                ? null
+                                : onConnect,
+                            style: isConnected
+                                ? FButtonStyle.secondary(
+                                    (style) => style.copyWith(
+                                      contentStyle: (content) => content.copyWith(
+                                        textStyle: content.textStyle.map(
+                                          (style) => style.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal:
+                                              ThemeTokens.buttonPaddingHorizontal,
+                                          vertical:
+                                              ThemeTokens.buttonPaddingVertical,
                                         ),
                                       ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal:
-                                            ThemeTokens.buttonPaddingHorizontal,
-                                        vertical:
-                                            ThemeTokens.buttonPaddingVertical,
-                                      ),
                                     ),
-                                  ),
-                                )
-                              : FButtonStyle.primary(
-                                  (style) =>
-                                      FButtonStyle.inherit(
-                                        colors: context.theme.colors,
-                                        typography: context.theme.typography,
-                                        style: context.theme.style,
-                                        color: headerBackground,
-                                        foregroundColor: headerForeground,
-                                      ).copyWith(
-                                        contentStyle: (content) =>
-                                            content.copyWith(
-                                              textStyle: content.textStyle.map(
-                                                (style) => style.copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                ),
-                                              ),
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: ThemeTokens
-                                                        .buttonPaddingHorizontal,
-                                                    vertical: ThemeTokens
-                                                        .buttonPaddingVertical,
+                                  )
+                                : FButtonStyle.primary(
+                                    (style) =>
+                                        FButtonStyle.inherit(
+                                          colors: context.theme.colors,
+                                          typography: context.theme.typography,
+                                          style: context.theme.style,
+                                          color: headerBackground,
+                                          foregroundColor: headerForeground,
+                                        ).copyWith(
+                                          contentStyle: (content) =>
+                                              content.copyWith(
+                                                textStyle: content.textStyle.map(
+                                                  (style) => style.copyWith(
+                                                    fontWeight: FontWeight.w700,
                                                   ),
-                                            ),
-                                      ),
-                                ),
-                          mainAxisSize: MainAxisSize.min,
-                          child: Text(
-                            isConnected
-                                ? 'Ngắt kết nối'
-                                : isConnecting
-                                ? 'Đang kết nối'
-                                : 'Kết nối',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: ThemeTokens
+                                                          .buttonPaddingHorizontal,
+                                                      vertical: ThemeTokens
+                                                          .buttonPaddingVertical,
+                                                    ),
+                                              ),
+                                        ),
+                                  ),
+                            mainAxisSize: MainAxisSize.min,
+                            child: Text(
+                              isConnected
+                                  ? 'Ngắt kết nối'
+                                  : isConnecting
+                                  ? 'Đang kết nối'
+                                  : 'Kết nối',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                      ),
                       if (showManualSend)
                         Align(
                           alignment: Alignment.centerRight,
@@ -279,10 +291,12 @@ class _TranscriptPanel extends StatefulWidget {
   const _TranscriptPanel({
     required this.message,
     required this.faceConnectProgress,
+    required this.height,
   });
 
   final ChatMessage? message;
   final double? faceConnectProgress;
+  final double height;
 
   @override
   State<_TranscriptPanel> createState() => _TranscriptPanelState();
@@ -299,24 +313,34 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
     final message = widget.message;
     final progress = widget.faceConnectProgress;
     if (message == null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (progress != null)
-            FDeterminateProgress(
-              value: progress.clamp(0.0, 1.0),
-              semanticsLabel: 'Face connect progress',
+      return SizedBox(
+        height: widget.height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (progress != null)
+              FDeterminateProgress(
+                value: progress.clamp(0.0, 1.0),
+                semanticsLabel: 'Face connect progress',
+              ),
+            if (progress != null) const SizedBox(height: ThemeTokens.spaceXs),
+            Text(
+              'Transcript / lời thoại',
+              textAlign: TextAlign.left,
+              style: context.theme.typography.xl.copyWith(
+                color: context.theme.colors.mutedForeground,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          if (progress != null) const SizedBox(height: ThemeTokens.spaceXs),
-          Text(
-            'Transcript / lời thoại',
-            textAlign: TextAlign.left,
-            style: context.theme.typography.xl.copyWith(
-              color: context.theme.colors.mutedForeground,
-              fontWeight: FontWeight.w600,
+            const SizedBox(height: ThemeTokens.spaceXs),
+            Text(
+              'Nói để bắt đầu phiên hội thoại.',
+              style: context.theme.typography.sm.copyWith(
+                color: context.theme.colors.mutedForeground,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
@@ -358,8 +382,8 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
       _lastStyleHash = styleHash;
     }
 
-    return ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 84),
+    return SizedBox(
+      height: widget.height,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -369,11 +393,13 @@ class _TranscriptPanelState extends State<_TranscriptPanel> {
               semanticsLabel: 'Face connect progress',
             ),
           if (progress != null) const SizedBox(height: ThemeTokens.spaceXs),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text.rich(
-              TextSpan(children: _spans),
-              textAlign: TextAlign.left,
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text.rich(
+                TextSpan(children: _spans),
+                textAlign: TextAlign.left,
+              ),
             ),
           ),
         ],
