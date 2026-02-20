@@ -31,6 +31,9 @@ class _FakeOta implements core_ota.OtaService {
     checkCalls += 1;
     lastUrl = url;
   }
+
+  @override
+  Future<void> refreshIdentity() async {}
 }
 
 void main() {

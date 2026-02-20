@@ -11,6 +11,7 @@ import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:voicebot/core/config/app_config.dart';
 import 'package:voicebot/core/system/ota/model/device_info.dart';
 import 'package:voicebot/core/system/ota/model/ota_result.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
@@ -29,6 +30,7 @@ class OtaClient {
     _setHeader('Accept-Language', _acceptLanguage);
     _setHeader('X-Language', _acceptLanguage);
     _upgradeStateController.add(const UpgradeState(progress: 0, speed: 0));
+    unawaited(refreshIdentity());
   }
 
   static const String _tag = 'OTA';
@@ -122,6 +124,10 @@ class OtaClient {
       dev.log('HTTP request failed: $e', name: _tag, stackTrace: st);
       return false;
     }
+  }
+
+  Future<void> refreshIdentity() async {
+    await _loadOrCreateIdentity();
   }
 
   Future<void> markCurrentVersionValid() async {
@@ -281,50 +287,38 @@ class OtaClient {
   Future<_DeviceIdentity> _loadOrCreateIdentity() async {
     const macKey = 'ota_device_mac';
     const uuidKey = 'ota_device_uuid';
-    final platformMac = await _platform.getMacAddress();
-    final deviceId = await _platform.getDeviceId();
-    if (platformMac != null &&
-        platformMac.isNotEmpty &&
-        !_isInvalidMac(platformMac)) {
-      final normalizedMac = _normalizeMac(platformMac);
-      final uuid = (deviceId != null && deviceId.isNotEmpty)
-          ? _uuidFromDeviceId(deviceId)
-          : _uuidFromDeviceId(normalizedMac);
-      final identity = _DeviceIdentity(
-        macAddress: normalizedMac,
-        uuid: uuid,
-      );
-      await _storage.write(key: macKey, value: normalizedMac);
-      await _storage.write(key: uuidKey, value: uuid);
-      _syncDeviceInfo(identity);
-      return identity;
-    }
-    if (deviceId != null && deviceId.isNotEmpty) {
-      final identity = _DeviceIdentity(
-        macAddress: _macFromDeviceId(deviceId),
-        uuid: _uuidFromDeviceId(deviceId),
-      );
-      _syncDeviceInfo(identity);
-      return identity;
-    }
     final storedMac = await _storage.read(key: macKey);
     final storedUuid = await _storage.read(key: uuidKey);
-    if (storedMac != null && storedUuid != null) {
-      final identity = _DeviceIdentity(
-        macAddress: _normalizeMac(storedMac),
-        uuid: storedUuid,
-      );
-      _syncDeviceInfo(identity);
-      return identity;
-    }
-
-    final uuid = _generateUuidV4(Random());
-    final macAddress = _normalizeMac(_macFromDeviceId(uuid));
+    final normalizedStoredMac =
+        storedMac != null && storedMac.isNotEmpty ? _normalizeMac(storedMac) : '';
+    final configuredMac = AppConfig.defaultMacAddress.trim();
+    final normalizedConfigured =
+        configuredMac.isNotEmpty ? _normalizeMac(configuredMac) : '';
+    final macAddress = _isValidMac(normalizedStoredMac)
+        ? normalizedStoredMac
+        : _isValidMac(normalizedConfigured)
+        ? normalizedConfigured
+        : _normalizeMac(_macFromDeviceId(_generateUuidV4(Random())));
+    final uuid = (storedUuid != null && storedUuid.isNotEmpty)
+        ? storedUuid
+        : _uuidFromDeviceId(macAddress);
     await _storage.write(key: macKey, value: macAddress);
     await _storage.write(key: uuidKey, value: uuid);
     final identity = _DeviceIdentity(macAddress: macAddress, uuid: uuid);
     _syncDeviceInfo(identity);
     return identity;
+  }
+
+  bool _isValidMac(String macAddress) {
+    if (!_isMacFormatValid(macAddress)) {
+      return false;
+    }
+    return !_isInvalidMac(macAddress);
+  }
+
+  bool _isMacFormatValid(String macAddress) {
+    final hex = macAddress.replaceAll(RegExp(r'[^0-9A-Fa-f]'), '');
+    return hex.length == 12;
   }
 
   String _generateUuidV4(Random random) {

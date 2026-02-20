@@ -1,3 +1,10 @@
+## 2026-02-20
+- Always show the connect/disconnect button on the home footer.
+- Keep the camera running during TTS and only hide the overlay.
+- Add a fixed device MAC setting stored in secure storage and editable in Settings.
+- Refresh OTA device identity and chat config to use the stored MAC, and add OtaService identity refresh.
+- Wire DeviceMacCubit and update OTA fakes in tests.
+
 ## 2026-02-11
 - Refactored update flow to use `UpdateCubit` and unified status handling across Home and Update pages.
 - Hardened auto-update version gating to download only when versionCode/semantic version is truly newer.

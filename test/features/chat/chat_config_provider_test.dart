@@ -21,6 +21,9 @@ class _FakeOta implements core_ota.OtaService {
 
   @override
   Future<void> checkVersion(String url) async {}
+
+  @override
+  Future<void> refreshIdentity() async {}
 }
 
 void main() {

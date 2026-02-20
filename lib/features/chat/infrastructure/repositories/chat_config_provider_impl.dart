@@ -29,6 +29,11 @@ class ChatConfigProviderImpl implements ChatConfigProvider {
     } catch (_) {
       _logMessage('hydrate timeout, using cached settings');
     }
+    try {
+      await _ota.refreshIdentity().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      _logMessage('refresh identity timeout, using cached device info');
+    }
     _settings.normalizeTransport();
     final url = _settings.webSocketUrl ?? '';
     final token = _settings.webSocketToken ?? '';

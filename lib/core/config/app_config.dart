@@ -17,6 +17,10 @@ class AppConfig {
   static const String connectGreetingDefault = 'Xin chào';
   static const bool autoReconnectEnabledDefault = true;
 
+  // Default MAC address used for OTA/device identity when set.
+  // Leave empty to use platform/device-derived MAC.
+  static const String defaultMacAddress = '02:00:00:00:00:12';
+
   // Max upload size for each web-host document image.
   static const int webHostImageUploadMaxMb = 100;
   static const int webHostImageUploadMaxBytes =

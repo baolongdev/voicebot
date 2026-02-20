@@ -31,6 +31,8 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onWifiSelect,
     required this.autoReconnectEnabled,
     required this.onAutoReconnectChanged,
+    required this.macAddress,
+    required this.onMacAddressChanged,
     required this.onVolumeChanged,
     required this.textScale,
     required this.onTextScaleChanged,
@@ -86,6 +88,8 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<HomeWifiNetwork>? onWifiSelect;
   final bool autoReconnectEnabled;
   final ValueChanged<bool> onAutoReconnectChanged;
+  final String macAddress;
+  final ValueChanged<String> onMacAddressChanged;
   final ValueChanged<double>? onVolumeChanged;
   final double textScale;
   final ValueChanged<double> onTextScaleChanged;
@@ -197,6 +201,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
   late bool _carouselAutoPlayLocal;
   late bool _carouselEnlargeLocal;
   late bool _autoReconnectLocal;
+  late String _macAddressText;
   final LocalWebHostService _webHost = LocalWebHostService.instance;
   StreamSubscription<LocalWebHostState>? _webHostStateSubscription;
   late LocalWebHostState _webHostState;
@@ -216,6 +221,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     _textSendModeIndex = _textSendModeToIndex(widget.textSendMode);
     _greetingText = widget.connectGreeting;
     _autoReconnectLocal = widget.autoReconnectEnabled;
+    _macAddressText = widget.macAddress;
     _carouselHeightIndex = _carouselHeightToIndex(widget.carouselHeight);
     _carouselViewportIndex = _carouselViewportToIndex(
       widget.carouselViewportFraction,
@@ -309,6 +315,11 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     if (_autoReconnectLocal != widget.autoReconnectEnabled) {
       setState(() {
         _autoReconnectLocal = widget.autoReconnectEnabled;
+      });
+    }
+    if (_macAddressText != widget.macAddress) {
+      setState(() {
+        _macAddressText = widget.macAddress;
       });
     }
     if (_cameraEnabledLocal != widget.cameraEnabled) {
@@ -467,6 +478,34 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     return nearestIndex;
   }
 
+  bool _isMacValid(String value) {
+    final normalized = _normalizeMacInput(value);
+    final regex = RegExp(r'^[0-9a-f]{2}(:[0-9a-f]{2}){5}$');
+    if (!regex.hasMatch(normalized)) {
+      return false;
+    }
+    return normalized != '02:00:00:00:00:00' &&
+        normalized != '00:00:00:00:00:00';
+  }
+
+  String _normalizeMacInput(String input) {
+    final hex = input.replaceAll(RegExp(r'[^0-9A-Fa-f]'), '').toLowerCase();
+    if (hex.isEmpty) {
+      return '';
+    }
+    if (hex.length != 12) {
+      return input.trim();
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < hex.length; i += 2) {
+      if (i > 0) {
+        buffer.write(':');
+      }
+      buffer.write(hex.substring(i, i + 2));
+    }
+    return buffer.toString();
+  }
+
   @override
   void dispose() {
     _webHostStateSubscription?.cancel();
@@ -507,6 +546,9 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     final hostStatus = _webHostState.isRunning ? 'Đang chạy' : 'Đang dừng';
     final hostLabel =
         hostUrl ?? (_webHostState.message ?? 'Chưa có địa chỉ host');
+    final macValid = _isMacValid(_macAddressText);
+    final showMacError =
+        _macAddressText.trim().isNotEmpty && !macValid;
     final offline = isOffline(widget.connectivity);
     final isWifiConnected =
         widget.connectivity?.contains(HomeConnectivity.wifi) ?? false;
@@ -883,6 +925,65 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                               widget.onConnectGreetingChanged(value.text);
                             },
                           ),
+                        ),
+                      ),
+                    ),
+                    FItem(
+                      prefix: Icon(Icons.memory_outlined, size: iconSize),
+                      title: const Text('Địa chỉ MAC'),
+                      details: Text(
+                        'Cố định danh tính thiết bị khi kết nối',
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FTextField(
+                              label: const Text('MAC cố định'),
+                              hint: '02:00:00:00:00:01',
+                              maxLines: 1,
+                              control: FTextFieldControl.lifted(
+                                value: TextEditingValue(
+                                  text: _macAddressText,
+                                  selection: TextSelection.collapsed(
+                                    offset: _macAddressText.length,
+                                  ),
+                                ),
+                                onChange: (value) {
+                                  final raw = value.text;
+                                  final normalized = _normalizeMacInput(raw);
+                                  final isValid = _isMacValid(raw);
+                                  final nextText =
+                                      isValid ? normalized : raw;
+                                  if (_macAddressText != nextText) {
+                                    setState(() {
+                                      _macAddressText = nextText;
+                                    });
+                                  }
+                                  if (isValid) {
+                                    widget.onMacAddressChanged(normalized);
+                                  }
+                                },
+                              ),
+                            ),
+                            if (showMacError) ...[
+                              const SizedBox(height: ThemeTokens.spaceXs),
+                              Text(
+                                'MAC không hợp lệ. Định dạng: XX:XX:XX:XX:XX:XX',
+                                style: context.theme.typography.sm.copyWith(
+                                  color: context.theme.colors.destructive,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),

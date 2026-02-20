@@ -25,6 +25,8 @@ class UiSettingsStore {
   static const _faceMeshKey = 'ui_face_mesh';
   static const _eyeTrackingKey = 'ui_eye_tracking';
   static const _autoReconnectKey = 'ui_auto_reconnect';
+  static const _deviceMacKey = 'ota_device_mac';
+  static const _deviceUuidKey = 'ota_device_uuid';
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _storage.read(key: _themeModeKey);
@@ -254,5 +256,24 @@ class UiSettingsStore {
       key: _eyeTrackingKey,
       value: enabled ? '1' : '0',
     );
+  }
+
+  Future<String?> readDeviceMacAddress() async {
+    final value = await _storage.read(key: _deviceMacKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value;
+  }
+
+  Future<void> writeDeviceMacAddress(String value) async {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      await _storage.delete(key: _deviceMacKey);
+      await _storage.delete(key: _deviceUuidKey);
+      return;
+    }
+    await _storage.write(key: _deviceMacKey, value: trimmed);
+    await _storage.delete(key: _deviceUuidKey);
   }
 }

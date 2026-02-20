@@ -165,6 +165,9 @@ class _FakeOta implements core_ota.OtaService {
       otaResult = nextResult;
     }
   }
+
+  @override
+  Future<void> refreshIdentity() async {}
 }
 
 class _FakeChatSession implements ChatSession {

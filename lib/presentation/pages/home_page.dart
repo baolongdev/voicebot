@@ -32,6 +32,7 @@ import '../app/text_send_mode_cubit.dart';
 import '../app/connect_greeting_cubit.dart';
 import '../app/auto_reconnect_cubit.dart';
 import '../app/face_detection_settings_cubit.dart';
+import '../app/device_mac_cubit.dart';
 import '../app/update_cubit.dart';
 import '../../theme/theme_extensions.dart';
 import '../../theme/theme_palette.dart';
@@ -71,9 +72,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final ValueNotifier<double> _cameraAspectRatio = ValueNotifier(4 / 3);
   final ValueNotifier<bool> _detectFacesEnabled = ValueNotifier(true);
   final ValueNotifier<bool> _hideCameraOverlay = ValueNotifier(false);
-  bool? _cameraEnabledBeforeSpeak;
-  bool? _detectFacesBeforeSpeak;
-  bool _showConnectButton = true;
   // static const MethodChannel _kioskChannel = MethodChannel('voicebot/kiosk');
   final ValueNotifier<double?> _faceConnectProgress = ValueNotifier<double?>(
     null,
@@ -222,11 +220,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Future<void> _handleConnectChat() async {
-    if (_showConnectButton) {
-      setState(() {
-        _showConnectButton = false;
-      });
-    }
     final homeCubit = context.read<HomeCubit>();
     final permissionCubit = context.read<PermissionCubit>();
     if (AppConfig.permissionsEnabled) {
@@ -255,29 +248,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   // }
 
   void _handleSpeakingState(bool isSpeaking) {
-    if (isSpeaking) {
-      _hideCameraOverlay.value = true;
-      _cameraEnabledBeforeSpeak ??= _cameraEnabled.value;
-      _detectFacesBeforeSpeak ??= _detectFacesEnabled.value;
-      if (_cameraEnabled.value) {
-        _cameraEnabled.value = false;
-      }
-      if (_detectFacesEnabled.value) {
-        _detectFacesEnabled.value = false;
-      }
-      return;
-    }
-    final restoreCamera = _cameraEnabledBeforeSpeak;
-    final restoreDetect = _detectFacesBeforeSpeak;
-    _cameraEnabledBeforeSpeak = null;
-    _detectFacesBeforeSpeak = null;
-    _hideCameraOverlay.value = false;
-    if (restoreCamera != null && _cameraEnabled.value != restoreCamera) {
-      _cameraEnabled.value = restoreCamera;
-    }
-    if (restoreDetect != null && _detectFacesEnabled.value != restoreDetect) {
-      _detectFacesEnabled.value = restoreDetect;
-    }
+    _hideCameraOverlay.value = isSpeaking;
   }
 
   Future<void> _handleVolumeChanged(double value) async {
@@ -480,7 +451,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     onManualSend: _handleManualSend,
                                     isConnecting: homeData.isConnecting,
                                     isConnected: homeData.isConnected,
-                                    showConnectButton: _showConnectButton,
+                                    showConnectButton: true,
                                     listeningMode: listeningMode,
                                     currentEmotion: chatData.emotion,
                                     lastMessage: chatData.message,
@@ -1030,9 +1001,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                 cameraAspectRatio,
                                                                 _,
                                                               ) {
-                                                                return HomeSettingsSheet(
-                                                                  volume: data
-                                                                      .volume,
+                                                                return BlocBuilder<
+                                                                  DeviceMacCubit,
+                                                                  String
+                                                                >(
+                                                                  builder:
+                                                                      (
+                                                                        context,
+                                                                        macAddress,
+                                                                      ) {
+                                                                        return HomeSettingsSheet(
+                                                                          volume: data
+                                                                              .volume,
                                                                   audioDevice: data
                                                                       .audioDevice,
                                                                   connectivity:
@@ -1154,6 +1134,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                             AutoReconnectCubit
                                                                           >()
                                                                           .setEnabled,
+                                                                  macAddress:
+                                                                      macAddress,
+                                                                  onMacAddressChanged:
+                                                                      sheetContext
+                                                                          .read<
+                                                                            DeviceMacCubit
+                                                                          >()
+                                                                          .setMacAddress,
                                                                   carouselHeight:
                                                                       carouselSettings
                                                                           .height,
@@ -1215,6 +1203,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                       ),
                                                                   // onEnterKioskMode:
                                                                   //     _enterKioskMode,
+                                                                );
+                                                                      },
                                                                 );
                                                               },
                                                         );

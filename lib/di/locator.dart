@@ -17,6 +17,7 @@ import '../presentation/app/text_send_mode_cubit.dart';
 import '../presentation/app/connect_greeting_cubit.dart';
 import '../presentation/app/auto_reconnect_cubit.dart';
 import '../presentation/app/face_detection_settings_cubit.dart';
+import '../presentation/app/device_mac_cubit.dart';
 import '../presentation/app/theme_mode_cubit.dart';
 import '../presentation/app/theme_palette_cubit.dart';
 import '../presentation/app/text_scale_cubit.dart';
@@ -99,6 +100,12 @@ Future<void> configureDependencies() async {
     );
   }
 
+  if (!getIt.isRegistered<DeviceMacCubit>()) {
+    getIt.registerLazySingleton<DeviceMacCubit>(
+      () => DeviceMacCubit(getIt<UiSettingsStore>(), getIt<core_ota.OtaService>()),
+    );
+  }
+
   if (!getIt.isRegistered<UpdateCubit>()) {
     getIt.registerLazySingleton<UpdateCubit>(UpdateCubit.new);
   }
@@ -146,5 +153,10 @@ class _OtaAdapter implements core_ota.OtaService {
   @override
   Future<void> checkVersion(String url) async {
     await _delegate.checkVersion(url);
+  }
+
+  @override
+  Future<void> refreshIdentity() async {
+    await _delegate.refreshIdentity();
   }
 }

@@ -15,6 +15,7 @@ import '../../presentation/app/text_send_mode_cubit.dart';
 import '../../presentation/app/connect_greeting_cubit.dart';
 import '../../presentation/app/auto_reconnect_cubit.dart';
 import '../../presentation/app/face_detection_settings_cubit.dart';
+import '../../presentation/app/device_mac_cubit.dart';
 import '../../presentation/app/theme_mode_cubit.dart';
 import '../../presentation/app/theme_palette_cubit.dart';
 import '../../presentation/app/text_scale_cubit.dart';
@@ -46,6 +47,7 @@ class _ApplicationState extends State<Application> {
     getIt<AutoReconnectCubit>().hydrate();
     getIt<CarouselSettingsCubit>().hydrate();
     getIt<FaceDetectionSettingsCubit>().hydrate();
+    getIt<DeviceMacCubit>().hydrate();
   }
 
   @override
@@ -77,6 +79,7 @@ class _ApplicationState extends State<Application> {
         BlocProvider<FaceDetectionSettingsCubit>.value(
           value: getIt<FaceDetectionSettingsCubit>(),
         ),
+        BlocProvider<DeviceMacCubit>.value(value: getIt<DeviceMacCubit>()),
         BlocProvider<PermissionCubit>.value(value: getIt<PermissionCubit>()),
         BlocProvider<ChatCubit>.value(value: getIt<ChatCubit>()),
         BlocProvider<HomeCubit>.value(value: getIt<HomeCubit>()),

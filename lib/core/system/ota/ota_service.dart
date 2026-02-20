@@ -6,4 +6,5 @@ abstract class OtaService {
   OtaResult? get otaResult;
   DeviceInfo? get deviceInfo;
   Future<void> checkVersion(String url);
+  Future<void> refreshIdentity();
 }
