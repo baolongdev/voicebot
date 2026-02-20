@@ -3,7 +3,7 @@
   "latestVersionCode": 0,
   "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.4/app-release.apk",
   "releaseNotes": "Update to version 1.0.4",
-  "commitMessage": "chore: disable kiosk and bump version",
+  "commitMessage": "Merge branch 'main' of https://github.com/baolongdev/voicebot",
   "mandatory": false,
-  "releasedAt": "2026-02-19T07:50:39Z"
+  "releasedAt": "2026-02-20T17:21:21Z"
 }
