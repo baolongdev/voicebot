@@ -86,7 +86,9 @@ class _MessageBubble extends StatelessWidget {
         children: <Widget>[
           FCard(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 280),
+              constraints: const BoxConstraints(
+                maxWidth: ThemeTokens.chatBubbleMaxWidth,
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(ThemeTokens.spaceMd),
                 child: Text(message.text, style: context.theme.typography.base),
@@ -135,7 +137,9 @@ class _RelatedImagesBubble extends StatelessWidget {
               images.isEmpty ? 'related-empty' : 'related-content',
             ),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 320),
+              constraints: const BoxConstraints(
+                maxWidth: ThemeTokens.chatRelatedCardMaxWidth,
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(ThemeTokens.spaceSm),
                 child: Column(
@@ -189,24 +193,21 @@ class _RelatedImagesBubble extends StatelessWidget {
 class _RelatedImageTile extends StatelessWidget {
   const _RelatedImageTile({required this.image});
 
-  static const double _thumbnailWidthLarge = 213;
-  static const double _thumbnailHeightLarge = 120;
-  static const double _thumbnailWidthSmall = 160;
-  static const double _thumbnailHeightSmall = 90;
-  static const double _smallScreenWidthBreakpoint = 380;
-
   final RelatedChatImage image;
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final useSmallSize = screenWidth <= _smallScreenWidthBreakpoint;
+    final dpr = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 3.0);
+    final useSmallSize = screenWidth <= ThemeTokens.chatImageSmallBreakpoint;
     final thumbnailWidth = useSmallSize
-        ? _thumbnailWidthSmall
-        : _thumbnailWidthLarge;
+        ? ThemeTokens.chatImageTileWidthSmall
+        : ThemeTokens.chatImageTileWidthLarge;
     final thumbnailHeight = useSmallSize
-        ? _thumbnailHeightSmall
-        : _thumbnailHeightLarge;
+        ? ThemeTokens.chatImageTileHeightSmall
+        : ThemeTokens.chatImageTileHeightLarge;
+    final cacheWidth = (thumbnailWidth * dpr).round();
+    final cacheHeight = (thumbnailHeight * dpr).round();
     return GestureDetector(
       onTap: () => _showImagePreview(context, image),
       child: SizedBox(
@@ -225,6 +226,8 @@ class _RelatedImageTile extends StatelessWidget {
                   child: Image.network(
                     image.url,
                     fit: BoxFit.cover,
+                    cacheWidth: cacheWidth > 0 ? cacheWidth : null,
+                    cacheHeight: cacheHeight > 0 ? cacheHeight : null,
                     errorBuilder: (context, error, stackTrace) => Center(
                       child: Text(
                         'Không tải được ảnh',
@@ -240,10 +243,10 @@ class _RelatedImageTile extends StatelessWidget {
                       }
                       return Center(
                         child: SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: ThemeTokens.chatImageLoadingSize,
+                          height: ThemeTokens.chatImageLoadingSize,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2,
+                            strokeWidth: ThemeTokens.chatImageLoadingStroke,
                             color: context.theme.colors.primary,
                           ),
                         ),
@@ -281,6 +284,10 @@ void _showImagePreview(BuildContext context, RelatedChatImage image) {
   showDialog<void>(
     context: context,
     builder: (context) {
+      final media = MediaQuery.sizeOf(context);
+      final dpr = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 3.0);
+      final cacheWidth = (media.width * dpr).round();
+      final cacheHeight = (media.height * dpr).round();
       return Dialog(
         insetPadding: const EdgeInsets.symmetric(
           horizontal: ThemeTokens.spaceSm,
@@ -296,6 +303,8 @@ void _showImagePreview(BuildContext context, RelatedChatImage image) {
                 child: Image.network(
                   image.url,
                   fit: BoxFit.contain,
+                  cacheWidth: cacheWidth > 0 ? cacheWidth : null,
+                  cacheHeight: cacheHeight > 0 ? cacheHeight : null,
                   errorBuilder: (context, error, stackTrace) => Center(
                     child: Text(
                       'Không tải được ảnh',

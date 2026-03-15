@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <link rel="stylesheet" href="https://unpkg.com/lucide-static@latest/font/lucide.css" />
   <link rel="stylesheet" href="/console.css" />
   <title>Bảng Điều Khiển Tri Thức</title>
 </head>
@@ -33,9 +31,7 @@
       <section class="folder-panel" aria-label="Quản lý thư mục tri thức">
         <div class="folder-head">
           <p class="folder-title">Thư mục tri thức</p>
-          <button id="addFolderBtn" class="folder-add-btn" type="button" aria-label="Tạo thư mục mới" title="Tạo thư mục mới">
-            <i class="icon-folder-plus" aria-hidden="true"></i>
-          </button>
+          <button id="addFolderBtn" class="folder-add-btn" type="button" aria-label="Tạo thư mục mới" title="Tạo thư mục mới">+</button>
         </div>
         <div id="folderList" class="folder-list" role="list"></div>
       </section>
@@ -137,34 +133,32 @@
               placeholder="Thêm nhãn..."
               aria-label="Nhập nhãn mới"
             />
-            <button id="addDocTagBtn" class="tag-add" type="button" aria-label="Thêm nhãn mới">
-              <i class="icon-plus" aria-hidden="true"></i> Thêm nhãn
-            </button>
+            <button id="addDocTagBtn" class="tag-add" type="button" aria-label="Thêm nhãn mới">+ Thêm nhãn</button>
           </div>
           <p class="doc-tags-hint">Nhấn vào tên nhãn để sửa. Nhấn dấu × để xóa.</p>
         </div>
       </header>
 
       <div class="editor-toolbar" aria-label="Thanh công cụ soạn thảo">
-        <button id="insertImageBtn" class="toolbar-icon-btn" type="button" aria-label="Chèn hình ảnh" title="Chèn hình ảnh"><i class="icon-image" aria-hidden="true"></i></button>
+        <button id="insertImageBtn" class="toolbar-icon-btn" type="button" aria-label="Chèn hình ảnh" title="Chèn hình ảnh">Ảnh</button>
         <span class="toolbar-divider" aria-hidden="true"></span>
         <button class="toolbar-template toolbar-chip-btn toolbar-template-product template-insert" data-template="product" type="button" aria-label="Chèn mẫu sản phẩm" title="Chèn mẫu sản phẩm">
-          <i class="icon-package" aria-hidden="true"></i> SP
+          SP
         </button>
         <button class="toolbar-template toolbar-chip-btn toolbar-template-faq template-insert" data-template="faq" type="button" aria-label="Chèn mẫu FAQ" title="Chèn mẫu FAQ">
-          <i class="icon-circle-question-mark" aria-hidden="true"></i> FAQ
+          FAQ
         </button>
         <button class="toolbar-template toolbar-chip-btn toolbar-template-policy template-insert" data-template="policy" type="button" aria-label="Chèn mẫu chính sách" title="Chèn mẫu chính sách">
-          <i class="icon-shield" aria-hidden="true"></i> CS
+          CS
         </button>
         <button class="toolbar-template toolbar-chip-btn toolbar-template-info template-insert" data-template="info" type="button" aria-label="Chèn mẫu thông tin" title="Chèn mẫu thông tin">
-          <i class="icon-info" aria-hidden="true"></i> INFO
+          INFO
         </button>
         <button class="toolbar-template toolbar-chip-btn toolbar-template-profile template-insert" data-template="company_profile" type="button" aria-label="Chèn mẫu hồ sơ doanh nghiệp" title="Chèn mẫu hồ sơ doanh nghiệp">
-          <i class="icon-building-2" aria-hidden="true"></i> PROFILE
+          PROFILE
         </button>
         <button id="openDocFileBtn" class="toolbar-attach toolbar-chip-btn" type="button" aria-label="Đính kèm file văn bản" title="Đính kèm file văn bản">
-          <i class="icon-file-text" aria-hidden="true"></i> Tệp
+          Tệp
         </button>
         <input
           id="docFileMirror"

@@ -5,18 +5,15 @@ import '../audio/recorder/audio_recorder.dart';
 import 'audio_input.dart';
 
 class RecorderAudioInput implements AudioInput {
-  RecorderAudioInput({
-    int? sampleRate,
-    int? channels,
-    int? frameDurationMs,
-  })  : _sampleRate = sampleRate ?? AudioConfig.sampleRate,
-        _channels = channels ?? AudioConfig.channels,
-        _frameDurationMs = frameDurationMs ?? AudioConfig.frameDurationMs,
-        _recorder = AudioRecorder(
-          sampleRate ?? AudioConfig.sampleRate,
-          channels ?? AudioConfig.channels,
-          frameDurationMs ?? AudioConfig.frameDurationMs,
-        );
+  RecorderAudioInput({int? sampleRate, int? channels, int? frameDurationMs})
+    : _sampleRate = sampleRate ?? AudioConfig.sampleRate,
+      _channels = channels ?? AudioConfig.channels,
+      _frameDurationMs = frameDurationMs ?? AudioConfig.frameDurationMs,
+      _recorder = AudioRecorder(
+        sampleRate ?? AudioConfig.sampleRate,
+        channels ?? AudioConfig.channels,
+        frameDurationMs ?? AudioConfig.frameDurationMs,
+      );
 
   final int _sampleRate;
   final int _channels;
@@ -37,6 +34,11 @@ class RecorderAudioInput implements AudioInput {
 
   @override
   Future<void> stop() async {
-    _recorder.stopRecording();
+    await _recorder.stopRecording();
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _recorder.dispose();
   }
 }

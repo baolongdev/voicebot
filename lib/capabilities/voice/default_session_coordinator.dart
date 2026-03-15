@@ -9,6 +9,7 @@ import 'package:opus_dart/opus_dart.dart' as opus_dart;
 
 import '../../core/audio/audio_config.dart';
 import '../../core/logging/app_logger.dart';
+import '../../core/telemetry/runtime_metrics.dart';
 import '../../core/utils/throttle.dart';
 import '../mcp/mcp_server.dart';
 import '../protocol/protocol.dart';
@@ -58,7 +59,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   bool _suppressPlayback = false;
   bool _isListening = false;
   bool _canSendAudio = false;
+  bool _micCaptureActive = false;
   bool _isSpeaking = false;
+  int _transitionToken = 0;
+  _AudioSessionState _audioState = _AudioSessionState.idle;
   ListeningMode _listeningMode = ListeningMode.autoStop;
   int _speakingEpoch = 0;
   int _sentAudioFrames = 0;
@@ -72,6 +76,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   static const int _levelSampleStrideSpeaking = 8;
   static const int _levelEmitIntervalSpeakingMs = 260;
   bool _playbackDrainScheduled = false;
+  late final Uint8List _chimePcm = _buildChimePcm16();
 
   @override
   Stream<Map<String, dynamic>> get incomingJson => _jsonController.stream;
@@ -119,11 +124,13 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       await disconnect().timeout(const Duration(milliseconds: 500));
     } catch (_) {}
     _transport = transport;
+    _setAudioState(_AudioSessionState.recovering, reason: 'connect_bootstrap');
     AppLogger.event('SessionCoordinator', 'connect_start');
     final connected = await _transport!.connect();
     if (!connected) {
       AppLogger.event('SessionCoordinator', 'connect_failed');
       _transport = null;
+      _setAudioState(_AudioSessionState.idle, reason: 'connect_failed');
       return false;
     }
     AppLogger.event('SessionCoordinator', 'connect_success');
@@ -134,14 +141,18 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _jsonSubscription = _transport!.jsonStream.listen(_handleIncomingJson);
     _audioSubscription = _transport!.audioStream.listen(_handleIncomingAudio);
     _errorSubscription = _transport!.errorStream.listen(_handleError);
+    _setAudioState(_AudioSessionState.idle, reason: 'connect_ready');
     return true;
   }
 
   @override
   Future<void> disconnect() async {
+    final transitionToken = _nextTransitionToken();
+    _setAudioState(_AudioSessionState.recovering, reason: 'disconnect');
     _canSendAudio = false;
     _isListening = false;
     _isSpeaking = false;
+    _micCaptureActive = false;
     _suppressPlayback = false;
     _speakingEpoch += 1;
     _resetPlaybackBuffer();
@@ -157,6 +168,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _encodeSubscription = null;
     _decodeSubscription = null;
     await _stopAudioInput();
+    await _disposeAudioInput();
     _audioOutput.dispose();
     _opusInputController?.close();
     _opusInputController = null;
@@ -170,6 +182,9 @@ class DefaultSessionCoordinator implements SessionCoordinator {
 
     await _disconnectTransport();
     _transport = null;
+    if (_isTransitionCurrent(transitionToken)) {
+      _setAudioState(_AudioSessionState.idle, reason: 'disconnect_done');
+    }
   }
 
   Future<void> _cancelSubscription(StreamSubscription? subscription) async {
@@ -186,8 +201,17 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   Future<void> _stopAudioInput() async {
     try {
       await _audioInput.stop().timeout(const Duration(milliseconds: 500));
+      _micCaptureActive = false;
     } catch (_) {
       // Ignore stop errors/timeouts to keep teardown moving.
+    }
+  }
+
+  Future<void> _disposeAudioInput() async {
+    try {
+      await _audioInput.dispose().timeout(const Duration(milliseconds: 500));
+    } catch (_) {
+      // Ignore dispose errors/timeouts to keep teardown moving.
     }
   }
 
@@ -204,19 +228,25 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (_transport == null) {
       return;
     }
+    final transitionToken = _nextTransitionToken();
     if (_isListening) {
       _canSendAudio = enableMic;
       if (enableMic) {
-        _startEncodingIfNeeded();
+        await _ensureMicCaptureStarted();
       }
+      _setAudioState(_AudioSessionState.listening, reason: 'listen_resume');
       return;
     }
     await _transport!.startListening(_listeningMode);
+    if (!_isTransitionCurrent(transitionToken) || _transport == null) {
+      return;
+    }
     _isListening = true;
     _canSendAudio = enableMic;
     if (enableMic) {
-      _startEncodingIfNeeded();
+      await _ensureMicCaptureStarted();
     }
+    _setAudioState(_AudioSessionState.listening, reason: 'listen_start');
     AppLogger.event('SessionCoordinator', 'listen_start');
   }
 
@@ -225,16 +255,28 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (_transport == null) {
       return;
     }
+    final transitionToken = _nextTransitionToken();
     _canSendAudio = false;
     if (!_isListening) {
       return;
     }
     await _transport!.stopListening();
-    await _encodeSubscription?.cancel();
-    _encodeSubscription = null;
-    await _audioInput.stop();
+    if (!_isTransitionCurrent(transitionToken) || _transport == null) {
+      return;
+    }
+    await _stopMicCapture();
     _isListening = false;
+    _setAudioState(_AudioSessionState.idle, reason: 'listen_stop');
     AppLogger.event('SessionCoordinator', 'listen_stop');
+  }
+
+  @override
+  Future<void> playChime() async {
+    if (_transport == null || _chimePcm.isEmpty) {
+      return;
+    }
+    _audioOutput.enqueue(_chimePcm);
+    RuntimeMetrics.instance.incrementChimePlaybackCount();
   }
 
   Future<void> _pauseListeningLocal() async {
@@ -242,12 +284,8 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
     _canSendAudio = false;
-    if (_encodeSubscription != null) {
-      await _encodeSubscription?.cancel();
-      _encodeSubscription = null;
-    }
-    await _audioInput.stop();
     _isListening = false;
+    _setAudioState(_AudioSessionState.speaking, reason: 'tts_start_pause_send');
     AppLogger.event('SessionCoordinator', 'listen_pause');
   }
 
@@ -329,6 +367,25 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     } catch (e) {
       AppLogger.log('SessionCoordinator', 'opus decoder init failed: $e');
       _decodeSubscription = null;
+    }
+  }
+
+  Future<void> _ensureMicCaptureStarted() async {
+    if (_micCaptureActive && _encodeSubscription != null) {
+      return;
+    }
+    _startEncodingIfNeeded();
+    _micCaptureActive = true;
+  }
+
+  Future<void> _stopMicCapture() async {
+    if (_encodeSubscription != null) {
+      await _encodeSubscription?.cancel();
+      _encodeSubscription = null;
+    }
+    if (_micCaptureActive) {
+      await _audioInput.stop();
+      _micCaptureActive = false;
     }
   }
 
@@ -486,8 +543,10 @@ class DefaultSessionCoordinator implements SessionCoordinator {
   }
 
   void _handleError(String error) {
+    _nextTransitionToken();
     _canSendAudio = false;
     _isListening = false;
+    _setAudioState(_AudioSessionState.recovering, reason: 'transport_error');
     if (_isSpeaking) {
       _speakingEpoch += 1;
       _isSpeaking = false;
@@ -497,6 +556,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       unawaited(_encodeSubscription!.cancel());
       _encodeSubscription = null;
     }
+    _micCaptureActive = false;
     unawaited(_audioInput.stop());
     AppLogger.event(
       'SessionCoordinator',
@@ -511,6 +571,7 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     if (_transport == null) {
       return;
     }
+    final transitionToken = _nextTransitionToken();
     _speakingEpoch += 1;
     final epoch = _speakingEpoch;
     if (_isSpeaking == speaking) {
@@ -524,14 +585,18 @@ class DefaultSessionCoordinator implements SessionCoordinator {
       return;
     }
 
+    _setAudioState(_AudioSessionState.recovering, reason: 'tts_stop_wait');
     AppLogger.log('SessionCoordinator', 'waiting for TTS to stop');
     await _audioOutput.flushBufferedPlayback();
     await _audioOutput.waitForPlaybackCompletion();
     AppLogger.log('SessionCoordinator', 'TTS stopped');
-    if (epoch != _speakingEpoch) {
+    if (epoch != _speakingEpoch || !_isTransitionCurrent(transitionToken)) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (epoch != _speakingEpoch || !_isTransitionCurrent(transitionToken)) {
+      return;
+    }
     await startListening();
     AppLogger.log('SessionCoordinator', 'listen restarted after tts stop');
   }
@@ -743,9 +808,69 @@ class DefaultSessionCoordinator implements SessionCoordinator {
     _emitOutgoingLevel(_estimateLevelFromPcmChunk(pcm, _levelSampleStride));
   }
 
+  int _nextTransitionToken() {
+    _transitionToken += 1;
+    return _transitionToken;
+  }
+
+  bool _isTransitionCurrent(int token) => token == _transitionToken;
+
+  void _setAudioState(_AudioSessionState next, {required String reason}) {
+    if (_audioState == next) {
+      return;
+    }
+    RuntimeMetrics.instance.recordAudioTransition(
+      from: _audioState.name,
+      to: next.name,
+      reason: reason,
+    );
+    _audioState = next;
+  }
+
+  Uint8List _buildChimePcm16() {
+    const sampleRate = 16000;
+    const toneMs = 90;
+    const gapMs = 40;
+    final tone1 = _sineWave(
+      sampleRate: sampleRate,
+      frequency: 880,
+      durationMs: toneMs,
+    );
+    final tone2 = _sineWave(
+      sampleRate: sampleRate,
+      frequency: 1320,
+      durationMs: toneMs,
+    );
+    final gapSamples = (sampleRate * gapMs / 1000).round();
+    final gap = List<int>.filled(gapSamples, 0);
+    final pcm = <int>[...tone1, ...gap, ...tone2];
+    final byteData = ByteData(pcm.length * 2);
+    for (var i = 0; i < pcm.length; i++) {
+      byteData.setInt16(i * 2, pcm[i], Endian.little);
+    }
+    return byteData.buffer.asUint8List();
+  }
+
+  List<int> _sineWave({
+    required int sampleRate,
+    required double frequency,
+    required int durationMs,
+  }) {
+    final samples = (sampleRate * durationMs / 1000).round();
+    final data = List<int>.filled(samples, 0);
+    final omega = 2 * math.pi * frequency / sampleRate;
+    for (var i = 0; i < samples; i++) {
+      final value = math.sin(omega * i);
+      data[i] = (value * 0.6 * 32767).round();
+    }
+    return data;
+  }
+
   void _resetPlaybackBuffer() {
     _playbackPcmQueue.clear();
     _playbackQueuedBytes = 0;
     _playbackStarted = false;
   }
 }
+
+enum _AudioSessionState { idle, listening, speaking, recovering }

@@ -2,13 +2,13 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../core/config/app_config.dart';
+import '../../core/config/default_settings.dart';
 import '../../core/system/ota/ota_service.dart';
 import 'ui_settings_store.dart';
 
 class DeviceMacCubit extends Cubit<String> {
   DeviceMacCubit(this._store, this._ota)
-      : super(AppConfig.defaultMacAddress);
+    : super(DefaultSettingsRegistry.current.device.defaultMacAddress);
 
   final UiSettingsStore _store;
   final OtaService _ota;
@@ -19,15 +19,16 @@ class DeviceMacCubit extends Cubit<String> {
       emit(saved);
       return;
     }
-    if (AppConfig.defaultMacAddress.isNotEmpty) {
-      emit(AppConfig.defaultMacAddress);
+    final defaultMac = DefaultSettingsRegistry.current.device.defaultMacAddress;
+    if (defaultMac.isNotEmpty) {
+      emit(defaultMac);
     }
   }
 
   void setMacAddress(String value) {
     final trimmed = value.trim();
-    final next =
-        trimmed.isEmpty ? AppConfig.defaultMacAddress : value;
+    final defaultMac = DefaultSettingsRegistry.current.device.defaultMacAddress;
+    final next = trimmed.isEmpty ? defaultMac : value;
     emit(next);
     unawaited(_store.writeDeviceMacAddress(next));
     unawaited(_ota.refreshIdentity());

@@ -11,7 +11,7 @@ import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'package:voicebot/core/config/app_config.dart';
+import 'package:voicebot/core/config/default_settings.dart';
 import 'package:voicebot/core/system/ota/model/device_info.dart';
 import 'package:voicebot/core/system/ota/model/ota_result.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
@@ -20,12 +20,10 @@ import 'package:voicebot/system/ota/ota_platform.dart';
 import 'package:voicebot/system/ota/upgrade_state.dart';
 
 class OtaClient {
-  OtaClient(
-    DeviceInfo deviceInfo, {
-    OtaPlatform? platform,
-  })  : _deviceInfo = deviceInfo,
-        _platform = platform ?? _resolvePlatform(),
-        _client = _createClient() {
+  OtaClient(DeviceInfo deviceInfo, {OtaPlatform? platform})
+    : _deviceInfo = deviceInfo,
+      _platform = platform ?? _resolvePlatform(),
+      _client = _createClient() {
     _setHeader('User-Agent', _userAgent);
     _setHeader('Accept-Language', _acceptLanguage);
     _setHeader('X-Language', _acceptLanguage);
@@ -131,7 +129,10 @@ class OtaClient {
   }
 
   Future<void> markCurrentVersionValid() async {
-    dev.log('Marking current version as valid (Android simulation)', name: _tag);
+    dev.log(
+      'Marking current version as valid (Android simulation)',
+      name: _tag,
+    );
   }
 
   Future<void> upgrade([String? url]) async {
@@ -143,7 +144,10 @@ class OtaClient {
     try {
       final response = await _client.send(request);
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        dev.log('Failed to download firmware: ${response.statusCode}', name: _tag);
+        dev.log(
+          'Failed to download firmware: ${response.statusCode}',
+          name: _tag,
+        );
         return;
       }
 
@@ -154,8 +158,7 @@ class OtaClient {
       }
 
       final tempDir = await getTemporaryDirectory();
-      final filePath =
-          '${tempDir.path}${Platform.pathSeparator}firmware.apk';
+      final filePath = '${tempDir.path}${Platform.pathSeparator}firmware.apk';
       final file = File(filePath);
       final sink = file.openWrite();
 
@@ -204,7 +207,7 @@ class OtaClient {
 
       const downloadedVersion = '1.0.0';
       if (downloadedVersion == currentVersion) {
-      dev.log('Firmware version is the same, skipping upgrade', name: _tag);
+        dev.log('Firmware version is the same, skipping upgrade', name: _tag);
         return;
       }
 
@@ -289,11 +292,17 @@ class OtaClient {
     const uuidKey = 'ota_device_uuid';
     final storedMac = await _storage.read(key: macKey);
     final storedUuid = await _storage.read(key: uuidKey);
-    final normalizedStoredMac =
-        storedMac != null && storedMac.isNotEmpty ? _normalizeMac(storedMac) : '';
-    final configuredMac = AppConfig.defaultMacAddress.trim();
-    final normalizedConfigured =
-        configuredMac.isNotEmpty ? _normalizeMac(configuredMac) : '';
+    final normalizedStoredMac = storedMac != null && storedMac.isNotEmpty
+        ? _normalizeMac(storedMac)
+        : '';
+    final configuredMac = DefaultSettingsRegistry
+        .current
+        .device
+        .defaultMacAddress
+        .trim();
+    final normalizedConfigured = configuredMac.isNotEmpty
+        ? _normalizeMac(configuredMac)
+        : '';
     final macAddress = _isValidMac(normalizedStoredMac)
         ? normalizedStoredMac
         : _isValidMac(normalizedConfigured)
@@ -463,10 +472,7 @@ class OtaClient {
 }
 
 class _DeviceIdentity {
-  const _DeviceIdentity({
-    required this.macAddress,
-    required this.uuid,
-  });
+  const _DeviceIdentity({required this.macAddress, required this.uuid});
 
   final String macAddress;
   final String uuid;

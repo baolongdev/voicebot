@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class TextScaleCubit extends Cubit<double> {
-  TextScaleCubit(this._store) : super(1.0);
+  TextScaleCubit(this._store)
+    : super(DefaultSettingsRegistry.current.theme.textScale.clamp(0.85, 1.5));
 
   final UiSettingsStore _store;
 

@@ -1,10 +1,13 @@
+import 'dart:ui' show FrameTiming;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter/foundation.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/config/app_config.dart';
+import '../../core/config/default_settings.dart';
+import '../../core/telemetry/runtime_metrics.dart';
 import '../../core/theme/forui/forui_theme.dart';
 import '../../di/locator.dart';
 import '../../features/chat/application/state/chat_cubit.dart';
@@ -30,11 +33,15 @@ class Application extends StatefulWidget {
   State<Application> createState() => _ApplicationState();
 }
 
-class _ApplicationState extends State<Application> {
+class _ApplicationState extends State<Application> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
-    if (AppConfig.permissionsEnabled) {
+    WidgetsBinding.instance.addObserver(this);
+    _configureImageCacheBudget();
+    RuntimeMetrics.instance.startAutoFlush();
+    WidgetsBinding.instance.addTimingsCallback(_handleFrameTimings);
+    if (DefaultSettingsRegistry.current.app.permissionsEnabled) {
       // Checking is safe at startup; requests stay behind explicit user action.
       getIt<PermissionCubit>().checkRequiredPermissions();
     }
@@ -48,6 +55,23 @@ class _ApplicationState extends State<Application> {
     getIt<CarouselSettingsCubit>().hydrate();
     getIt<FaceDetectionSettingsCubit>().hydrate();
     getIt<DeviceMacCubit>().hydrate();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance.removeTimingsCallback(_handleFrameTimings);
+    RuntimeMetrics.instance.stopAutoFlush();
+    super.dispose();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    final cache = PaintingBinding.instance.imageCache;
+    cache.clear();
+    cache.clearLiveImages();
+    RuntimeMetrics.instance.incrementMemoryPressureCount();
+    RuntimeMetrics.instance.flushSnapshot();
   }
 
   @override
@@ -118,9 +142,10 @@ class _ApplicationState extends State<Application> {
                           data: IconThemeData(size: iconSize),
                           child: FAnimatedTheme(
                             data: theme,
-                            child: WillPopScope(
-                              onWillPop: () async =>
-                                  defaultTargetPlatform != TargetPlatform.android,
+                            child: PopScope<void>(
+                              canPop:
+                                  defaultTargetPlatform !=
+                                  TargetPlatform.android,
                               child: child ?? const SizedBox.shrink(),
                             ),
                           ),
@@ -145,6 +170,18 @@ class _ApplicationState extends State<Application> {
         return Brightness.light;
       case ThemeMode.system:
         return MediaQuery.platformBrightnessOf(context);
+    }
+  }
+
+  void _configureImageCacheBudget() {
+    final cache = PaintingBinding.instance.imageCache;
+    cache.maximumSize = 120;
+    cache.maximumSizeBytes = 64 * 1024 * 1024;
+  }
+
+  void _handleFrameTimings(List<FrameTiming> timings) {
+    for (final timing in timings) {
+      RuntimeMetrics.instance.observeFrameTiming(timing);
     }
   }
 }

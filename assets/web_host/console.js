@@ -73,6 +73,8 @@ let folderState = {
   assignments: {},
 };
 let noteTagState = {};
+let documentLoadToken = 0;
+let imageRequestToken = 0;
 let activeModalResolve = null;
 let activeModalInput = false;
 let modalPreviousFocus = null;
@@ -95,13 +97,14 @@ const KDOC_SECTION_ORDER = [
   'KEYWORDS',
   'SUMMARY',
   'CONTENT',
-  'SERVICES',
-  'REGULATIONS',
-  'USAGE',
+  'CORE_PRODUCTS',
   'RAW_MATERIALS',
   'PROCESS',
   'FOOD_SAFETY',
   'MARKET',
+  'SERVICES',
+  'REGULATIONS',
+  'USAGE',
   'DAY_VISIT',
   'STAY_PACKAGE',
   'FAQ',
@@ -119,15 +122,16 @@ const KDOC_SECTION_GROUPS = [
     keys: ['SUMMARY', 'CONTENT'],
   },
   {
-    title: 'Mở rộng theo loại',
+    title: 'Section theo loại tài liệu',
     keys: [
-      'SERVICES',
-      'REGULATIONS',
-      'USAGE',
+      'CORE_PRODUCTS',
       'RAW_MATERIALS',
       'PROCESS',
       'FOOD_SAFETY',
       'MARKET',
+      'SERVICES',
+      'REGULATIONS',
+      'USAGE',
       'DAY_VISIT',
       'STAY_PACKAGE',
     ],
@@ -150,13 +154,14 @@ const KDOC_SECTION_LABELS = {
   KEYWORDS: 'Từ khóa',
   SUMMARY: 'Tóm tắt',
   CONTENT: 'Nội dung chính',
-  SERVICES: 'Lĩnh vực hoạt động',
-  REGULATIONS: 'Quy định',
-  USAGE: 'Cách dùng / liên hệ',
+  CORE_PRODUCTS: 'Sản phẩm / hạng mục chính',
   RAW_MATERIALS: 'Nguyên liệu',
   PROCESS: 'Quy trình',
   FOOD_SAFETY: 'An toàn thực phẩm',
   MARKET: 'Thị trường & phân phối',
+  SERVICES: 'Dịch vụ / lĩnh vực hoạt động',
+  REGULATIONS: 'Quy định',
+  USAGE: 'Cách dùng / liên hệ',
   DAY_VISIT: 'Gói trong ngày',
   STAY_PACKAGE: 'Gói lưu trú',
   FAQ: 'FAQ',
@@ -172,13 +177,14 @@ const KDOC_SECTION_HINTS = {
   KEYWORDS: 'Từ khóa hỗ trợ tìm kiếm, phân tách bằng dấu phẩy',
   SUMMARY: 'Tóm tắt ngắn gọn 1-3 câu',
   CONTENT: 'Thông tin chi tiết, có thể dùng dạng gạch đầu dòng',
-  SERVICES: 'Lĩnh vực hoạt động/chuyên môn (không phải dịch vụ bán lẻ).',
-  REGULATIONS: 'Quy định/điều kiện hợp tác hoặc quy chuẩn nội bộ.',
-  USAGE: 'Cách dùng sản phẩm hoặc thông tin liên hệ/hợp tác.',
+  CORE_PRODUCTS: 'Danh mục sản phẩm chủ lực hoặc nhóm hạng mục chính.',
   RAW_MATERIALS: 'Nguồn nguyên liệu, vùng trồng, tiêu chuẩn đầu vào.',
-  PROCESS: 'Quy trình sản xuất/kiểm soát chất lượng.',
+  PROCESS: 'Quy trình sản xuất/chế biến/kiểm soát chất lượng.',
   FOOD_SAFETY: 'An toàn thực phẩm, chứng nhận, tiêu chuẩn kiểm định.',
   MARKET: 'Thị trường mục tiêu và kênh phân phối.',
+  SERVICES: 'Dịch vụ cung cấp hoặc lĩnh vực hoạt động chính.',
+  REGULATIONS: 'Quy định/điều kiện hợp tác hoặc quy chuẩn nội bộ.',
+  USAGE: 'Cách dùng sản phẩm hoặc thông tin liên hệ/hợp tác.',
   DAY_VISIT: 'Thông tin gói trải nghiệm trong ngày (du lịch).',
   STAY_PACKAGE: 'Thông tin gói lưu trú (du lịch).',
   FAQ: 'Cặp câu hỏi / trả lời thường gặp',
@@ -194,13 +200,14 @@ const KDOC_SECTION_PLACEHOLDERS = {
   KEYWORDS: 'từ khóa 1, từ khóa 2',
   SUMMARY: 'Nhập tóm tắt ngắn...',
   CONTENT: 'Nhập nội dung chi tiết...',
-  SERVICES: 'Ví dụ: - Trồng & chế biến nông sản ...',
-  REGULATIONS: 'Ví dụ: - Điều kiện hợp tác ...',
-  USAGE: 'Ví dụ: - Liên hệ hợp tác qua ...',
+  CORE_PRODUCTS: 'Ví dụ: - Bột chanh\n- Nước cốt chanh ...',
   RAW_MATERIALS: 'Ví dụ: - Chanh VietGAP từ ...',
   PROCESS: 'Ví dụ: - Sơ chế, tiệt trùng, đóng gói ...',
   FOOD_SAFETY: 'Ví dụ: - HACCP, ISO 22000 ...',
   MARKET: 'Ví dụ: - Nội địa, xuất khẩu ...',
+  SERVICES: 'Ví dụ: - Tham quan\n- Trải nghiệm ...',
+  REGULATIONS: 'Ví dụ: - Điều kiện hợp tác ...',
+  USAGE: 'Ví dụ: - Nêm trực tiếp hoặc liên hệ qua ...',
   DAY_VISIT: 'Ví dụ: - Vé combo ...',
   STAY_PACKAGE: 'Ví dụ: - Hình thức lưu trú ...',
   FAQ: 'Q: ...\nA: ...',
@@ -208,7 +215,42 @@ const KDOC_SECTION_PLACEHOLDERS = {
   LAST_UPDATED: new Date().toISOString().split('T')[0],
 };
 
+const KDOC_DOC_TYPE_SCHEMA = {
+  product: {
+    description: 'Tài liệu cho một sản phẩm cụ thể.',
+    recommended: ['KEYWORDS', 'USAGE', 'FAQ', 'SAFETY_NOTE'],
+  },
+  company_profile: {
+    description: 'Hồ sơ doanh nghiệp hoặc thương hiệu.',
+    recommended: ['CORE_PRODUCTS', 'RAW_MATERIALS', 'PROCESS', 'FOOD_SAFETY', 'MARKET', 'SAFETY_NOTE'],
+  },
+  info: {
+    description: 'Tài liệu thông tin tổng hợp hoặc mô tả dịch vụ/địa điểm.',
+    recommended: ['SERVICES', 'DAY_VISIT', 'STAY_PACKAGE', 'REGULATIONS', 'FAQ', 'SAFETY_NOTE'],
+  },
+  faq: {
+    description: 'Bộ câu hỏi thường gặp.',
+    recommended: ['FAQ', 'SAFETY_NOTE'],
+  },
+  policy: {
+    description: 'Chính sách và quy định áp dụng.',
+    recommended: ['REGULATIONS', 'FAQ', 'SAFETY_NOTE'],
+  },
+};
+
 const KDOC_SINGLE_LINE_KEYS = new Set(['DOC_ID', 'DOC_TYPE', 'TITLE', 'LAST_UPDATED']);
+const KDOC_ALWAYS_VISIBLE_KEYS = new Set([
+  'DOC_ID',
+  'DOC_TYPE',
+  'TITLE',
+  'ALIASES',
+  'KEYWORDS',
+  'SUMMARY',
+  'CONTENT',
+  'FAQ',
+  'SAFETY_NOTE',
+  'LAST_UPDATED',
+]);
 
 const templateMap = {
   product: `=== KDOC:v1 ===
@@ -339,17 +381,17 @@ Thông tin tổng quan ngắn gọn.
 - Điểm chính 1
 - Điểm chính 2
 
-[RAW_MATERIALS]
-- Nguyên liệu đầu vào
+[SERVICES]
+- Dịch vụ / hoạt động chính
 
-[PROCESS]
-- Quy trình sản xuất
+[DAY_VISIT]
+- Gói trải nghiệm trong ngày
 
-[FOOD_SAFETY]
-- An toàn thực phẩm / chứng nhận
+[STAY_PACKAGE]
+- Gói lưu trú / phòng / lều
 
-[MARKET]
-- Thị trường & kênh phân phối
+[REGULATIONS]
+- Quy định / lưu ý vận hành
 
 [FAQ]
 Q: ...
@@ -386,18 +428,20 @@ Tóm tắt ngắn gọn về đơn vị.
 - Thương hiệu sản phẩm ...
 - Tổng diện tích vùng trồng/nhà máy ...
 
-[SERVICES]
-- Lĩnh vực hoạt động
+[CORE_PRODUCTS]
+- Nhóm sản phẩm chủ lực ...
 
-[REGULATIONS]
-- Quy định/tiêu chuẩn hợp tác
+[RAW_MATERIALS]
+- Nguồn nguyên liệu / vùng trồng ...
 
-[USAGE]
-- Liên hệ/hợp tác
+[PROCESS]
+- Quy trình sản xuất / chế biến ...
 
-[FAQ]
-Q: ...
-A: ...
+[FOOD_SAFETY]
+- Chứng nhận / tiêu chuẩn ...
+
+[MARKET]
+- Nội địa / xuất khẩu / kênh phân phối ...
 
 [SAFETY_NOTE]
 Không khẳng định tác dụng y tế.
@@ -1154,7 +1198,7 @@ function buildFallbackKdocSections(rawText) {
 
 function fieldRowsForKey(key) {
   if (key === 'CONTENT') return 8;
-  if (key === 'SERVICES' || key === 'DAY_VISIT' || key === 'STAY_PACKAGE' || key === 'REGULATIONS') return 5;
+  if (key === 'CORE_PRODUCTS' || key === 'SERVICES' || key === 'DAY_VISIT' || key === 'STAY_PACKAGE' || key === 'REGULATIONS' || key === 'MARKET') return 5;
   if (key === 'FAQ' || key === 'USAGE' || key === 'SUMMARY') return 4;
   if (key === 'SAFETY_NOTE') return 3;
   if (key === 'ALIASES' || key === 'KEYWORDS') return 2;
@@ -1192,6 +1236,21 @@ function buildKdocTextFromSections(sectionMap, keyOrder) {
   return '=== KDOC:v1 ===\n' + blocks + '\n=== END_KDOC ===';
 }
 
+function hasMeaningfulKdocValue(value) {
+  return String(value || '').trim().length > 0;
+}
+
+function buildVisibleKdocKeys(sections, docTypeSchema) {
+  const visible = new Set(KDOC_ALWAYS_VISIBLE_KEYS);
+  (docTypeSchema?.recommended || []).forEach((key) => visible.add(key));
+  Object.entries(sections || {}).forEach(([key, value]) => {
+    if (hasMeaningfulKdocValue(value)) {
+      visible.add(key);
+    }
+  });
+  return visible;
+}
+
 function syncTextFromKdocFields() {
   if (!kdocOutlineBody || !docText) return;
   let keyOrder = KDOC_SECTION_ORDER.slice();
@@ -1207,15 +1266,17 @@ function syncTextFromKdocFields() {
     }
   }
 
-  const sections = {};
+  const existingSections = parseKdocSections(docText.value || '') || {};
+  const sections = { ...existingSections };
   kdocOutlineBody.querySelectorAll('.kdoc-field[data-kdoc-key]').forEach((field) => {
     const key = field.getAttribute('data-kdoc-key');
     if (!key) return;
     sections[key] = String(field.value || '').replaceAll('\r\n', '\n').trim();
   });
-  keyOrder.forEach((key) => {
-    if (!(key in sections)) sections[key] = '';
-  });
+  keyOrder = Array.from(new Set([
+    ...keyOrder.filter((key) => key in sections || KDOC_ALWAYS_VISIBLE_KEYS.has(key)),
+    ...Object.keys(sections),
+  ]));
 
   docText.value = buildKdocTextFromSections(sections, keyOrder);
   scheduleDraftSave();
@@ -1228,26 +1289,40 @@ function renderKdocOutline(text) {
   const parsedSections = parseKdocSections(rawText);
   const isFallbackMode = !parsedSections;
   const sections = isFallbackMode ? buildFallbackKdocSections(rawText) : { ...parsedSections };
+  const docType = String(sections.DOC_TYPE || '').trim().toLowerCase();
+  const docTypeSchema = KDOC_DOC_TYPE_SCHEMA[docType] || null;
+  const visibleKeys = buildVisibleKdocKeys(sections, docTypeSchema);
 
   const renderedKeySet = new Set();
-  const orderedKeys = KDOC_SECTION_ORDER.slice();
+  const orderedKeys = KDOC_SECTION_ORDER.filter((key) => visibleKeys.has(key));
   Object.keys(sections).forEach((key) => {
-    if (!orderedKeys.includes(key)) orderedKeys.push(key);
+    if (visibleKeys.has(key) && !orderedKeys.includes(key)) orderedKeys.push(key);
   });
   kdocOutlineBody.setAttribute('data-kdoc-keys', JSON.stringify(orderedKeys));
 
-  const intro = isFallbackMode
+  const convertNote = isFallbackMode
     ? '<div class="kdoc-convert-note"><strong>Đang ở chế độ chuyển đổi từ văn bản thường sang KDOC.</strong> Hãy điền các mục bên dưới, nội dung Text sẽ tự đồng bộ theo chuẩn KDOC v1.</div>'
     : '';
+  const schemaNote = docTypeSchema
+    ? '<div class="kdoc-convert-note"><strong>Schema khuyến nghị cho ' +
+      esc(docType) +
+      ':</strong> ' +
+      esc(docTypeSchema.description) +
+      '<br>Section nên có: ' +
+      esc(docTypeSchema.recommended.join(', ')) +
+      '<br>UI sẽ ưu tiên hiện các section khuyến nghị của loại tài liệu này; section ngoài schema chỉ hiện khi đang có dữ liệu.' +
+      '</div>'
+    : '';
+  const intro = convertNote + schemaNote;
 
   const groupBlocks = KDOC_SECTION_GROUPS
     .map((group) => {
       const cards = group.keys
         .map((key) => {
-          renderedKeySet.add(key);
-          if (!orderedKeys.includes(key)) {
+          if (!visibleKeys.has(key) || !orderedKeys.includes(key)) {
             return '';
           }
+          renderedKeySet.add(key);
           return buildKdocCard(key, sections[key]);
         })
         .filter((item) => item)
@@ -1274,7 +1349,7 @@ function renderKdocOutline(text) {
   if (extraCards) {
     groupBlocks.push(
       '<section class="kdoc-group">' +
-      '<h5 class="kdoc-group-title">Mục mở rộng</h5>' +
+      '<h5 class="kdoc-group-title">Mục khác đang có dữ liệu</h5>' +
       '<div class="kdoc-grid">' + extraCards + '</div>' +
       '</section>'
     );
@@ -1506,6 +1581,10 @@ function downloadJsonFile(filename, payload) {
 }
 
 async function exportAllData() {
+  if (isDirty) {
+    setStatus('Bạn có thay đổi chưa lưu. Vui lòng lưu tài liệu trước khi xuất dữ liệu.', 'warn');
+    return;
+  }
   try {
     setBulkActionDisabled(true);
     setStatus('Đang chuẩn bị gói xuất dữ liệu...', 'loading');
@@ -1543,6 +1622,10 @@ async function exportAllData() {
 
 function parseImportPayload(rawText) {
   const parsed = JSON.parse(rawText);
+  const schema = String(parsed?.schema || '').trim();
+  if (schema !== EXPORT_SCHEMA) {
+    throw new Error('File import không đúng schema hỗ trợ.');
+  }
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('File import không đúng định dạng JSON object.');
   }
@@ -1598,8 +1681,98 @@ function parseImportPayload(rawText) {
   };
 }
 
+async function buildRollbackSnapshot() {
+  const docs = await collectDocumentsForExport();
+  const images = await collectImagesForExport(docs);
+  const payload = {
+    schema: EXPORT_SCHEMA,
+    documents: docs.map((doc) => ({
+      name: doc.name,
+      content: doc.content,
+      folder: doc.folder,
+    })),
+    images: images,
+    folderState: folderState,
+    noteTagState: noteTagState,
+    uiState: {
+      viewMode: localStorage.getItem(VIEW_MODE_KEY) || 'text',
+    },
+  };
+  return parseImportPayload(JSON.stringify(payload));
+}
+
+async function applyImportedData(data, options) {
+  const settings = options || {};
+  const includeImages = settings.includeImages !== false;
+  const clearFirst = settings.clearFirst !== false;
+
+  if (clearFirst) {
+    await req('/api/documents', { method: 'DELETE' });
+  }
+
+  for (let i = 0; i < data.documents.length; i += 1) {
+    const item = data.documents[i];
+    await req('/api/documents/text', {
+      method: 'POST',
+      retryCount: 1,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: item.name, text: item.text }),
+    });
+  }
+
+  if (includeImages && data.images.length > 0) {
+    for (let i = 0; i < data.images.length; i += 1) {
+      const image = data.images[i];
+      await req('/api/documents/image', {
+        method: 'POST',
+        retryCount: 1,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: image.doc_name,
+          file_name: image.file_name,
+          mime_type: image.mime_type,
+          data_base64: image.data_base64,
+          caption: image.caption,
+        }),
+      });
+    }
+  }
+}
+
+function applyImportedUiState(data) {
+  if (data.folderState) {
+    folderState = data.folderState;
+  }
+  noteTagState = data.noteTagState;
+  activeFolder = '__ALL__';
+  selectedDocName = '';
+  pendingFolderSelection = 'Mặc định';
+  if (docName) docName.value = '';
+  if (docText) docText.value = '';
+  if (docPreviewTitle) docPreviewTitle.textContent = 'Chưa đặt tên';
+  if (docPreviewContent) {
+    docPreviewContent.textContent =
+      'Nội dung tài liệu sẽ xuất hiện tại đây khi bạn chọn một tài liệu ở cột giữa.';
+  }
+  setLastModified('-');
+  markEditorSaved();
+  saveDraft();
+  saveFolderState();
+  saveTagState();
+  if (data.viewMode === 'kdoc') {
+    setViewMode('kdoc');
+  } else {
+    setViewMode('text');
+  }
+}
+
 async function importAllDataFromFile(file) {
   if (!file) return;
+  if (!(await canDiscardUnsaved('ghi đè dữ liệu bằng file import'))) {
+    return;
+  }
+  let rollbackSnapshot = null;
+  let destructiveStarted = false;
   try {
     const confirmed = await showConfirm(
       'Nhập dữ liệu sẽ ghi đè toàn bộ tài liệu hiện có trên máy này. Bạn có chắc chắn muốn tiếp tục?',
@@ -1617,66 +1790,14 @@ async function importAllDataFromFile(file) {
     setStatus('Đang đọc file import...', 'loading');
     const rawText = await file.text();
     const data = parseImportPayload(rawText);
+    setStatus('Đang sao lưu dữ liệu hiện có...', 'loading');
+    rollbackSnapshot = await buildRollbackSnapshot();
 
-    setStatus('Đang xóa dữ liệu cũ...', 'loading');
-    await req('/api/documents', { method: 'DELETE' });
-
-    setStatus('Đang nhập ' + data.documents.length + ' tài liệu...', 'loading');
-    for (let i = 0; i < data.documents.length; i += 1) {
-      const item = data.documents[i];
-      await req('/api/documents/text', {
-        method: 'POST',
-        retryCount: 1,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: item.name, text: item.text }),
-      });
-    }
-
+    destructiveStarted = true;
     const includeImages = importIncludeImages ? importIncludeImages.checked : true;
-    if (includeImages && data.images.length > 0) {
-      setStatus('Đang nhập ' + data.images.length + ' ảnh...', 'loading');
-      for (let i = 0; i < data.images.length; i += 1) {
-        const image = data.images[i];
-        setStatus('Đang nhập ảnh ' + (i + 1) + '/' + data.images.length + '...', 'loading');
-        await req('/api/documents/image', {
-          method: 'POST',
-          retryCount: 1,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: image.doc_name,
-            file_name: image.file_name,
-            mime_type: image.mime_type,
-            data_base64: image.data_base64,
-            caption: image.caption,
-          }),
-        });
-      }
-    }
-
-    if (data.folderState) {
-      folderState = data.folderState;
-    }
-    noteTagState = data.noteTagState;
-    activeFolder = '__ALL__';
-    selectedDocName = '';
-    pendingFolderSelection = 'Mặc định';
-    if (docName) docName.value = '';
-    if (docText) docText.value = '';
-    if (docPreviewTitle) docPreviewTitle.textContent = 'Chưa đặt tên';
-    if (docPreviewContent) {
-      docPreviewContent.textContent =
-        'Nội dung tài liệu sẽ xuất hiện tại đây khi bạn chọn một tài liệu ở cột giữa.';
-    }
-    setLastModified('-');
-    markEditorSaved();
-    saveFolderState();
-    saveTagState();
-
-    if (data.viewMode === 'kdoc') {
-      setViewMode('kdoc');
-    } else {
-      setViewMode('text');
-    }
+    setStatus('Đang thay thế dữ liệu cũ...', 'loading');
+    await applyImportedData(data, { includeImages: includeImages, clearFirst: true });
+    applyImportedUiState(data);
 
     await refreshDocuments({ silentStatus: true });
     if (documentsCache.length > 0) {
@@ -1687,10 +1808,34 @@ async function importAllDataFromFile(file) {
         data.documents.length +
         ' tài liệu' +
         (includeImages && data.images.length > 0 ? ', ' + data.images.length + ' ảnh.' : '.'),
-      'ok',
+        'ok',
     );
   } catch (error) {
-    setStatus('Nhập dữ liệu lỗi: ' + error.message, 'warn');
+    if (destructiveStarted && rollbackSnapshot) {
+      try {
+        setStatus('Nhập dữ liệu lỗi, đang khôi phục dữ liệu cũ...', 'loading');
+        await applyImportedData(rollbackSnapshot, {
+          includeImages: true,
+          clearFirst: true,
+        });
+        applyImportedUiState(rollbackSnapshot);
+        await refreshDocuments({ silentStatus: true });
+        if (documentsCache.length > 0) {
+          await loadDocumentContent(documentsCache[0].name);
+        }
+        setStatus('Nhập dữ liệu lỗi, đã khôi phục dữ liệu cũ: ' + error.message, 'warn');
+      } catch (restoreError) {
+        setStatus(
+          'Nhập dữ liệu lỗi và khôi phục thất bại: ' +
+            error.message +
+            ' | rollback: ' +
+            restoreError.message,
+          'warn',
+        );
+      }
+    } else {
+      setStatus('Nhập dữ liệu lỗi: ' + error.message, 'warn');
+    }
   } finally {
     if (importAllInput) {
       importAllInput.value = '';
@@ -1892,6 +2037,26 @@ async function refreshDocuments(options) {
   }
   const data = await req('/api/documents', { retryCount: 1 });
   documentsCache = Array.isArray(data.documents) ? data.documents : [];
+  if (
+    selectedDocName &&
+    !documentsCache.some((doc) => String(doc.name || '') === selectedDocName)
+  ) {
+    selectedDocName = '';
+    pendingFolderSelection = 'Mặc định';
+    if (docName) docName.value = '';
+    if (docText) docText.value = '';
+    if (docPreviewTitle) docPreviewTitle.textContent = 'Chưa đặt tên';
+    if (docPreviewContent) {
+      docPreviewContent.textContent =
+        'Nội dung tài liệu sẽ xuất hiện tại đây khi bạn chọn một tài liệu ở cột giữa.';
+    }
+    renderKdocOutline('');
+    setLastModified('-');
+    markEditorSaved();
+    saveDraft();
+    resetImageGallery('Chưa có ảnh cho tài liệu này.');
+    setImageUploadStatus('Chưa có ảnh tải lên.', 'info');
+  }
   renderFolderList();
   renderFolderSelect();
   renderDocTagEditor();
@@ -1922,7 +2087,8 @@ function loadDraft() {
       docName.value = String(draft.name || '');
       docText.value = String(draft.text || '');
       renderKdocOutline(docText.value || '');
-      fetchDocumentImages(docName.value, { silentStatus: true });
+      resetImageGallery('Hãy lưu tài liệu trước khi tải ảnh.');
+      setImageUploadStatus('Bản nháp chưa thể gắn ảnh. Hãy lưu tài liệu trước.', 'info');
       isDirty = true;
       setStatus('Đã khôi phục bản nháp cục bộ. Vui lòng lưu để cập nhật hệ thống.', 'info');
     }
@@ -1939,11 +2105,14 @@ function scheduleDraftSave() {
 }
 
 function currentImageDocumentName() {
-  const draftName = String(docName?.value || '').trim();
-  if (draftName) {
-    return draftName;
-  }
   const activeName = String(selectedDocName || '').trim();
+  const draftName = String(docName?.value || '').trim();
+  if (!activeName) {
+    return '';
+  }
+  if (!draftName || draftName !== activeName) {
+    return '';
+  }
   return activeName;
 }
 
@@ -2058,19 +2227,31 @@ function renderDocumentImages() {
 async function fetchDocumentImages(docNameValue, options) {
   const opts = options || {};
   const doc = String(docNameValue || '').trim();
+  const activeDoc = String(selectedDocName || '').trim();
   if (!doc) {
-    resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
+    resetImageGallery('Hãy lưu tài liệu trước khi tải ảnh.');
     if (!opts.silentStatus) {
-      setImageUploadStatus('Chưa có tên tài liệu để tải ảnh.', 'info');
+      setImageUploadStatus('Chưa có tài liệu đã lưu để tải ảnh.', 'info');
+    }
+    return;
+  }
+  if (!activeDoc || activeDoc !== doc) {
+    resetImageGallery('Tên tài liệu đã thay đổi. Hãy lưu trước khi quản lý ảnh.');
+    if (!opts.silentStatus) {
+      setImageUploadStatus('Hãy lưu tài liệu trước khi quản lý ảnh.', 'info');
     }
     return;
   }
 
+  const requestToken = ++imageRequestToken;
   try {
     const data = await req(
       '/api/documents/images?name=' + encodeURIComponent(doc),
       { retryCount: 1 },
     );
+    if (requestToken !== imageRequestToken) {
+      return;
+    }
     documentImages = Array.isArray(data.images) ? data.images : [];
     renderDocumentImages();
     if (!opts.silentStatus) {
@@ -2082,6 +2263,9 @@ async function fetchDocumentImages(docNameValue, options) {
       );
     }
   } catch (error) {
+    if (requestToken !== imageRequestToken) {
+      return;
+    }
     documentImages = [];
     resetImageGallery('Không tải được danh sách ảnh.');
     if (!opts.silentStatus) {
@@ -2177,7 +2361,7 @@ async function uploadImageFiles(fileList) {
   }
   const doc = currentImageDocumentName();
   if (!doc) {
-    setImageUploadStatus('Hãy nhập tên tài liệu và lưu trước khi tải ảnh.', 'warn');
+    setImageUploadStatus('Hãy lưu tài liệu trước khi tải ảnh minh họa.', 'warn');
     return;
   }
 
@@ -2201,9 +2385,13 @@ async function uploadImageFiles(fileList) {
 
 async function loadDocumentContent(name) {
   if (!docPreviewTitle || !docText || !docName) return;
+  const requestToken = ++documentLoadToken;
   try {
     setStatus('Đang tải nội dung tài liệu...', 'loading');
     const data = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
+    if (requestToken !== documentLoadToken) {
+      return;
+    }
     const doc = data.document || {};
     selectedDocName = String(doc.name || name || '');
     docPreviewTitle.textContent = selectedDocName || 'Chưa đặt tên';
@@ -2221,8 +2409,14 @@ async function loadDocumentContent(name) {
     renderDocTagEditor();
     renderDocuments(documentsCache);
     await fetchDocumentImages(selectedDocName, { silentStatus: true });
+    if (requestToken !== documentLoadToken) {
+      return;
+    }
     setStatus('Đã tải nội dung tài liệu.', 'ok');
   } catch (e) {
+    if (requestToken !== documentLoadToken) {
+      return;
+    }
     setStatus('Không đọc được nội dung: ' + e.message, 'warn');
   }
 }
@@ -2686,14 +2880,20 @@ function bindEvents() {
     docName.addEventListener('input', function () {
       onEditorInput();
       renderDocTagEditor();
+      const typedName = String(docName.value || '').trim();
       if (!selectedDocName) {
-        const typedName = String(docName.value || '').trim();
-        if (typedName) {
-          scheduleImageFetch(typedName);
-        } else {
-          resetImageGallery('Nhập tên tài liệu để bắt đầu tải ảnh.');
-        }
+        resetImageGallery(
+          typedName
+            ? 'Hãy lưu tài liệu trước khi tải ảnh.'
+            : 'Nhập tên tài liệu để bắt đầu.',
+        );
+        return;
       }
+      if (typedName !== selectedDocName) {
+        resetImageGallery('Tên tài liệu đã thay đổi. Hãy lưu trước khi quản lý ảnh.');
+        return;
+      }
+      scheduleImageFetch(selectedDocName);
     });
   }
   if (docText) docText.addEventListener('input', onEditorInput);

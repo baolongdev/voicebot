@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class CarouselSettings {
@@ -41,19 +42,21 @@ class CarouselSettings {
 }
 
 class CarouselSettingsCubit extends Cubit<CarouselSettings> {
-  CarouselSettingsCubit(this._store)
-      : super(
-          const CarouselSettings(
-            height: 240,
-            autoPlay: true,
-            autoPlayInterval: Duration(seconds: 4),
-            animationDuration: Duration(milliseconds: 700),
-            viewportFraction: 0.7,
-            enlargeCenter: true,
-          ),
-        );
+  CarouselSettingsCubit(this._store) : super(_defaultState());
 
   final UiSettingsStore _store;
+
+  static CarouselSettings _defaultState() {
+    final defaults = DefaultSettingsRegistry.current.carousel;
+    return CarouselSettings(
+      height: defaults.height,
+      autoPlay: defaults.autoPlay,
+      autoPlayInterval: defaults.autoPlayInterval,
+      animationDuration: defaults.animationDuration,
+      viewportFraction: defaults.viewportFraction,
+      enlargeCenter: defaults.enlargeCenter,
+    );
+  }
 
   Future<void> hydrate() async {
     final height = await _store.readCarouselHeight();

@@ -8,6 +8,7 @@ import 'package:forui/forui.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/theme/forui/theme_tokens.dart';
+import '../../../core/telemetry/runtime_metrics.dart';
 import '../../../capabilities/vision/face_detection_engine.dart';
 
 class HomeCameraOverlay extends StatefulWidget {
@@ -42,6 +43,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
     with WidgetsBindingObserver {
   static const Size _defaultBoxSize = Size(200, 130);
   static const double _edgePadding = ThemeTokens.spaceSm;
+  static const int _detectIntervalMs = 240;
   bool _cameraEnabled = false;
   bool _cameraInitializing = false;
   bool _cameraPausedByLifecycle = false;
@@ -49,8 +51,9 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
   Size _boxSize = _defaultBoxSize;
   final FaceDetectionEngine _faceEngine = FaceDetectionEngine();
   bool _faceReady = false;
-  bool _faceProcessing = false;
+  bool _faceQueueProcessing = false;
   int _lastDetectMs = 0;
+  FaceDetectionFrame? _latestFrame;
   Size? _lastImageSize;
   Size? _previewSize;
   List<Face> _faces = const [];
@@ -68,6 +71,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.detectFacesEnabled != widget.detectFacesEnabled &&
         !widget.detectFacesEnabled) {
+      _latestFrame = null;
       _clearFaceState(clearPreview: false);
     }
     if (oldWidget.enabled != widget.enabled) {
@@ -113,6 +117,8 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _faceQueueProcessing = false;
+    _latestFrame = null;
     _disposeCamera();
     _faceEngine.dispose();
     super.dispose();
@@ -172,20 +178,18 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
                 )
               else
                 Container(color: context.theme.colors.background),
-                if (!_cameraEnabled)
-                  Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: ThemeTokens.spaceSm,
-                        vertical: ThemeTokens.spaceXs,
-                      ),
-                      decoration: BoxDecoration(
-                        color: context.theme.colors.muted,
-                        borderRadius: BorderRadius.circular(
-                          ThemeTokens.radiusMd,
-                        ),
-                        border: Border.all(color: context.theme.colors.border),
-                      ),
+              if (!_cameraEnabled)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: ThemeTokens.spaceSm,
+                      vertical: ThemeTokens.spaceXs,
+                    ),
+                    decoration: BoxDecoration(
+                      color: context.theme.colors.muted,
+                      borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
+                      border: Border.all(color: context.theme.colors.border),
+                    ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -281,8 +285,9 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
     }
     final controller = CameraController(
       frontCamera,
-      ResolutionPreset.medium,
+      ResolutionPreset.low,
       enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
     );
     try {
       await controller.initialize();
@@ -305,8 +310,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
         unawaited(_disposeCameraController(previousController));
       }
       widget.onEnabledChanged(true);
-      if (!fromLifecycle) {
-      }
+      if (!fromLifecycle) {}
     } catch (_) {
       await _disposeCameraController(controller);
       if (!mounted) {
@@ -325,6 +329,8 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
 
   void _stopCamera() {
     _cameraPausedByLifecycle = false;
+    _faceQueueProcessing = false;
+    _latestFrame = null;
     _disposeCamera();
     if (!mounted) {
       return;
@@ -347,7 +353,8 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
   Future<void> _pauseCameraForLifecycle() async {
     final controller = _controller;
     _controller = null;
-    _faceProcessing = false;
+    _faceQueueProcessing = false;
+    _latestFrame = null;
     if (mounted) {
       setState(() {
         _cameraEnabled = false;
@@ -381,52 +388,84 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    if (!_cameraEnabled || !_faceReady || _faceProcessing) {
+    if (!_cameraEnabled || !_faceReady) {
       return;
     }
     if (!widget.detectFacesEnabled) {
       return;
     }
+    // Keep only one pending frame while detector is busy to reduce allocations.
+    if (_faceQueueProcessing && _latestFrame != null) {
+      RuntimeMetrics.instance.incrementCameraFrameDropCount();
+      return;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastDetectMs < 150) {
+    if (now - _lastDetectMs < _detectIntervalMs) {
       return;
     }
     _lastDetectMs = now;
-    _faceProcessing = true;
+    final frame = FaceDetectionFrame.fromCameraImage(image);
+    if (_latestFrame != null) {
+      RuntimeMetrics.instance.incrementCameraFrameDropCount();
+    }
+    _latestFrame = frame;
+    if (_faceQueueProcessing) {
+      return;
+    }
+    unawaited(_drainFaceQueue());
+  }
+
+  Future<void> _drainFaceQueue() async {
+    if (_faceQueueProcessing) {
+      return;
+    }
+    _faceQueueProcessing = true;
     try {
-      final nextRotation = _controller == null
-          ? _rotationDegrees
-          : _resolveRotationDegrees(_controller!);
-      if (nextRotation != _rotationDegrees && mounted) {
-        setState(() {
-          _rotationDegrees = nextRotation;
-        });
-      }
-      final faces = await _faceEngine.detectFromCameraImage(
-        image,
-        mode: _resolveDetectionMode(),
-      );
-      if (!mounted) {
-        return;
-      }
-      final hasFace = faces.isNotEmpty;
-      if (hasFace != _hadFace) {
-        _hadFace = hasFace;
-        widget.onFacePresenceChanged(hasFace);
-      }
-      if (!hasFace) {
-        _faces = const [];
-      }
-      setState(() {
-        if (hasFace) {
-          _faces = faces;
+      while (mounted &&
+          _cameraEnabled &&
+          widget.detectFacesEnabled &&
+          _latestFrame != null) {
+        final frame = _latestFrame!;
+        _latestFrame = null;
+        try {
+          final nextRotation = _controller == null
+              ? _rotationDegrees
+              : _resolveRotationDegrees(_controller!);
+          if (nextRotation != _rotationDegrees && mounted) {
+            setState(() {
+              _rotationDegrees = nextRotation;
+            });
+          }
+          final faces = await _faceEngine.detectFromFrame(
+            frame,
+            mode: _resolveDetectionMode(),
+          );
+          if (!mounted) {
+            return;
+          }
+          final hasFace = faces.isNotEmpty;
+          if (hasFace != _hadFace) {
+            _hadFace = hasFace;
+            widget.onFacePresenceChanged(hasFace);
+          }
+          if (!hasFace) {
+            _faces = const [];
+          }
+          setState(() {
+            if (hasFace) {
+              _faces = faces;
+            }
+            _lastImageSize = Size(
+              frame.width.toDouble(),
+              frame.height.toDouble(),
+            );
+          });
+        } catch (_) {
+          // Ignore frame failures.
         }
-        _lastImageSize = Size(image.width.toDouble(), image.height.toDouble());
-      });
-    } catch (_) {
-      // Ignore frame failures.
+      }
     } finally {
-      _faceProcessing = false;
+      _faceQueueProcessing = false;
     }
   }
 
@@ -459,6 +498,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
   }
 
   void _clearFaceState({required bool clearPreview}) {
+    _latestFrame = null;
     if (_hadFace) {
       _hadFace = false;
       widget.onFacePresenceChanged(false);

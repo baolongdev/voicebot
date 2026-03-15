@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class FaceDetectionSettings {
@@ -30,13 +31,15 @@ class FaceDetectionSettings {
 
 class FaceDetectionSettingsCubit extends Cubit<FaceDetectionSettings> {
   FaceDetectionSettingsCubit(this._store)
-      : super(
-          const FaceDetectionSettings(
-            landmarksEnabled: false,
-            meshEnabled: false,
-            eyeTrackingEnabled: false,
-          ),
-        );
+    : super(
+        FaceDetectionSettings(
+          landmarksEnabled:
+              DefaultSettingsRegistry.current.camera.faceLandmarks,
+          meshEnabled: DefaultSettingsRegistry.current.camera.faceMesh,
+          eyeTrackingEnabled:
+              DefaultSettingsRegistry.current.camera.eyeTracking,
+        ),
+      );
 
   final UiSettingsStore _store;
 

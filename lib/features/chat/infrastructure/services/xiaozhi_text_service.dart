@@ -10,9 +10,9 @@ class XiaozhiTextService {
     required SessionCoordinator sessionCoordinator,
     required String Function() sessionIdProvider,
     Duration sessionWaitTimeout = const Duration(seconds: 1),
-  })  : _sessionCoordinator = sessionCoordinator,
-        _sessionIdProvider = sessionIdProvider,
-        _sessionWaitTimeout = sessionWaitTimeout;
+  }) : _sessionCoordinator = sessionCoordinator,
+       _sessionIdProvider = sessionIdProvider,
+       _sessionWaitTimeout = sessionWaitTimeout;
 
   final SessionCoordinator _sessionCoordinator;
   final String Function() _sessionIdProvider;
@@ -20,7 +20,7 @@ class XiaozhiTextService {
 
   Future<Result<bool>> sendTextRequest(
     String text, {
-    bool useTextType = false,
+    bool useTextType = true,
   }) async {
     final sessionId = await _resolveSessionId();
     final payload = useTextType
@@ -40,9 +40,7 @@ class XiaozhiTextService {
     AppLogger.event(
       'ChatRepository',
       'send_text',
-      fields: <String, Object?>{
-        'payload': encoded,
-      },
+      fields: <String, Object?>{'payload': encoded},
     );
     await _sessionCoordinator.sendText(encoded);
     return Result.success(true);

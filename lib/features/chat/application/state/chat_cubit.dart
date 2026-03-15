@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../capabilities/protocol/protocol.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/config/default_settings.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/logging/app_logger.dart';
 import '../../../../core/result/result.dart';
@@ -94,7 +95,8 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   bool _disposed = false;
   int _connectGeneration = 0;
   ChatConfig? _cachedConfig;
-  bool _autoReconnectEnabled = AppConfig.autoReconnectEnabledDefault;
+  bool _autoReconnectEnabled =
+      DefaultSettingsRegistry.current.chat.autoReconnect;
   Timer? _autoReconnectTimer;
   int _autoReconnectAttempt = 0;
   static const List<Duration> _autoReconnectDelays = [
@@ -117,7 +119,8 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   DateTime _lastRelatedQueryAt = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _networkWarningHold = Duration(seconds: 12);
   static const String _relatedImagesMessageId = '__related_images__';
-  String _connectGreeting = AppConfig.connectGreetingDefault;
+  String _connectGreeting =
+      DefaultSettingsRegistry.current.chat.connectGreeting;
   Future<void> initialize() async {
     await _attachStreams();
     await _connectWithConfig();

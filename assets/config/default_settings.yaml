@@ -1,0 +1,55 @@
+theme:
+  # [light, dark, system]: Chế độ sáng/tối mặc định của app.
+  mode: system
+  # [neutral, green, lime]: Bảng màu mặc định.
+  palette: green
+  # [0.85..1.5]: Tỉ lệ phóng chữ toàn app.
+  text_scale: 1.5
+
+chat:
+  # [always_on, auto_stop, manual]: Chế độ nghe mặc định.
+  listening_mode: auto_stop
+  # [listen_detect, text]: Cách gửi text trong chat.
+  text_send_mode: listen_detect
+  # [string]: Câu gửi khi vừa kết nối chat.
+  connect_greeting: "Xin chào"
+  # [true, false]: Tự reconnect khi mất kết nối.
+  auto_reconnect: true
+
+camera:
+  # [true, false]: Bật/tắt camera overlay.
+  enabled: true
+  # [0.5..3.0]: Tỉ lệ khung hình camera.
+  aspect_ratio: 1.3333333333
+  # [true, false]: Bật/tắt phát hiện khuôn mặt.
+  detect_faces: true
+  # [true, false]: Bật/tắt landmarks.
+  face_landmarks: false
+  # [true, false]: Bật/tắt face mesh.
+  face_mesh: false
+  # [true, false]: Bật/tắt eye tracking.
+  eye_tracking: false
+
+carousel:
+  # [120..360]: Chiều cao carousel (dp).
+  height: 240.0
+  # [true, false]: Tự động chuyển ảnh.
+  auto_play: true
+  # [1000..10000]: Chu kỳ auto play (ms).
+  auto_play_interval_ms: 4000
+  # [200..3000]: Thời gian animation (ms).
+  animation_duration_ms: 700
+  # [0.4..1.0]: Tỉ lệ chiều rộng item trong viewport.
+  viewport_fraction: 0.7
+  # [true, false]: Phóng to item ở giữa.
+  enlarge_center: true
+
+app:
+  # [true, false]: Chế độ full screen.
+  fullscreen_enabled: true
+  # [true, false]: Bật kiểm tra/yêu cầu quyền.
+  permissions_enabled: true
+
+device:
+  # [MAC string]: MAC mặc định cho OTA/device identity.
+  default_mac_address: "02:00:00:00:00:12"

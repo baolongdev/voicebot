@@ -8,6 +8,8 @@ import 'package:opus_dart/opus_dart.dart' as opus_dart;
 import 'package:voicebot/di/locator.dart';
 import 'package:voicebot/presentation/app/application.dart';
 import 'package:voicebot/core/config/app_config.dart';
+import 'package:voicebot/core/config/default_settings.dart';
+import 'package:voicebot/core/config/default_settings_loader.dart';
 import 'package:voicebot/core/opus/opus_loader.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
 import 'package:voicebot/system/update/github_updater.dart';
@@ -23,7 +25,9 @@ Future<void> main() async {
     return false;
   };
   await _initOpus();
-  if (AppConfig.fullscreenEnabled) {
+  await DefaultSettingsLoader.loadIntoRegistry();
+  final settings = DefaultSettingsRegistry.current;
+  if (settings.app.fullscreenEnabled) {
     // Keep fullscreen at the app boundary so feature UI stays clean.
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   } else {

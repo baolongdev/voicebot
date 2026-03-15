@@ -297,7 +297,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
         ),
         if (_searchResults.isNotEmpty) ...[
           const SizedBox(height: ThemeTokens.spaceMd),
-          _SearchResults(results: _searchResults),
+          _SearchResults(results: _searchResults, query: _query),
         ] else if (_searchAttempted) ...[
           const SizedBox(height: ThemeTokens.spaceMd),
           _EmptySearchResult(query: _query),
@@ -456,7 +456,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
       'id': _requestId++,
       'method': 'tools/call',
       'params': <String, dynamic>{'name': name, 'arguments': arguments},
-    });
+    }, caller: McpCallerType.user);
     if (response == null) {
       throw Exception('MCP không có phản hồi.');
     }
@@ -861,9 +861,10 @@ class _DocumentList extends StatelessWidget {
 }
 
 class _SearchResults extends StatelessWidget {
-  const _SearchResults({required this.results});
+  const _SearchResults({required this.results, required this.query});
 
   final List<Map<String, dynamic>> results;
+  final String query;
 
   @override
   Widget build(BuildContext context) {
@@ -878,41 +879,402 @@ class _SearchResults extends StatelessWidget {
         ),
         const SizedBox(height: ThemeTokens.spaceSm),
         for (final row in results) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(ThemeTokens.spaceSm),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(ThemeTokens.radiusSm),
-              border: Border.all(color: context.theme.colors.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  (row['name'] ?? '').toString(),
-                  style: context.theme.typography.base.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
+          Builder(
+            builder: (context) {
+              final title = (row['title'] ?? '').toString().trim();
+              final docType = (row['doc_type'] ?? '').toString().trim();
+              final confidence = (row['confidence'] ?? '').toString().trim();
+              final score = (row['score'] ?? '').toString();
+              final coverageRatio =
+                  (row['coverage_ratio'] as num?)?.toDouble() ?? 0;
+              final fieldHits = _stringList(row['field_hits']);
+              final snippet = (row['snippet'] ?? '').toString().trim();
+              final agentPreview = _buildAgentPreview(row, query);
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(ThemeTokens.spaceSm),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(ThemeTokens.radiusSm),
+                  border: Border.all(color: context.theme.colors.border),
                 ),
-                const SizedBox(height: ThemeTokens.spaceXs),
-                Text(
-                  'Điểm: ${(row['score'] ?? '').toString()}',
-                  style: context.theme.typography.sm.copyWith(
-                    color: context.theme.colors.mutedForeground,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      (row['name'] ?? '').toString(),
+                      style: context.theme.typography.base.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    if (title.isNotEmpty) ...[
+                      const SizedBox(height: ThemeTokens.spaceXs),
+                      Text(
+                        'Tiêu đề: $title',
+                        style: context.theme.typography.sm,
+                      ),
+                    ],
+                    const SizedBox(height: ThemeTokens.spaceXs),
+                    Text(
+                      confidence.isEmpty
+                          ? 'Điểm: $score'
+                          : 'Điểm: $score | Độ phù hợp: $confidence (${(coverageRatio * 100).round()}%)',
+                      style: context.theme.typography.sm.copyWith(
+                        color: context.theme.colors.mutedForeground,
+                      ),
+                    ),
+                    if (docType.isNotEmpty) ...[
+                      const SizedBox(height: ThemeTokens.spaceXs),
+                      Text(
+                        'Loại: $docType',
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                    if (fieldHits.isNotEmpty) ...[
+                      const SizedBox(height: ThemeTokens.spaceXs),
+                      Text(
+                        'Khớp theo: ${fieldHits.join(', ')}',
+                        style: context.theme.typography.sm.copyWith(
+                          color: context.theme.colors.mutedForeground,
+                        ),
+                      ),
+                    ],
+                    if (snippet.isNotEmpty) ...[
+                      const SizedBox(height: ThemeTokens.spaceXs),
+                      Text(snippet, style: context.theme.typography.sm),
+                    ],
+                    if (agentPreview.isNotEmpty) ...[
+                      const SizedBox(height: ThemeTokens.spaceSm),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(ThemeTokens.spaceSm),
+                        decoration: BoxDecoration(
+                          color: context.theme.colors.secondary.withAlpha(18),
+                          borderRadius: BorderRadius.circular(
+                            ThemeTokens.radiusSm,
+                          ),
+                          border: Border.all(
+                            color: context.theme.colors.border,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Nội dung MCP cấp cho agent',
+                              style: context.theme.typography.sm.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: ThemeTokens.spaceXs),
+                            SelectableText(
+                              agentPreview,
+                              style: context.theme.typography.sm,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: ThemeTokens.spaceXs),
-                Text(
-                  (row['snippet'] ?? '').toString(),
-                  style: context.theme.typography.sm,
-                ),
-              ],
-            ),
+              );
+            },
           ),
           if (row != results.last) const SizedBox(height: ThemeTokens.spaceSm),
         ],
       ],
     );
+  }
+
+  static List<String> _stringList(Object? raw) {
+    if (raw is! List) {
+      return const <String>[];
+    }
+    return raw
+        .map((item) => item.toString().trim())
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  static String _buildAgentPreview(Map<String, dynamic> row, String query) {
+    final title = (row['title'] ?? row['name'] ?? '').toString().trim();
+    final docType = (row['doc_type'] ?? '').toString().trim();
+    final summary = (row['summary'] ?? '').toString().trim();
+    final usage = (row['usage'] ?? '').toString().trim();
+    final safetyNote = (row['safety_note'] ?? '').toString().trim();
+    final snippet = (row['snippet'] ?? '').toString().trim();
+    final fieldHits = _stringList(row['field_hits']);
+    final confidence = (row['confidence'] ?? '').toString().trim();
+    final coverageRatio =
+        ((row['coverage_ratio'] as num?)?.toDouble() ?? 0) * 100;
+    final evidence = _extractRelevantExcerpt(
+      rawContent: (row['content'] ?? '').toString(),
+      fallbackSnippet: snippet,
+      query: query,
+    );
+
+    final buffer = StringBuffer();
+    if (title.isNotEmpty) {
+      buffer.writeln('[TAI_LIEU] $title');
+    }
+    if (docType.isNotEmpty) {
+      buffer.writeln('[DOC_TYPE] $docType');
+    }
+    if (confidence.isNotEmpty) {
+      buffer.writeln('[DO_PHU_HOP] $confidence (${coverageRatio.round()}%)');
+    }
+    if (fieldHits.isNotEmpty) {
+      buffer.writeln('[FIELD_HITS] ${fieldHits.join(', ')}');
+    }
+    if (summary.isNotEmpty) {
+      buffer.writeln('[SUMMARY] $summary');
+    }
+    if (evidence.isNotEmpty) {
+      buffer.writeln('[CONTENT] $evidence');
+    }
+    if (usage.isNotEmpty) {
+      buffer.writeln('[USAGE] $usage');
+    }
+    if (safetyNote.isNotEmpty) {
+      buffer.writeln('[SAFETY_NOTE] $safetyNote');
+    }
+    return buffer.toString().trim();
+  }
+
+  static String _extractRelevantExcerpt({
+    required String rawContent,
+    required String fallbackSnippet,
+    required String query,
+  }) {
+    final trimmed = rawContent.trim();
+    if (trimmed.isEmpty) {
+      return fallbackSnippet;
+    }
+
+    final sections = _parseKdocSections(trimmed);
+    if (sections != null) {
+      final summary = (sections['SUMMARY'] ?? '').trim();
+      final content = (sections['CONTENT'] ?? '').trim();
+      final usage = (sections['USAGE'] ?? '').trim();
+      final faq = (sections['FAQ'] ?? '').trim();
+      final blocks = <String>[];
+      if (summary.isNotEmpty) {
+        blocks.add('Tóm tắt: ${_trimInline(summary, maxChars: 180)}');
+      }
+      final contentExcerpt = _excerptFromText(content, query, maxChars: 260);
+      if (contentExcerpt.isNotEmpty) {
+        blocks.add(contentExcerpt);
+      }
+      if (usage.isNotEmpty && !blocks.join('\n').contains(usage)) {
+        blocks.add('Hướng dẫn: ${_trimInline(usage, maxChars: 180)}');
+      }
+      if (faq.isNotEmpty && blocks.length < 3) {
+        blocks.add('FAQ: ${_excerptFromText(faq, query, maxChars: 180)}');
+      }
+      return blocks.join('\n').trim();
+    }
+
+    return _excerptFromText(trimmed, query, maxChars: 320);
+  }
+
+  static Map<String, String>? _parseKdocSections(String content) {
+    final normalized = content.replaceAll('\r\n', '\n').trim();
+    final lines = normalized.split('\n');
+    final start = lines.indexWhere((line) => line.trim() == '=== KDOC:v1 ===');
+    final end = lines.lastIndexWhere(
+      (line) => line.trim() == '=== END_KDOC ===',
+    );
+    if (start < 0 || end <= start) {
+      return null;
+    }
+
+    final sections = <String, String>{};
+    String? currentKey;
+    final buffer = <String>[];
+    final sectionPattern = RegExp(r'^\s*\[([A-Z_]+)\]\s*$');
+
+    void flush() {
+      if (currentKey == null) {
+        return;
+      }
+      sections[currentKey!] = buffer.join('\n').trim();
+      buffer.clear();
+    }
+
+    for (var i = start + 1; i < end; i++) {
+      final line = lines[i];
+      final match = sectionPattern.firstMatch(line);
+      if (match != null) {
+        flush();
+        currentKey = match.group(1);
+        continue;
+      }
+      if (currentKey != null) {
+        buffer.add(line);
+      }
+    }
+    flush();
+    return sections;
+  }
+
+  static String _excerptFromText(
+    String text,
+    String query, {
+    required int maxChars,
+  }) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    if (trimmed.length <= maxChars) {
+      return trimmed;
+    }
+
+    final normalizedQuery = _normalize(query);
+    final tokens = normalizedQuery
+        .split(RegExp(r'\s+'))
+        .where((item) => item.length >= 2)
+        .toSet();
+    final lines = trimmed
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      return _trimInline(trimmed, maxChars: maxChars);
+    }
+
+    var bestIndex = -1;
+    var bestScore = -1;
+    for (var i = 0; i < lines.length; i++) {
+      final normalizedLine = _normalize(lines[i]);
+      if (normalizedLine.isEmpty) {
+        continue;
+      }
+      var score = 0;
+      if (normalizedQuery.isNotEmpty &&
+          normalizedLine.contains(normalizedQuery)) {
+        score += 18;
+      }
+      for (final token in tokens) {
+        if (normalizedLine.contains(token)) {
+          score += 3;
+        }
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    if (bestIndex < 0 || bestScore <= 0) {
+      return _trimInline(trimmed, maxChars: maxChars);
+    }
+
+    final start = (bestIndex - 1).clamp(0, lines.length - 1);
+    final end = (bestIndex + 2).clamp(0, lines.length - 1);
+    final buffer = StringBuffer();
+    for (var i = start; i <= end; i++) {
+      final nextLine = lines[i];
+      final nextText = buffer.isEmpty
+          ? nextLine
+          : '${buffer.toString()}\n$nextLine';
+      if (nextText.length > maxChars) {
+        break;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.writeln();
+      }
+      buffer.write(nextLine);
+    }
+    final selected = buffer.toString().trim();
+    return selected.isEmpty
+        ? _trimInline(trimmed, maxChars: maxChars)
+        : selected;
+  }
+
+  static String _trimInline(String input, {required int maxChars}) {
+    final normalized = input.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return '${normalized.substring(0, maxChars)}...';
+  }
+
+  static String _normalize(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll('à', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('ạ', 'a')
+        .replaceAll('ả', 'a')
+        .replaceAll('ã', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('ầ', 'a')
+        .replaceAll('ấ', 'a')
+        .replaceAll('ậ', 'a')
+        .replaceAll('ẩ', 'a')
+        .replaceAll('ẫ', 'a')
+        .replaceAll('ă', 'a')
+        .replaceAll('ằ', 'a')
+        .replaceAll('ắ', 'a')
+        .replaceAll('ặ', 'a')
+        .replaceAll('ẳ', 'a')
+        .replaceAll('ẵ', 'a')
+        .replaceAll('è', 'e')
+        .replaceAll('é', 'e')
+        .replaceAll('ẹ', 'e')
+        .replaceAll('ẻ', 'e')
+        .replaceAll('ẽ', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('ề', 'e')
+        .replaceAll('ế', 'e')
+        .replaceAll('ệ', 'e')
+        .replaceAll('ể', 'e')
+        .replaceAll('ễ', 'e')
+        .replaceAll('ì', 'i')
+        .replaceAll('í', 'i')
+        .replaceAll('ị', 'i')
+        .replaceAll('ỉ', 'i')
+        .replaceAll('ĩ', 'i')
+        .replaceAll('ò', 'o')
+        .replaceAll('ó', 'o')
+        .replaceAll('ọ', 'o')
+        .replaceAll('ỏ', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('ồ', 'o')
+        .replaceAll('ố', 'o')
+        .replaceAll('ộ', 'o')
+        .replaceAll('ổ', 'o')
+        .replaceAll('ỗ', 'o')
+        .replaceAll('ơ', 'o')
+        .replaceAll('ờ', 'o')
+        .replaceAll('ớ', 'o')
+        .replaceAll('ợ', 'o')
+        .replaceAll('ở', 'o')
+        .replaceAll('ỡ', 'o')
+        .replaceAll('ù', 'u')
+        .replaceAll('ú', 'u')
+        .replaceAll('ụ', 'u')
+        .replaceAll('ủ', 'u')
+        .replaceAll('ũ', 'u')
+        .replaceAll('ư', 'u')
+        .replaceAll('ừ', 'u')
+        .replaceAll('ứ', 'u')
+        .replaceAll('ự', 'u')
+        .replaceAll('ử', 'u')
+        .replaceAll('ữ', 'u')
+        .replaceAll('ỳ', 'y')
+        .replaceAll('ý', 'y')
+        .replaceAll('ỵ', 'y')
+        .replaceAll('ỷ', 'y')
+        .replaceAll('ỹ', 'y')
+        .replaceAll('đ', 'd')
+        .replaceAll(RegExp(r'[^a-z0-9\s]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 }
 

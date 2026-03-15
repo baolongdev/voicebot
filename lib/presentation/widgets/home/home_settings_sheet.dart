@@ -51,6 +51,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onThemePaletteChanged,
     required this.onSetLight,
     required this.onSetDark,
+    required this.onSetSystem,
     required this.listeningMode,
     required this.onListeningModeChanged,
     required this.textSendMode,
@@ -108,6 +109,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<AppThemePalette> onThemePaletteChanged;
   final VoidCallback onSetLight;
   final VoidCallback onSetDark;
+  final VoidCallback onSetSystem;
   final ListeningMode listeningMode;
   final ValueChanged<ListeningMode> onListeningModeChanged;
   final TextSendMode textSendMode;
@@ -133,14 +135,7 @@ class HomeSettingsSheet extends StatefulWidget {
   State<HomeSettingsSheet> createState() => _HomeSettingsSheetState();
 }
 
-enum _SettingsSection {
-  connectivity,
-  audio,
-  chat,
-  camera,
-  display,
-  advanced,
-}
+enum _SettingsSection { connectivity, audio, chat, camera, display, advanced }
 
 class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     with TickerProviderStateMixin {
@@ -528,7 +523,11 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
       context,
     ).scale(1.0).clamp(0.85, 1.5);
     final tabHeight = (35.0 * textScale).clamp(35.0, 56.0);
-    final themeIndex = widget.themeMode == ThemeMode.dark ? 1 : 0;
+    final themeIndex = switch (widget.themeMode) {
+      ThemeMode.light => 0,
+      ThemeMode.dark => 1,
+      ThemeMode.system => 2,
+    };
     final paletteLabel = _paletteOptions[_paletteIndex].label;
     final cameraIndex = _cameraEnabledLocal ? 1 : 0;
     final cameraAspectLabel = _cameraAspectLabels[_cameraAspectIndex];
@@ -547,8 +546,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
     final hostLabel =
         hostUrl ?? (_webHostState.message ?? 'Chưa có địa chỉ host');
     final macValid = _isMacValid(_macAddressText);
-    final showMacError =
-        _macAddressText.trim().isNotEmpty && !macValid;
+    final showMacError = _macAddressText.trim().isNotEmpty && !macValid;
     final offline = isOffline(widget.connectivity);
     final isWifiConnected =
         widget.connectivity?.contains(HomeConnectivity.wifi) ?? false;
@@ -961,8 +959,7 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                                   final raw = value.text;
                                   final normalized = _normalizeMacInput(raw);
                                   final isValid = _isMacValid(raw);
-                                  final nextText =
-                                      isValid ? normalized : raw;
+                                  final nextText = isValid ? normalized : raw;
                                   if (_macAddressText != nextText) {
                                     setState(() {
                                       _macAddressText = nextText;
@@ -1242,10 +1239,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                           control: FTabControl.lifted(
                             index: themeIndex,
                             onChange: (index) {
-                              if (index == 0) {
-                                widget.onSetLight();
-                              } else {
-                                widget.onSetDark();
+                              switch (index) {
+                                case 0:
+                                  widget.onSetLight();
+                                  break;
+                                case 1:
+                                  widget.onSetDark();
+                                  break;
+                                default:
+                                  widget.onSetSystem();
                               }
                             },
                           ),
@@ -1258,6 +1260,10 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                             ),
                             FTabEntry(
                               label: Text('Tối'),
+                              child: SizedBox.shrink(),
+                            ),
+                            FTabEntry(
+                              label: Text('Hệ thống'),
                               child: SizedBox.shrink(),
                             ),
                           ],

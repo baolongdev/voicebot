@@ -36,9 +36,7 @@ class ChatInput extends StatelessWidget {
                   control: FTextFieldControl.lifted(
                     value: TextEditingValue(
                       text: text,
-                      selection: TextSelection.collapsed(
-                        offset: text.length,
-                      ),
+                      selection: TextSelection.collapsed(offset: text.length),
                     ),
                     onChange: (value) => onTextChanged(value.text),
                   ),
@@ -52,7 +50,7 @@ class ChatInput extends StatelessWidget {
                 onPress: isSending ? null : onSend,
                 child: isSending
                     ? const FCircularProgress()
-                    : const Text('Send'),
+                    : const Text('Gửi'),
               ),
             ),
           ],

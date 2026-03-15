@@ -1,10 +1,12 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/config/default_settings.dart';
 import '../../theme/theme_palette.dart';
 import 'ui_settings_store.dart';
 
 class ThemePaletteCubit extends Cubit<AppThemePalette> {
-  ThemePaletteCubit(this._store) : super(AppThemePalette.green);
+  ThemePaletteCubit(this._store)
+    : super(DefaultSettingsRegistry.current.theme.palette);
 
   final UiSettingsStore _store;
 

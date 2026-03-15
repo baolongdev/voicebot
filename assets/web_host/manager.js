@@ -22,6 +22,8 @@ const managerStatus = document.getElementById('managerStatus');
 let docsCache = [];
 let selectedName = '';
 let selectedImages = [];
+let managerDocumentLoadToken = 0;
+let managerImageLoadToken = 0;
 let imagePreviewModal = null;
 let imagePreviewImage = null;
 let imagePreviewTitle = null;
@@ -182,6 +184,18 @@ function setKdocBadge(isValid) {
   if (!managerKdocBadge) return;
   managerKdocBadge.className = 'metric-chip ' + (isValid ? 'manager-kdoc-ok' : 'manager-kdoc-warn');
   managerKdocBadge.textContent = isValid ? 'KDOC: Hợp lệ' : 'KDOC: Cần chỉnh';
+}
+
+function clearSelectedState(message) {
+  selectedName = '';
+  updateSelectedDocMeta('', 0);
+  updateLastModified('-');
+  setKdocBadge(false);
+  if (managerKdocView) {
+    managerKdocView.textContent = message || 'Chọn một tài liệu ở cột trái để xem nội dung.';
+  }
+  resetManagerImageGallery('Chưa chọn tài liệu.');
+  updateKpis();
 }
 
 function resetManagerImageGallery(message) {
@@ -567,7 +581,11 @@ function renderDocuments(rows) {
     const open = async () => {
       const name = el.getAttribute('data-name');
       if (!name) return;
-      await loadDocument(name);
+      try {
+        await loadDocument(name);
+      } catch (error) {
+        setStatus('Không tải được tài liệu: ' + error.message, 'warn');
+      }
     };
 
     el.addEventListener('click', open);
@@ -587,6 +605,12 @@ async function refreshDocuments(silentStatus) {
   }
   const data = await req('/api/documents', { retryCount: 1 });
   docsCache = Array.isArray(data.documents) ? data.documents : [];
+  if (
+    selectedName &&
+    !docsCache.some((doc) => String(doc.name || '') === selectedName)
+  ) {
+    clearSelectedState('Tài liệu đã chọn không còn tồn tại.');
+  }
   renderDocuments(docsCache);
   if (!silentStatus) {
     setStatus('Đã cập nhật danh sách tài liệu.', 'ok');
@@ -599,20 +623,31 @@ async function loadManagerImages(docName) {
     resetManagerImageGallery('Chưa chọn tài liệu.');
     return;
   }
+  const requestToken = ++managerImageLoadToken;
   try {
     const payload = await req('/api/documents/images?name=' + encodeURIComponent(name), {
       retryCount: 1,
     });
+    if (requestToken !== managerImageLoadToken) {
+      return;
+    }
     selectedImages = Array.isArray(payload.images) ? payload.images : [];
     renderManagerImageGallery();
   } catch (_) {
+    if (requestToken !== managerImageLoadToken) {
+      return;
+    }
     resetManagerImageGallery('Không tải được thư viện ảnh.');
   }
 }
 
 async function loadDocument(name) {
+  const requestToken = ++managerDocumentLoadToken;
   setStatus('Đang tải nội dung tài liệu...', 'loading');
   const payload = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
+  if (requestToken !== managerDocumentLoadToken) {
+    return;
+  }
   const doc = payload.document || {};
   selectedName = String(doc.name || name || '');
   const content = String(doc.content || '');
@@ -620,6 +655,9 @@ async function loadDocument(name) {
   updateLastModified(doc.updated_at || '-');
   renderKdocView(content);
   await loadManagerImages(selectedName);
+  if (requestToken !== managerDocumentLoadToken) {
+    return;
+  }
   renderDocuments(docsCache);
   setStatus('Đã tải nội dung tài liệu.', 'ok');
 }
@@ -757,11 +795,7 @@ function bindEvents() {
 (async function boot() {
   bindEvents();
   bindShortcuts();
-  updateSelectedDocMeta('', 0);
-  updateLastModified('-');
-  setKdocBadge(false);
-  resetManagerImageGallery('Chưa chọn tài liệu.');
-  updateKpis();
+  clearSelectedState('Chọn một tài liệu ở cột trái để xem nội dung.');
   await refreshHostInfo();
   try {
     await refreshDocuments(true);

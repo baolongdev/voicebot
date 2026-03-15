@@ -62,10 +62,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  'Chat',
-                  style: context.theme.typography.xl,
-                ),
+                child: Text('Trò chuyện', style: context.theme.typography.xl),
               ),
             ),
             BlocSelector<ChatCubit, ChatState, String?>(

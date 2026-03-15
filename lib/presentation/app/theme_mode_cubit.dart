@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class ThemeModeCubit extends Cubit<ThemeMode> {
-  ThemeModeCubit(this._store) : super(ThemeMode.system);
+  ThemeModeCubit(this._store)
+    : super(DefaultSettingsRegistry.current.theme.mode);
 
   final UiSettingsStore _store;
 

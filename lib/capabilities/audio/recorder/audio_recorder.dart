@@ -6,6 +6,7 @@ import 'package:flutter_sound/flutter_sound.dart';
 import 'package:flutter/services.dart';
 import 'package:record/record.dart' as record;
 import '../../../core/logging/app_logger.dart';
+import '../../../core/telemetry/runtime_metrics.dart';
 
 // Ported from Android Kotlin: AudioRecorder.kt
 class AudioRecorder {
@@ -28,6 +29,8 @@ class AudioRecorder {
   final BytesBuilder _buffer = BytesBuilder(copy: false);
   StreamSubscription? _rawSubscription;
   StreamSubscription<Uint8List>? _windowsSubscription;
+  bool _isOpen = false;
+  bool _opening = false;
 
   Stream<Uint8List> startRecording() {
     _pcmController ??= StreamController<Uint8List>.broadcast();
@@ -46,13 +49,20 @@ class AudioRecorder {
       }
     });
 
-    _openAndStart();
+    unawaited(_openAndStart());
     return _pcmController!.stream;
   }
 
   Future<void> _openAndStart() async {
-    if (!_recorder.isRecording) {
+    if (_opening) {
+      return;
+    }
+    _opening = true;
+    try {
       if (Platform.isWindows) {
+        if (_windowsSubscription != null) {
+          return;
+        }
         try {
           _windowsRecorder ??= record.AudioRecorder();
           final hasPermission = await _windowsRecorder!.hasPermission();
@@ -60,6 +70,7 @@ class AudioRecorder {
             AppLogger.log('AudioRecorder', 'mic permission not granted');
             return;
           }
+          RuntimeMetrics.instance.incrementRecorderRestartCount();
           final stream = await _windowsRecorder!.startStream(
             record.RecordConfig(
               encoder: record.AudioEncoder.pcm16bits,
@@ -80,40 +91,66 @@ class AudioRecorder {
       }
 
       try {
-        await _recorder.openRecorder();
-        await _recorder.startRecorder(
-          toStream: _rawController!.sink,
-          codec: Codec.pcm16,
-          numChannels: _channels,
-          sampleRate: _sampleRate,
-        );
+        if (!_isOpen) {
+          await _recorder.openRecorder();
+          _isOpen = true;
+        }
+        if (!_recorder.isRecording) {
+          RuntimeMetrics.instance.incrementRecorderRestartCount();
+          await _recorder.startRecorder(
+            toStream: _rawController!.sink,
+            codec: Codec.pcm16,
+            numChannels: _channels,
+            sampleRate: _sampleRate,
+          );
+        }
       } on MissingPluginException {
         AppLogger.log(
           'AudioRecorder',
           'flutter_sound plugin not registered; skipping recorder init',
         );
       }
+    } finally {
+      _opening = false;
     }
   }
 
-  void stopRecording() {
+  Future<void> stopRecording() async {
     if (!Platform.isWindows) {
-      _recorder.stopRecorder();
-      _recorder.closeRecorder();
+      try {
+        if (_recorder.isRecording) {
+          await _recorder.stopRecorder();
+        }
+      } catch (_) {}
     }
-    _rawSubscription?.cancel();
+    await _rawSubscription?.cancel();
     _rawSubscription = null;
-    _windowsSubscription?.cancel();
+    await _windowsSubscription?.cancel();
     _windowsSubscription = null;
     if (Platform.isWindows) {
-      _windowsRecorder?.stop();
-      _windowsRecorder?.dispose();
-      _windowsRecorder = null;
+      try {
+        await _windowsRecorder?.stop();
+      } catch (_) {}
     }
-    _rawController?.close();
+    await _rawController?.close();
     _rawController = null;
-    _pcmController?.close();
+    await _pcmController?.close();
     _pcmController = null;
     _buffer.clear();
+  }
+
+  Future<void> dispose() async {
+    await stopRecording();
+    if (Platform.isWindows) {
+      await _windowsRecorder?.dispose();
+      _windowsRecorder = null;
+      return;
+    }
+    if (_isOpen) {
+      try {
+        await _recorder.closeRecorder();
+      } catch (_) {}
+      _isOpen = false;
+    }
   }
 }

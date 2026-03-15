@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../core/config/app_config.dart';
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class ConnectGreetingCubit extends Cubit<String> {
   ConnectGreetingCubit(this._store)
-      : super(AppConfig.connectGreetingDefault);
+    : super(DefaultSettingsRegistry.current.chat.connectGreeting);
 
   final UiSettingsStore _store;
 

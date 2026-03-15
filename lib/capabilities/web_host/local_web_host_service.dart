@@ -338,8 +338,9 @@ class LocalWebHostService {
   Future<void> _handleClearDocuments(HttpRequest request) async {
     final clear = await _callTool(name: 'self.knowledge.clear');
     final clearPayload = _decodeToolPayload(clear);
-    final imageStore = await _getImageStore();
-    final removedImages = await imageStore.clearAll();
+    final removedImages = clearPayload is Map
+        ? (clearPayload['removed_images'] as num?)?.toInt() ?? 0
+        : 0;
     AppLogger.event(
       'WebHost',
       'image_clear_all',
@@ -377,8 +378,7 @@ class LocalWebHostService {
     }
 
     final deleted = payload['deleted'] == true;
-    final imageStore = await _getImageStore();
-    final removedImages = await imageStore.clearDocument(name);
+    final removedImages = (payload['removed_images'] as num?)?.toInt() ?? 0;
     if (!deleted && removedImages == 0) {
       await _writeJson(request, <String, Object?>{
         'ok': false,
@@ -411,8 +411,11 @@ class LocalWebHostService {
       final isJsonBody = mimeTypeHeader == 'application/json';
       if (isJsonBody) {
         final upload = await _readImageUploadJsonRequest(request);
-        final normalizedMimeType =
-            _normalizeImageMimeType(upload.mimeType, fileName: upload.fileName);
+        await _ensureDocumentExists(upload.docName);
+        final normalizedMimeType = _normalizeImageMimeType(
+          upload.mimeType,
+          fileName: upload.fileName,
+        );
         if (!_allowedImageMimeTypes.contains(normalizedMimeType)) {
           await _writeJson(request, <String, Object?>{
             'ok': false,
@@ -462,8 +465,11 @@ class LocalWebHostService {
       }
 
       final upload = await _readImageUploadMultipartRequest(request);
-      final normalizedMimeType =
-          _normalizeImageMimeType(upload.mimeType, fileName: upload.fileName);
+      await _ensureDocumentExists(upload.docName);
+      final normalizedMimeType = _normalizeImageMimeType(
+        upload.mimeType,
+        fileName: upload.fileName,
+      );
       if (!_allowedImageMimeTypes.contains(normalizedMimeType)) {
         await _safeDeleteFile(upload.file);
         await _writeJson(request, <String, Object?>{
@@ -485,7 +491,8 @@ class LocalWebHostService {
       final imageId = (created['id'] ?? '').toString();
       final image = <String, Object?>{
         ...created,
-        'url': '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
+        'url':
+            '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
       };
       AppLogger.event(
         'WebHost',
@@ -498,10 +505,7 @@ class LocalWebHostService {
           'bytes': upload.bytes,
         },
       );
-      await _writeJson(request, <String, Object?>{
-        'ok': true,
-        'image': image,
-      });
+      await _writeJson(request, <String, Object?>{'ok': true, 'image': image});
     } catch (error) {
       AppLogger.event(
         'WebHost',
@@ -544,8 +548,9 @@ class LocalWebHostService {
     if (decoded.isEmpty) {
       throw Exception('Dữ liệu ảnh rỗng.');
     }
-    final normalizedMimeType =
-        mimeType.isEmpty ? _guessMimeTypeFromFileName(fileName) : mimeType;
+    final normalizedMimeType = mimeType.isEmpty
+        ? _guessMimeTypeFromFileName(fileName)
+        : mimeType;
     final caption = (body['caption'] as String?)?.trim();
     return _ImageUploadRequest(
       docName: docName,
@@ -567,8 +572,9 @@ class LocalWebHostService {
     if (!isMultipart) {
       throw Exception('Content-Type phải là multipart/form-data.');
     }
-    final boundary =
-        (contentType.parameters['boundary'] ?? '').trim().replaceAll('"', '');
+    final boundary = (contentType.parameters['boundary'] ?? '')
+        .trim()
+        .replaceAll('"', '');
     if (boundary.isEmpty) {
       throw Exception('Thiếu boundary trong multipart/form-data.');
     }
@@ -584,8 +590,10 @@ class LocalWebHostService {
       await for (final part in transformer.bind(request)) {
         final headers = part.headers;
         final contentDisposition = headers['content-disposition'] ?? '';
-        final fieldName =
-            _extractDispositionValue(contentDisposition, 'name')?.trim();
+        final fieldName = _extractDispositionValue(
+          contentDisposition,
+          'name',
+        )?.trim();
         final partFileName = _extractDispositionValue(
           contentDisposition,
           'filename',
@@ -597,8 +605,10 @@ class LocalWebHostService {
             throw Exception('Chỉ hỗ trợ 1 file ảnh mỗi lần upload.');
           }
           fileName = partFileName.trim();
-          fileMimeType =
-              (headers['content-type'] ?? '').split(';').first.trim();
+          fileMimeType = (headers['content-type'] ?? '')
+              .split(';')
+              .first
+              .trim();
           tempFile = await _createTempUploadFile();
           final sink = tempFile.openWrite();
           try {
@@ -644,14 +654,15 @@ class LocalWebHostService {
       throw Exception('Không nhận được file ảnh upload.');
     }
 
-    final normalizedFileName =
-        (fileName ?? 'image').trim().isEmpty ? 'image' : fileName!.trim();
-    final normalizedMimeType =
-        fileMimeType.trim().isEmpty
-            ? _guessMimeTypeFromFileName(normalizedFileName)
-            : fileMimeType.trim().toLowerCase();
-    final normalizedCaption =
-        (caption?.trim().isEmpty ?? true) ? null : caption!.trim();
+    final normalizedFileName = (fileName ?? 'image').trim().isEmpty
+        ? 'image'
+        : fileName!.trim();
+    final normalizedMimeType = fileMimeType.trim().isEmpty
+        ? _guessMimeTypeFromFileName(normalizedFileName)
+        : fileMimeType.trim().toLowerCase();
+    final normalizedCaption = (caption?.trim().isEmpty ?? true)
+        ? null
+        : caption!.trim();
     return _ImageUploadFileRequest(
       docName: docName.trim(),
       fileName: normalizedFileName,
@@ -674,13 +685,16 @@ class LocalWebHostService {
     }
     final imageStore = await _getImageStore();
     final images = await imageStore.listImagesByDocument(name);
-    final enriched = images.map((item) {
-      final id = (item['id'] ?? '').toString();
-      return <String, Object?>{
-        ...item,
-        'url': '/api/documents/image/content?id=${Uri.encodeQueryComponent(id)}',
-      };
-    }).toList(growable: false);
+    final enriched = images
+        .map((item) {
+          final id = (item['id'] ?? '').toString();
+          return <String, Object?>{
+            ...item,
+            'url':
+                '/api/documents/image/content?id=${Uri.encodeQueryComponent(id)}',
+          };
+        })
+        .toList(growable: false);
 
     AppLogger.event(
       'WebHost',
@@ -794,7 +808,6 @@ class LocalWebHostService {
     return <String, dynamic>{};
   }
 
-
   String _guessMimeTypeFromFileName(String fileName) {
     final lowered = fileName.toLowerCase();
     if (lowered.endsWith('.jpg') || lowered.endsWith('.jpeg')) {
@@ -809,10 +822,7 @@ class LocalWebHostService {
     return 'application/octet-stream';
   }
 
-  String _normalizeImageMimeType(
-    String raw, {
-    String? fileName,
-  }) {
+  String _normalizeImageMimeType(String raw, {String? fileName}) {
     var lowered = raw.trim().toLowerCase();
     if (lowered.isEmpty && fileName != null && fileName.trim().isNotEmpty) {
       lowered = _guessMimeTypeFromFileName(fileName);
@@ -865,7 +875,7 @@ class LocalWebHostService {
       level: 'D',
     );
     final response = await _mcpServer
-        .handleMessage(requestPayload)
+        .handleMessage(requestPayload, caller: McpCallerType.user)
         .timeout(_mcpTimeout);
 
     if (response == null) {
@@ -895,6 +905,23 @@ class LocalWebHostService {
       return Map<String, dynamic>.from(result);
     }
     throw Exception('MCP trả kết quả không hợp lệ.');
+  }
+
+  Future<void> _ensureDocumentExists(String name) async {
+    final normalized = name.trim();
+    if (normalized.isEmpty) {
+      throw Exception('Thiếu tên tài liệu.');
+    }
+    try {
+      await _callTool(
+        name: 'self.knowledge.get_document',
+        arguments: <String, dynamic>{'name': normalized},
+      );
+    } catch (error) {
+      throw Exception(
+        'Tài liệu "$normalized" chưa tồn tại. Hãy lưu tài liệu trước khi tải ảnh.',
+      );
+    }
   }
 
   Object? _decodeToolPayload(Map<String, dynamic> result) {

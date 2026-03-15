@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -24,11 +26,21 @@ class BrandColors extends ThemeExtension<BrandColors> {
   final Color emotionBorder;
   final Map<String, EmotionTone> emotionTones;
 
-  static final BrandColors light = fromPalette(AppColors.light);
+  static final BrandColors light = fromPalette(
+    AppColors.light,
+    brightness: Brightness.light,
+  );
 
-  static final BrandColors dark = fromPalette(AppColors.dark);
+  static final BrandColors dark = fromPalette(
+    AppColors.dark,
+    brightness: Brightness.dark,
+  );
 
-  static BrandColors fromPalette(AppSemanticColors palette) {
+  static BrandColors fromPalette(
+    AppSemanticColors palette, {
+    required Brightness brightness,
+  }) {
+    final isDark = brightness == Brightness.dark;
     return BrandColors(
       headerBackground: palette.primary,
       headerForeground: palette.onPrimary,
@@ -37,8 +49,67 @@ class BrandColors extends ThemeExtension<BrandColors> {
       accentForeground: palette.onPrimary,
       emotionBackground: palette.surface,
       emotionBorder: palette.outline,
-      emotionTones: _emotionTonesLight,
+      emotionTones: _buildEmotionTones(palette, isDark),
     );
+  }
+
+  static Map<String, EmotionTone> _buildEmotionTones(
+    AppSemanticColors palette,
+    bool isDark,
+  ) {
+    final baseHsl = HSLColor.fromColor(palette.primary);
+    return Map<String, EmotionTone>.unmodifiable({
+      for (final entry in _emotionToneSeeds.entries)
+        entry.key: _buildToneFromSeed(
+          palette: palette,
+          baseHsl: baseHsl,
+          seed: entry.value,
+          isDark: isDark,
+        ),
+    });
+  }
+
+  static EmotionTone _buildToneFromSeed({
+    required AppSemanticColors palette,
+    required HSLColor baseHsl,
+    required _EmotionToneSeed seed,
+    required bool isDark,
+  }) {
+    final hue = ((baseHsl.hue + seed.hueShift) % 360 + 360) % 360;
+    final background = HSLColor.fromAHSL(
+      1,
+      hue,
+      seed.saturation.clamp(0.0, 1.0),
+      isDark ? seed.darkLightness : seed.lightLightness,
+    ).toColor();
+    final foreground = _resolveForeground(
+      palette: palette,
+      background: background,
+      isDark: isDark,
+    );
+    return EmotionTone(background, foreground);
+  }
+
+  static Color _resolveForeground({
+    required AppSemanticColors palette,
+    required Color background,
+    required bool isDark,
+  }) {
+    final preferred = isDark ? palette.onSurface : palette.onBackground;
+    if (_contrastRatio(background, preferred) >= 4.5) {
+      return preferred;
+    }
+    final white = _contrastRatio(background, Colors.white);
+    final black = _contrastRatio(background, Colors.black);
+    return white >= black ? Colors.white : Colors.black;
+  }
+
+  static double _contrastRatio(Color a, Color b) {
+    final l1 = a.computeLuminance();
+    final l2 = b.computeLuminance();
+    final bright = math.max(l1, l2);
+    final dark = math.min(l1, l2);
+    return (bright + 0.05) / (dark + 0.05);
   }
 
   @override
@@ -70,12 +141,28 @@ class BrandColors extends ThemeExtension<BrandColors> {
       return this;
     }
     return BrandColors(
-      headerBackground: Color.lerp(headerBackground, other.headerBackground, t)!,
-      headerForeground: Color.lerp(headerForeground, other.headerForeground, t)!,
+      headerBackground: Color.lerp(
+        headerBackground,
+        other.headerBackground,
+        t,
+      )!,
+      headerForeground: Color.lerp(
+        headerForeground,
+        other.headerForeground,
+        t,
+      )!,
       homeSurface: Color.lerp(homeSurface, other.homeSurface, t)!,
       homeAccent: Color.lerp(homeAccent, other.homeAccent, t)!,
-      accentForeground: Color.lerp(accentForeground, other.accentForeground, t)!,
-      emotionBackground: Color.lerp(emotionBackground, other.emotionBackground, t)!,
+      accentForeground: Color.lerp(
+        accentForeground,
+        other.accentForeground,
+        t,
+      )!,
+      emotionBackground: Color.lerp(
+        emotionBackground,
+        other.emotionBackground,
+        t,
+      )!,
       emotionBorder: Color.lerp(emotionBorder, other.emotionBorder, t)!,
       emotionTones: t < 0.5 ? emotionTones : other.emotionTones,
     );
@@ -90,27 +177,145 @@ class EmotionTone {
   final Color foreground;
 }
 
-const Map<String, EmotionTone> _emotionTonesLight = {
-  'happy': EmotionTone(Color(0xFFFFE9C7), Color(0xFF7A4B00)),
-  'laughing': EmotionTone(Color(0xFFFFD9B0), Color(0xFF7A3E00)),
-  'funny': EmotionTone(Color(0xFFFFD5D8), Color(0xFF7A2F3A)),
-  'silly': EmotionTone(Color(0xFFE8F7C5), Color(0xFF4F6A00)),
-  'confident': EmotionTone(Color(0xFFF6E1FF), Color(0xFF5A2A7A)),
-  'loving': EmotionTone(Color(0xFFFFD6E8), Color(0xFF7A2E62)),
-  'kissy': EmotionTone(Color(0xFFFFC8DE), Color(0xFF6F2456)),
-  'embarrassed': EmotionTone(Color(0xFFF9D6C8), Color(0xFF7A3A2C)),
-  'winking': EmotionTone(Color(0xFFFFF1B8), Color(0xFF7A5200)),
-  'sad': EmotionTone(Color(0xFFD6E8FF), Color(0xFF2E5A87)),
-  'crying': EmotionTone(Color(0xFFC8DFFF), Color(0xFF264B7A)),
-  'sleepy': EmotionTone(Color(0xFFDDE4F7), Color(0xFF4A5B7A)),
-  'angry': EmotionTone(Color(0xFFFFC7C2), Color(0xFF8A1D1D)),
-  'surprised': EmotionTone(Color(0xFFFFE3B3), Color(0xFF7A4B00)),
-  'shocked': EmotionTone(Color(0xFFFFD0A8), Color(0xFF7A3A00)),
-  'thinking': EmotionTone(Color(0xFFD6F2ED), Color(0xFF2F5C57)),
-  'relaxed': EmotionTone(Color(0xFFD0F1E0), Color(0xFF2F6B5C)),
-  'cool': EmotionTone(Color(0xFFCDEBFF), Color(0xFF2B5C7A)),
-  'delicious': EmotionTone(Color(0xFFFFE0C4), Color(0xFF7A3E1F)),
-  'confused': EmotionTone(Color(0xFFE7E1F2), Color(0xFF5A5470)),
-  'neutral': EmotionTone(Color(0xFFE7F0FF), Color(0xFF2F3E5C)),
-};
+class _EmotionToneSeed {
+  const _EmotionToneSeed({
+    required this.hueShift,
+    required this.saturation,
+    required this.lightLightness,
+    required this.darkLightness,
+  });
 
+  final double hueShift;
+  final double saturation;
+  final double lightLightness;
+  final double darkLightness;
+}
+
+const Map<String, _EmotionToneSeed> _emotionToneSeeds = {
+  'neutral': _EmotionToneSeed(
+    hueShift: 0,
+    saturation: 0.14,
+    lightLightness: 0.86,
+    darkLightness: 0.33,
+  ),
+  'happy': _EmotionToneSeed(
+    hueShift: 32,
+    saturation: 0.64,
+    lightLightness: 0.83,
+    darkLightness: 0.37,
+  ),
+  'laughing': _EmotionToneSeed(
+    hueShift: 24,
+    saturation: 0.68,
+    lightLightness: 0.82,
+    darkLightness: 0.36,
+  ),
+  'funny': _EmotionToneSeed(
+    hueShift: -18,
+    saturation: 0.54,
+    lightLightness: 0.84,
+    darkLightness: 0.36,
+  ),
+  'silly': _EmotionToneSeed(
+    hueShift: 58,
+    saturation: 0.55,
+    lightLightness: 0.84,
+    darkLightness: 0.36,
+  ),
+  'confident': _EmotionToneSeed(
+    hueShift: -42,
+    saturation: 0.5,
+    lightLightness: 0.82,
+    darkLightness: 0.35,
+  ),
+  'loving': _EmotionToneSeed(
+    hueShift: -28,
+    saturation: 0.6,
+    lightLightness: 0.83,
+    darkLightness: 0.35,
+  ),
+  'kissy': _EmotionToneSeed(
+    hueShift: -34,
+    saturation: 0.62,
+    lightLightness: 0.82,
+    darkLightness: 0.35,
+  ),
+  'embarrassed': _EmotionToneSeed(
+    hueShift: 12,
+    saturation: 0.5,
+    lightLightness: 0.83,
+    darkLightness: 0.35,
+  ),
+  'winking': _EmotionToneSeed(
+    hueShift: 44,
+    saturation: 0.6,
+    lightLightness: 0.83,
+    darkLightness: 0.36,
+  ),
+  'sad': _EmotionToneSeed(
+    hueShift: 180,
+    saturation: 0.45,
+    lightLightness: 0.84,
+    darkLightness: 0.34,
+  ),
+  'crying': _EmotionToneSeed(
+    hueShift: 192,
+    saturation: 0.48,
+    lightLightness: 0.82,
+    darkLightness: 0.33,
+  ),
+  'sleepy': _EmotionToneSeed(
+    hueShift: 210,
+    saturation: 0.28,
+    lightLightness: 0.85,
+    darkLightness: 0.33,
+  ),
+  'angry': _EmotionToneSeed(
+    hueShift: -70,
+    saturation: 0.62,
+    lightLightness: 0.82,
+    darkLightness: 0.34,
+  ),
+  'surprised': _EmotionToneSeed(
+    hueShift: 36,
+    saturation: 0.58,
+    lightLightness: 0.84,
+    darkLightness: 0.36,
+  ),
+  'shocked': _EmotionToneSeed(
+    hueShift: 22,
+    saturation: 0.62,
+    lightLightness: 0.83,
+    darkLightness: 0.35,
+  ),
+  'thinking': _EmotionToneSeed(
+    hueShift: 145,
+    saturation: 0.42,
+    lightLightness: 0.84,
+    darkLightness: 0.34,
+  ),
+  'relaxed': _EmotionToneSeed(
+    hueShift: 120,
+    saturation: 0.4,
+    lightLightness: 0.84,
+    darkLightness: 0.35,
+  ),
+  'cool': _EmotionToneSeed(
+    hueShift: 165,
+    saturation: 0.5,
+    lightLightness: 0.83,
+    darkLightness: 0.34,
+  ),
+  'delicious': _EmotionToneSeed(
+    hueShift: 18,
+    saturation: 0.58,
+    lightLightness: 0.83,
+    darkLightness: 0.35,
+  ),
+  'confused': _EmotionToneSeed(
+    hueShift: -56,
+    saturation: 0.24,
+    lightLightness: 0.84,
+    darkLightness: 0.33,
+  ),
+};

@@ -7,4 +7,5 @@ abstract class AudioInput {
 
   Stream<Uint8List> start();
   Future<void> stop();
+  Future<void> dispose();
 }

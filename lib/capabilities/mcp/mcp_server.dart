@@ -8,47 +8,80 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/config/app_config.dart';
 import '../web_host/document_image_store.dart';
 
+enum McpCallerType { remote, internal, user }
+
+extension on McpCallerType {
+  bool get canAccessUserOnly => this != McpCallerType.remote;
+}
+
 class McpServer {
   static final McpServer shared = McpServer();
 
-  McpServer({McpDeviceController? controller})
-    : _controller = controller ?? FlutterMcpDeviceController() {
+  McpServer({
+    McpDeviceController? controller,
+    LocalKnowledgeBase? knowledgeBase,
+    Future<DocumentImageStore> Function()? imageStoreLoader,
+  }) : _controller = controller ?? FlutterMcpDeviceController(),
+       _knowledgeBase = knowledgeBase ?? LocalKnowledgeBase(),
+       _imageStoreLoader = imageStoreLoader {
     _registerTools();
   }
 
   final McpDeviceController _controller;
-  final LocalKnowledgeBase _knowledgeBase = LocalKnowledgeBase();
+  final LocalKnowledgeBase _knowledgeBase;
   final List<McpTool> _tools = <McpTool>[];
+  final Future<DocumentImageStore> Function()? _imageStoreLoader;
   Future<DocumentImageStore>? _imageStoreFuture;
   List<McpTool> get tools => List<McpTool>.unmodifiable(_tools);
 
   Future<Map<String, dynamic>?> handleMessage(
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    McpCallerType caller = McpCallerType.remote,
+  }) async {
     final jsonrpc = payload['jsonrpc'];
     if (jsonrpc != '2.0') {
-      return null;
+      return _replyError(
+        null,
+        -32600,
+        'Invalid Request: jsonrpc must be "2.0".',
+      );
     }
     final method = payload['method'];
     if (method is! String) {
-      return null;
+      return _replyError(
+        null,
+        -32600,
+        'Invalid Request: method must be a string.',
+      );
     }
     if (method.startsWith('notifications')) {
       return null;
     }
     final id = payload['id'];
-    if (id is! num) {
-      return null;
+    final requestId = _normalizeRequestId(id);
+    if (id == null) {
+      return _replyError(null, -32600, 'Invalid Request: missing id.');
+    }
+    if (requestId == null) {
+      return _replyError(
+        null,
+        -32600,
+        'Invalid Request: id must be a string or number.',
+      );
     }
 
-    final params = payload['params'];
-    if (params != null && params is! Map<String, dynamic>) {
-      return _replyError(id, 'Invalid params for method: $method');
+    final params = _asStringKeyedMap(payload['params']);
+    if (payload['params'] != null && params == null) {
+      return _replyError(
+        requestId,
+        -32602,
+        'Invalid params for method: $method',
+      );
     }
 
     switch (method) {
       case 'initialize':
-        return _replyResult(id, <String, dynamic>{
+        return _replyResult(requestId, <String, dynamic>{
           'protocolVersion': '2024-11-05',
           'capabilities': <String, dynamic>{'tools': <String, dynamic>{}},
           'serverInfo': <String, dynamic>{
@@ -57,29 +90,51 @@ class McpServer {
           },
         });
       case 'tools/list':
-        final cursor = params != null ? params['cursor'] as String? ?? '' : '';
-        final withUserTools = params != null
-            ? params['withUserTools'] as bool? ?? false
-            : false;
+        if (params != null &&
+            params['cursor'] != null &&
+            params['cursor'] is! String) {
+          return _replyError(
+            requestId,
+            -32602,
+            'Invalid params: cursor must be a string.',
+          );
+        }
+        if (params != null &&
+            params['withUserTools'] != null &&
+            params['withUserTools'] is! bool) {
+          return _replyError(
+            requestId,
+            -32602,
+            'Invalid params: withUserTools must be a boolean.',
+          );
+        }
+        final cursor = params?['cursor'] as String? ?? '';
+        final withUserTools =
+            caller.canAccessUserOnly &&
+            (params?['withUserTools'] as bool? ?? false);
         return _replyResult(
-          id,
+          requestId,
           _buildToolsList(cursor: cursor, withUserTools: withUserTools),
         );
       case 'tools/call':
-        if (params is! Map<String, dynamic>) {
-          return _replyError(id, 'Missing params');
+        if (params == null) {
+          return _replyError(requestId, -32602, 'Missing params');
         }
         final name = params['name'];
         if (name is! String) {
-          return _replyError(id, 'Missing name');
+          return _replyError(requestId, -32602, 'Missing name');
         }
-        final arguments = params['arguments'];
-        if (arguments != null && arguments is! Map<String, dynamic>) {
-          return _replyError(id, 'Invalid arguments');
+        final arguments = _asStringKeyedMap(params['arguments']);
+        if (params['arguments'] != null && arguments == null) {
+          return _replyError(requestId, -32602, 'Invalid arguments');
         }
-        return _handleToolCall(id, name, arguments as Map<String, dynamic>?);
+        return _handleToolCall(requestId, name, arguments, caller: caller);
       default:
-        return _replyError(id, 'Method not implemented: $method');
+        return _replyError(
+          requestId,
+          -32601,
+          'Method not implemented: $method',
+        );
     }
   }
 
@@ -106,27 +161,39 @@ class McpServer {
   }
 
   Future<Map<String, dynamic>> _handleToolCall(
-    num id,
+    Object id,
     String name,
-    Map<String, dynamic>? arguments,
-  ) async {
+    Map<String, dynamic>? arguments, {
+    required McpCallerType caller,
+  }) async {
     final tool = _tools.where((tool) => tool.name == name).firstOrNull;
     if (tool == null) {
-      return _replyError(id, 'Unknown tool: $name');
+      return _replyError(id, -32601, 'Unknown tool: $name');
+    }
+    if (tool.userOnly && !caller.canAccessUserOnly) {
+      return _replyError(id, -32001, 'Unauthorized tool access: $name');
     }
 
     Map<String, Object?> bound;
     try {
       bound = _bindArguments(tool, arguments ?? <String, dynamic>{});
     } catch (error) {
-      return _replyError(id, error.toString().replaceFirst('Exception: ', ''));
+      return _replyError(
+        id,
+        -32602,
+        error.toString().replaceFirst('Exception: ', ''),
+      );
     }
 
     try {
       final value = await tool.callback(bound);
       return _replyResult(id, _wrapToolResult(value));
     } catch (error) {
-      return _replyError(id, error.toString().replaceFirst('Exception: ', ''));
+      return _replyError(
+        id,
+        -32603,
+        error.toString().replaceFirst('Exception: ', ''),
+      );
     }
   }
 
@@ -154,7 +221,7 @@ class McpServer {
         case McpPropertyType.integer:
           final value = rawValue is int
               ? rawValue
-              : rawValue is num
+              : rawValue is num && rawValue == rawValue.toInt()
               ? rawValue.toInt()
               : null;
           if (value == null) {
@@ -206,16 +273,36 @@ class McpServer {
     };
   }
 
-  Map<String, dynamic> _replyResult(num id, Object result) {
+  Map<String, dynamic> _replyResult(Object? id, Object result) {
     return <String, dynamic>{'jsonrpc': '2.0', 'id': id, 'result': result};
   }
 
-  Map<String, dynamic> _replyError(num id, String message) {
+  Map<String, dynamic> _replyError(Object? id, int code, String message) {
     return <String, dynamic>{
       'jsonrpc': '2.0',
       'id': id,
-      'error': <String, dynamic>{'message': message},
+      'error': <String, dynamic>{'code': code, 'message': message},
     };
+  }
+
+  Object? _normalizeRequestId(Object? value) {
+    if (value is num || value is String) {
+      return value;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _asStringKeyedMap(Object? value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is Map<String, dynamic>) {
+      return value;
+    }
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return null;
   }
 
   void _registerTools() {
@@ -420,6 +507,50 @@ class McpServer {
               'images': const <Map<String, Object?>>[],
             };
           }
+          final foldedQuery = LocalKnowledgeBase._foldForSearch(query);
+          final intentTokens = LocalKnowledgeBase._tokenize(foldedQuery);
+          final intent = LocalKnowledgeBase._analyzeSearchIntent(
+            foldedQuery: foldedQuery,
+            tokens: intentTokens,
+          );
+          final topScore = (matches.first['score'] as num?)?.toInt() ?? 0;
+          final topDocType = (matches.first['doc_type'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          final companyLike = <String>{'company_profile', 'info'};
+          final productLike = <String>{'product'};
+          final prefersCompanyLike =
+              intent.preferredDocTypes.any(companyLike.contains) &&
+              !intent.preferredDocTypes.any(productLike.contains) &&
+              companyLike.contains(topDocType);
+          final prefersProductLike =
+              intent.preferredDocTypes.any(productLike.contains) &&
+              !intent.preferredDocTypes.any(companyLike.contains) &&
+              productLike.contains(topDocType);
+          final filteredMatches = matches
+              .where((row) {
+                final rowDocType = (row['doc_type'] ?? '')
+                    .toString()
+                    .trim()
+                    .toLowerCase();
+                final rowScore = (row['score'] as num?)?.toInt() ?? 0;
+                if (prefersCompanyLike) {
+                  if (companyLike.contains(rowDocType)) {
+                    return true;
+                  }
+                  return rowScore >= topScore - 12;
+                }
+                if (prefersProductLike) {
+                  if (productLike.contains(rowDocType) ||
+                      rowDocType == 'info') {
+                    return true;
+                  }
+                  return rowScore >= topScore - 12;
+                }
+                return true;
+              })
+              .toList(growable: false);
 
           var normalizedQuery = _normalizeForGuard(query);
           normalizedQuery = normalizedQuery.replaceAll(
@@ -445,15 +576,13 @@ class McpServer {
               .split(RegExp(r'\s+'))
               .where(
                 (token) =>
-                    token.length >= 2 &&
-                    !imageQueryStopwords.contains(token),
+                    token.length >= 2 && !imageQueryStopwords.contains(token),
               )
               .toSet();
 
           final imageStore = await _getImageStore();
-          final byId = <String, Map<String, Object?>>{};
-          final collected = <Map<String, Object?>>[];
-          for (final row in matches) {
+          final imagesByDoc = <String, Map<String, Map<String, Object?>>>{};
+          for (final row in filteredMatches) {
             final docName = (row['name'] ?? '').toString().trim();
             if (docName.isEmpty) {
               continue;
@@ -478,7 +607,25 @@ class McpServer {
                 (fieldHits.contains('aliases') ? 12 : 0) +
                 (fieldHits.contains('keywords') ? 8 : 0);
             final effectiveScore = score + scoreBoost;
-            final images = await imageStore.listImagesByDocument(docName);
+            final content = (row['content'] ?? '').toString().trim();
+            final sections = LocalKnowledgeBase._parseKdocSections(content);
+            final docId = LocalKnowledgeBase._sectionOrEmpty(
+              sections,
+              'DOC_ID',
+            );
+            final images = await _listImagesForDocumentReferences(
+              imageStore,
+              <String>[docName, titleRaw, docId],
+              limit: maxImages * 3,
+              expandReferences: false,
+            );
+            final resolvedDocName = images.isNotEmpty
+                ? (images.first['doc_name'] ?? docName).toString().trim()
+                : docName;
+            final byIdForDoc = imagesByDoc.putIfAbsent(
+              resolvedDocName,
+              () => <String, Map<String, Object?>>{},
+            );
             for (final item in images) {
               final imageId = (item['id'] ?? '').toString().trim();
               if (imageId.isEmpty) {
@@ -491,68 +638,73 @@ class McpServer {
                 'url':
                     '/api/documents/image/content?id=${Uri.encodeQueryComponent(imageId)}',
               };
-              final existing = byId[imageId];
+              final existing = byIdForDoc[imageId];
               final existingScore = (existing?['score'] as num?)?.toInt() ?? -1;
               if (existing == null || effectiveScore > existingScore) {
-                byId[imageId] = entry;
+                byIdForDoc[imageId] = entry;
               }
             }
           }
 
-          collected.addAll(byId.values);
-          final merged = collected
-            ..sort((a, b) {
-              final byScore = ((b['score'] as num?)?.toInt() ?? 0).compareTo(
-                (a['score'] as num?)?.toInt() ?? 0,
-              );
-              if (byScore != 0) {
-                return byScore;
-              }
-              final aCreated = (a['created_at'] ?? '').toString();
-              final bCreated = (b['created_at'] ?? '').toString();
-              return bCreated.compareTo(aCreated);
-            });
-          final selected = <Map<String, Object?>>[];
-          final seenDoc = <String>{};
-          final seenId = <String>{};
-
-          // Pass 1: keep at least one image per matched document (if available).
-          for (final item in merged) {
-            if (selected.length >= maxImages) {
-              break;
-            }
-            final imageId = (item['id'] ?? '').toString().trim();
-            final docName = (item['doc_name'] ?? '').toString().trim();
-            if (imageId.isEmpty || docName.isEmpty) {
+          List<Map<String, Object?>> bestSet = const <Map<String, Object?>>[];
+          var bestSetScore = -1;
+          for (final entry in imagesByDoc.entries) {
+            final ranked = entry.value.values.toList(growable: false)
+              ..sort((a, b) {
+                final byScore = ((b['score'] as num?)?.toInt() ?? 0).compareTo(
+                  (a['score'] as num?)?.toInt() ?? 0,
+                );
+                if (byScore != 0) {
+                  return byScore;
+                }
+                final aCreated = (a['created_at'] ?? '').toString();
+                final bCreated = (b['created_at'] ?? '').toString();
+                return bCreated.compareTo(aCreated);
+              });
+            if (ranked.isEmpty) {
               continue;
             }
-            if (seenDoc.contains(docName) || !seenId.add(imageId)) {
-              continue;
+            final topImageScore = (ranked.first['score'] as num?)?.toInt() ?? 0;
+            final totalImageScore = ranked.fold<int>(
+              0,
+              (sum, item) => sum + ((item['score'] as num?)?.toInt() ?? 0),
+            );
+            final setScore =
+                (topImageScore * 1000) + totalImageScore + ranked.length;
+            if (setScore > bestSetScore) {
+              bestSetScore = setScore;
+              bestSet = ranked.take(maxImages).toList(growable: false);
             }
-            seenDoc.add(docName);
-            selected.add(item);
           }
-
-          // Pass 2: fill remaining slots by relevance score.
-          for (final item in merged) {
-            if (selected.length >= maxImages) {
-              break;
-            }
-            final imageId = (item['id'] ?? '').toString().trim();
-            if (imageId.isEmpty || !seenId.add(imageId)) {
-              continue;
-            }
-            selected.add(item);
-          }
-
-          final limited = selected.take(maxImages).toList(growable: false);
           return <String, dynamic>{
             'query': query,
-            'matched_docs': matches.length,
-            'matched_docs_with_images': seenDoc.length,
-            'images': limited,
+            'matched_docs': filteredMatches.length,
+            'matched_docs_with_images': imagesByDoc.length,
+            'images': bestSet,
           };
         },
+      ),
+    );
+
+    addUserOnlyTool(
+      McpTool(
+        name: 'self.knowledge.get_kdoc_schema',
+        description:
+            '[VI] Mục đích: Lấy schema chuẩn KDOC v1 dùng cho kho tri thức, '
+            'bao gồm danh sách section, ý nghĩa từng section, thứ tự gợi ý '
+            'và section khuyến nghị theo từng `DOC_TYPE`.\n'
+            'Cách dùng: gọi không cần tham số.\n'
+            'Kết quả: JSON gồm `format`, `required_sections`, `section_order`, '
+            '`sections`, `doc_types`.\n'
+            '[EN] Purpose: Get the canonical KDOC v1 schema for knowledge '
+            'documents, including sections, meanings, recommended order, and '
+            'doc-type-specific section guidance.\n'
+            'Usage: call without arguments.\n'
+            'Return: JSON with `format`, `required_sections`, '
+            '`section_order`, `sections`, and `doc_types`.',
+        properties: const <McpProperty>[],
+        callback: (_) async => LocalKnowledgeBase.kdocSchema(),
+        userOnly: true,
       ),
     );
 
@@ -580,15 +732,15 @@ class McpServer {
             '[VI] Mục đích: Tải nội dung văn bản trực tiếp vào kho tri thức '
             '(thêm mới/cập nhật theo tên tài liệu).\n'
             'Cách dùng: truyền `name` (tên tài liệu), `text` theo chuẩn '
-              '`KDOC v1` (có các block [DOC_ID], [DOC_TYPE], [TITLE], '
-              '[ALIASES], [KEYWORDS], [SUMMARY], [CONTENT], [FAQ], '
-              '[SAFETY_NOTE], [LAST_UPDATED]).\n'
+            '`KDOC v1`. Để biết section chuẩn và section khuyến nghị theo '
+            'từng `DOC_TYPE`, gọi `self.knowledge.get_kdoc_schema` trước.\n'
             'Kết quả: JSON gồm trạng thái upload, metadata tài liệu và tổng '
             'số tài liệu.\n'
             '[EN] Purpose: Upload raw text to the knowledge base '
             '(insert/update by document name).\n'
             'Usage: provide `name` (document name) and `text` in `KDOC v1` '
-            'schema.\n'
+            'schema. Call `self.knowledge.get_kdoc_schema` first for the '
+            'canonical section guide.\n'
             'Return: JSON with upload status, document metadata, and total '
             'document count.',
         properties: const <McpProperty>[
@@ -624,13 +776,16 @@ class McpServer {
         description:
             '[VI] Mục đích: Tải tài liệu từ đường dẫn file local vào kho tri '
             'thức. Hỗ trợ file văn bản theo chuẩn KDOC v1 để tìm kiếm theo '
-            'field sau này.\n'
+            'field sau này. Có thể gọi `self.knowledge.get_kdoc_schema` để '
+            'xem schema section chuẩn trước khi import.\n'
             'Cách dùng: truyền `path` (bắt buộc), `name` (tuỳ chọn - nếu '
             'bỏ trống sẽ lấy tên file).\n'
             'Kết quả: JSON gồm trạng thái upload, metadata tài liệu và tổng '
             'số tài liệu.\n'
             '[EN] Purpose: Upload a local file into the knowledge base. '
-            'Supports KDOC v1 text-like files for structured search.\n'
+            'Supports KDOC v1 text-like files for structured search. Use '
+            '`self.knowledge.get_kdoc_schema` to inspect canonical sections '
+            'before import.\n'
             'Usage: provide required `path`, optional `name` (defaults to '
             'file name if empty).\n'
             'Return: JSON with upload status, document metadata, and total '
@@ -712,13 +867,25 @@ class McpServer {
         ],
         callback: (args) async {
           final docName = (args['doc_name'] as String? ?? '').trim();
-          final limit = (args['limit'] as int? ??
-                  AppConfig.homeCarouselMaxImages)
-              .clamp(1, 50);
+          final limit =
+              (args['limit'] as int? ?? AppConfig.homeCarouselMaxImages).clamp(
+                1,
+                50,
+              );
           final imageStore = await _getImageStore();
+          final resolvedReferences = docName.isEmpty
+              ? const <String>[]
+              : await _knowledgeBase.resolveImageLookupReferences(docName);
           final images = docName.isEmpty
               ? await imageStore.listAllImages()
-              : await imageStore.listImagesByDocument(docName);
+              : await _listImagesForDocumentReferences(
+                  imageStore,
+                  resolvedReferences.isEmpty
+                      ? <String>[docName]
+                      : resolvedReferences,
+                  limit: limit,
+                  expandReferences: false,
+                );
           final enriched = <Map<String, Object?>>[];
           for (final item in images.take(limit)) {
             final id = (item['id'] ?? '').toString().trim();
@@ -733,7 +900,10 @@ class McpServer {
           }
           return <String, dynamic>{
             'count': images.length,
-            if (docName.isNotEmpty) 'doc_name': docName,
+            if (docName.isNotEmpty)
+              'doc_name': resolvedReferences.isNotEmpty
+                  ? resolvedReferences.first
+                  : docName,
             'images': enriched,
           };
         },
@@ -783,10 +953,13 @@ class McpServer {
           if (name.isEmpty) {
             throw Exception('Missing valid argument: name');
           }
+          final imageStore = await _getImageStore();
           final removed = await _knowledgeBase.deleteDocument(name);
+          final removedImages = await imageStore.clearDocument(name);
           return <String, dynamic>{
             'deleted': removed != null,
             'document': removed,
+            'removed_images': removedImages,
             'documents_total': _knowledgeBase.count,
           };
         },
@@ -800,14 +973,22 @@ class McpServer {
         description:
             '[VI] Mục đích: Xoá toàn bộ tài liệu trong kho tri thức.\n'
             'Cách dùng: gọi không cần tham số.\n'
-            'Kết quả: JSON gồm `cleared=true` và số lượng đã xoá (`removed`).\n'
+            'Kết quả: JSON gồm `cleared=true`, số lượng tài liệu đã xoá '
+            '(`removed`) và số ảnh đã xoá (`removed_images`).\n'
             '[EN] Purpose: Remove all documents from the knowledge base.\n'
             'Usage: call without arguments.\n'
-            'Return: JSON with `cleared=true` and removed count (`removed`).',
+            'Return: JSON with `cleared=true`, removed document count '
+            '(`removed`) and removed image count (`removed_images`).',
         properties: const <McpProperty>[],
         callback: (_) async {
+          final imageStore = await _getImageStore();
           final removed = await _knowledgeBase.clear();
-          return <String, dynamic>{'cleared': true, 'removed': removed};
+          final removedImages = await imageStore.clearAll();
+          return <String, dynamic>{
+            'cleared': true,
+            'removed': removed,
+            'removed_images': removedImages,
+          };
         },
         userOnly: true,
       ),
@@ -916,11 +1097,27 @@ class McpServer {
   }
 
   Future<DocumentImageStore> _getImageStore() {
-    _imageStoreFuture ??= _createImageStore();
-    return _imageStoreFuture!;
+    final existing = _imageStoreFuture;
+    if (existing != null) {
+      return existing;
+    }
+    final created = _createImageStore();
+    _imageStoreFuture = created;
+    return created.then(
+      (store) => store,
+      onError: (Object error, StackTrace stackTrace) {
+        if (identical(_imageStoreFuture, created)) {
+          _imageStoreFuture = null;
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      },
+    );
   }
 
   Future<DocumentImageStore> _createImageStore() async {
+    if (_imageStoreLoader != null) {
+      return _imageStoreLoader!.call();
+    }
     final baseDir = await getApplicationDocumentsDirectory();
     final root = Directory(
       '${baseDir.path}${Platform.pathSeparator}voicebot${Platform.pathSeparator}web_host_images',
@@ -931,6 +1128,141 @@ class McpServer {
     );
     await store.initialize();
     return store;
+  }
+
+  Future<List<Map<String, Object?>>> _listImagesForDocumentReferences(
+    DocumentImageStore imageStore,
+    Iterable<String> references, {
+    required int limit,
+    bool expandReferences = true,
+  }) async {
+    final orderedReferences = expandReferences
+        ? await _resolveDocumentImageReferences(references)
+        : _dedupeDocumentReferences(references);
+    if (orderedReferences.isEmpty) {
+      return <Map<String, Object?>>[];
+    }
+
+    final imagesById = <String, Map<String, Object?>>{};
+    for (final reference in orderedReferences) {
+      if (imagesById.length >= limit) {
+        break;
+      }
+      final images = await imageStore.listImagesByDocument(reference);
+      for (final item in images) {
+        final id = (item['id'] ?? '').toString().trim();
+        if (id.isEmpty || imagesById.containsKey(id)) {
+          continue;
+        }
+        imagesById[id] = item;
+        if (imagesById.length >= limit) {
+          break;
+        }
+      }
+    }
+    return imagesById.values.toList(growable: false);
+  }
+
+  List<String> _dedupeDocumentReferences(Iterable<String> references) {
+    final ordered = <String>[];
+    final seen = <String>{};
+    for (final reference in references) {
+      final trimmed = reference.trim();
+      if (trimmed.isEmpty || !seen.add(trimmed)) {
+        continue;
+      }
+      ordered.add(trimmed);
+    }
+    return ordered;
+  }
+
+  Future<List<String>> _resolveDocumentImageReferences(
+    Iterable<String> references,
+  ) async {
+    final ordered = _dedupeDocumentReferences(references);
+    final seen = ordered.toSet();
+
+    final querySet = ordered.toList(growable: false);
+    for (final reference in querySet) {
+      final matches = await _knowledgeBase.search(reference, topK: 4);
+      final scoredCandidates = <({String value, int score})>[];
+
+      void addCandidate(String value, int baseScore) {
+        final trimmed = value.trim();
+        if (trimmed.isEmpty) {
+          return;
+        }
+        final score = baseScore + _documentReferenceScore(reference, trimmed);
+        if (score <= 0) {
+          return;
+        }
+        scoredCandidates.add((value: trimmed, score: score));
+      }
+
+      for (final row in matches) {
+        final rowScore = (row['score'] as num?)?.toInt() ?? 0;
+        final name = (row['name'] ?? '').toString().trim();
+        final title = (row['title'] ?? '').toString().trim();
+        addCandidate(name, rowScore + 40);
+        addCandidate(title, rowScore + 44);
+
+        final content = (row['content'] ?? '').toString().trim();
+        final sections = LocalKnowledgeBase._parseKdocSections(content);
+        final docId = LocalKnowledgeBase._sectionOrEmpty(sections, 'DOC_ID');
+        addCandidate(docId, rowScore + 36);
+      }
+
+      scoredCandidates.sort((a, b) => b.score.compareTo(a.score));
+      for (final candidate in scoredCandidates) {
+        final trimmed = candidate.value.trim();
+        if (trimmed.isEmpty || candidate.score < 160 || !seen.add(trimmed)) {
+          continue;
+        }
+        ordered.add(trimmed);
+      }
+    }
+
+    return ordered;
+  }
+
+  int _documentReferenceScore(String reference, String candidate) {
+    final foldedReference = LocalKnowledgeBase._foldForSearch(reference.trim());
+    final foldedCandidate = LocalKnowledgeBase._foldForSearch(candidate.trim());
+    if (foldedReference.isEmpty || foldedCandidate.isEmpty) {
+      return 0;
+    }
+
+    final compactReference = LocalKnowledgeBase._compact(foldedReference);
+    final compactCandidate = LocalKnowledgeBase._compact(foldedCandidate);
+    final phrases = LocalKnowledgeBase._expandSearchPhrases(foldedReference);
+    final tokens = <String>{
+      for (final phrase in phrases) ...LocalKnowledgeBase._tokenize(phrase),
+    };
+
+    var score = 0;
+    if (foldedCandidate == foldedReference ||
+        compactCandidate == compactReference) {
+      score += 120;
+    }
+    for (final phrase in phrases) {
+      if (phrase.isEmpty) {
+        continue;
+      }
+      if (foldedCandidate.contains(phrase)) {
+        score += 36;
+      }
+      final compactPhrase = LocalKnowledgeBase._compact(phrase);
+      if (compactPhrase.isNotEmpty &&
+          compactCandidate.contains(compactPhrase)) {
+        score += 20;
+      }
+    }
+    for (final token in tokens) {
+      if (foldedCandidate.contains(token)) {
+        score += 6;
+      }
+    }
+    return score;
   }
 }
 
@@ -990,6 +1322,12 @@ class KdocValidationResult {
 }
 
 class LocalKnowledgeBase {
+  LocalKnowledgeBase({
+    Future<Directory> Function()? documentsDirectoryResolver,
+    Future<void> Function(File file, String contents)? storageWriter,
+  }) : _documentsDirectoryResolver = documentsDirectoryResolver,
+       _storageWriter = storageWriter;
+
   static const int _maxFileBytes = 5 * 1024 * 1024;
   static const String _storageFileName = 'knowledge_base.json';
   static const String _storageVersion = '1';
@@ -1037,8 +1375,41 @@ class LocalKnowledgeBase {
     'tin',
     'nhe',
   };
+  static const Set<String> _searchMetaSections = <String>{
+    'DOC_ID',
+    'DOC_TYPE',
+    'TITLE',
+    'ALIASES',
+    'KEYWORDS',
+    'SUMMARY',
+    'LAST_UPDATED',
+  };
+  static const List<String> _kdocSectionOrder = <String>[
+    'DOC_ID',
+    'DOC_TYPE',
+    'TITLE',
+    'ALIASES',
+    'KEYWORDS',
+    'SUMMARY',
+    'CONTENT',
+    'CORE_PRODUCTS',
+    'RAW_MATERIALS',
+    'PROCESS',
+    'FOOD_SAFETY',
+    'MARKET',
+    'SERVICES',
+    'REGULATIONS',
+    'USAGE',
+    'DAY_VISIT',
+    'STAY_PACKAGE',
+    'FAQ',
+    'SAFETY_NOTE',
+    'LAST_UPDATED',
+  ];
   final Map<String, _KnowledgeDocument> _documents =
       <String, _KnowledgeDocument>{};
+  final Future<Directory> Function()? _documentsDirectoryResolver;
+  final Future<void> Function(File file, String contents)? _storageWriter;
   Future<void>? _initFuture;
   File? _storageFile;
 
@@ -1094,6 +1465,187 @@ class LocalKnowledgeBase {
     );
   }
 
+  static Map<String, dynamic> kdocSchema() {
+    return <String, dynamic>{
+      'format': 'KDOC:v1',
+      'header': _kdocHeader,
+      'footer': _kdocFooter,
+      'required_sections': _requiredKdocSections.toList(growable: false),
+      'section_order': _kdocSectionOrder,
+      'sections': <String, Map<String, Object?>>{
+        'DOC_ID': <String, Object?>{
+          'label': 'Mã tài liệu',
+          'required': true,
+          'multi_line': false,
+          'purpose': 'Định danh duy nhất, ổn định theo thời gian.',
+          'example': 'bot_chanh_chavi_400g',
+        },
+        'DOC_TYPE': <String, Object?>{
+          'label': 'Loại tài liệu',
+          'required': true,
+          'multi_line': false,
+          'purpose': 'Phân loại tài liệu để chọn section phù hợp.',
+          'allowed_values': _allowedDocTypes.toList(growable: false),
+          'example': 'product',
+        },
+        'TITLE': <String, Object?>{
+          'label': 'Tiêu đề',
+          'required': true,
+          'multi_line': false,
+          'purpose': 'Tên hiển thị chính thức của tài liệu.',
+        },
+        'ALIASES': <String, Object?>{
+          'label': 'Tên gọi khác',
+          'required': true,
+          'multi_line': true,
+          'purpose': 'Biến thể tên gọi để hỗ trợ tìm kiếm.',
+        },
+        'KEYWORDS': <String, Object?>{
+          'label': 'Từ khóa',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Từ khóa hỗ trợ retrieval theo ý định câu hỏi.',
+        },
+        'SUMMARY': <String, Object?>{
+          'label': 'Tóm tắt',
+          'required': true,
+          'multi_line': true,
+          'purpose': 'Tóm tắt ngắn gọn nhất của tài liệu.',
+        },
+        'CONTENT': <String, Object?>{
+          'label': 'Nội dung chính',
+          'required': true,
+          'multi_line': true,
+          'purpose': 'Thông tin cốt lõi, thường dưới dạng gạch đầu dòng.',
+        },
+        'CORE_PRODUCTS': <String, Object?>{
+          'label': 'Sản phẩm / hạng mục chính',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Danh mục sản phẩm chủ lực hoặc hạng mục chính.',
+        },
+        'RAW_MATERIALS': <String, Object?>{
+          'label': 'Nguyên liệu',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Nguồn nguyên liệu, vùng trồng, tiêu chuẩn đầu vào.',
+        },
+        'PROCESS': <String, Object?>{
+          'label': 'Quy trình',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Quy trình sản xuất, chế biến, kiểm soát chất lượng.',
+        },
+        'FOOD_SAFETY': <String, Object?>{
+          'label': 'An toàn thực phẩm',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Chứng nhận, tiêu chuẩn, kiểm định, OCOP, HACCP, FDA...',
+        },
+        'MARKET': <String, Object?>{
+          'label': 'Thị trường & phân phối',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Thị trường mục tiêu, kênh phân phối, xuất khẩu.',
+        },
+        'SERVICES': <String, Object?>{
+          'label': 'Dịch vụ / lĩnh vực hoạt động',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Dịch vụ cung cấp hoặc lĩnh vực hoạt động chính.',
+        },
+        'REGULATIONS': <String, Object?>{
+          'label': 'Quy định / điều kiện',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Quy định nội bộ, điều kiện hợp tác, lưu ý vận hành.',
+        },
+        'USAGE': <String, Object?>{
+          'label': 'Cách dùng / liên hệ',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Cách dùng sản phẩm hoặc thông tin liên hệ/hợp tác.',
+        },
+        'DAY_VISIT': <String, Object?>{
+          'label': 'Gói trong ngày',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Thông tin trải nghiệm trong ngày cho tài liệu du lịch.',
+        },
+        'STAY_PACKAGE': <String, Object?>{
+          'label': 'Gói lưu trú',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Thông tin lưu trú qua đêm, phòng/lều, tiện ích.',
+        },
+        'FAQ': <String, Object?>{
+          'label': 'Hỏi đáp thường gặp',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Cặp câu hỏi/trả lời ngắn để agent trích xuất nhanh.',
+        },
+        'SAFETY_NOTE': <String, Object?>{
+          'label': 'Lưu ý an toàn / phạm vi thông tin',
+          'required': false,
+          'multi_line': true,
+          'purpose': 'Lưu ý giới hạn nội dung, không suy diễn công dụng y tế.',
+        },
+        'LAST_UPDATED': <String, Object?>{
+          'label': 'Ngày cập nhật',
+          'required': true,
+          'multi_line': false,
+          'purpose': 'Ngày cập nhật ISO-8601, ví dụ 2026-02-08.',
+        },
+      },
+      'doc_types': <String, Map<String, Object?>>{
+        'product': <String, Object?>{
+          'description': 'Tài liệu cho một sản phẩm cụ thể.',
+          'recommended_sections': const <String>[
+            'KEYWORDS',
+            'USAGE',
+            'FAQ',
+            'SAFETY_NOTE',
+          ],
+        },
+        'company_profile': <String, Object?>{
+          'description': 'Hồ sơ doanh nghiệp hoặc thương hiệu.',
+          'recommended_sections': const <String>[
+            'CORE_PRODUCTS',
+            'RAW_MATERIALS',
+            'PROCESS',
+            'FOOD_SAFETY',
+            'MARKET',
+            'SAFETY_NOTE',
+          ],
+        },
+        'info': <String, Object?>{
+          'description':
+              'Tài liệu thông tin tổng hợp hoặc mô tả dịch vụ/địa điểm.',
+          'recommended_sections': const <String>[
+            'SERVICES',
+            'DAY_VISIT',
+            'STAY_PACKAGE',
+            'REGULATIONS',
+            'FAQ',
+            'SAFETY_NOTE',
+          ],
+        },
+        'faq': <String, Object?>{
+          'description': 'Bộ câu hỏi thường gặp.',
+          'recommended_sections': const <String>['FAQ', 'SAFETY_NOTE'],
+        },
+        'policy': <String, Object?>{
+          'description': 'Chính sách và quy định áp dụng.',
+          'recommended_sections': const <String>[
+            'REGULATIONS',
+            'FAQ',
+            'SAFETY_NOTE',
+          ],
+        },
+      },
+    };
+  }
+
   Future<Map<String, dynamic>> upsertDocument({
     required String name,
     required String content,
@@ -1113,8 +1665,18 @@ class LocalKnowledgeBase {
       compactContent: _compact(_foldForSearch(normalizedContent)),
       updatedAt: now,
     );
+    final previous = _documents[normalizedName];
     _documents[normalizedName] = doc;
-    await _persist();
+    try {
+      await _persist();
+    } catch (_) {
+      if (previous == null) {
+        _documents.remove(normalizedName);
+      } else {
+        _documents[normalizedName] = previous;
+      }
+      rethrow;
+    }
     return _toMeta(doc);
   }
 
@@ -1173,16 +1735,118 @@ class LocalKnowledgeBase {
     if (doc == null) {
       return null;
     }
-    await _persist();
+    try {
+      await _persist();
+    } catch (_) {
+      _documents[key] = doc;
+      rethrow;
+    }
     return _toMeta(doc);
   }
 
   Future<int> clear() async {
     await _ensureInitialized();
     final removed = _documents.length;
+    final backup = Map<String, _KnowledgeDocument>.from(_documents);
     _documents.clear();
-    await _persist();
+    try {
+      await _persist();
+    } catch (_) {
+      _documents
+        ..clear()
+        ..addAll(backup);
+      rethrow;
+    }
     return removed;
+  }
+
+  Future<List<String>> resolveImageLookupReferences(String reference) async {
+    await _ensureInitialized();
+    final trimmed = reference.trim();
+    if (trimmed.isEmpty) {
+      return <String>[];
+    }
+
+    final foldedReference = _foldForSearch(trimmed);
+    final compactReference = _compact(foldedReference);
+    final phrases = _expandSearchPhrases(foldedReference);
+    final tokens = <String>{for (final phrase in phrases) ..._tokenize(phrase)};
+
+    _KnowledgeDocument? bestDoc;
+    var bestTitle = '';
+    var bestDocId = '';
+    var bestScore = 0;
+
+    for (final doc in _documents.values) {
+      final sections = _parseKdocSections(doc.rawContent);
+      final title = _sectionOrEmpty(sections, 'TITLE');
+      final docId = _sectionOrEmpty(sections, 'DOC_ID');
+      final aliases = _splitList(_sectionOrEmpty(sections, 'ALIASES'));
+      final candidates = <String>[
+        doc.name,
+        if (title.isNotEmpty) title,
+        if (docId.isNotEmpty) docId,
+        ...aliases,
+      ];
+
+      var docScore = 0;
+      for (final candidate in candidates) {
+        final foldedCandidate = _foldForSearch(candidate);
+        final compactCandidate = _compact(foldedCandidate);
+        if (foldedCandidate.isEmpty) {
+          continue;
+        }
+        if (foldedCandidate == foldedReference ||
+            compactCandidate == compactReference) {
+          docScore = docScore < 300 ? 300 : docScore;
+        }
+        for (final phrase in phrases) {
+          if (phrase.isEmpty) {
+            continue;
+          }
+          if (foldedCandidate.contains(phrase)) {
+            docScore += 40;
+          }
+          final compactPhrase = _compact(phrase);
+          if (compactPhrase.isNotEmpty &&
+              compactCandidate.contains(compactPhrase)) {
+            docScore += 24;
+          }
+        }
+        for (final token in tokens) {
+          if (foldedCandidate.contains(token)) {
+            docScore += 8;
+          }
+        }
+      }
+
+      if (docScore > bestScore) {
+        bestScore = docScore;
+        bestDoc = doc;
+        bestTitle = title;
+        bestDocId = docId;
+      }
+    }
+
+    if (bestDoc == null || bestScore < 40) {
+      return <String>[trimmed];
+    }
+
+    final ordered = <String>[];
+    final seen = <String>{};
+    void addReference(String value) {
+      final normalized = value.trim();
+      if (normalized.isEmpty || !seen.add(normalized)) {
+        return;
+      }
+      ordered.add(normalized);
+    }
+
+    addReference(bestTitle);
+    addReference(bestDoc.name);
+    addReference(bestDocId);
+    addReference(trimmed);
+    return ordered;
   }
 
   Future<List<Map<String, dynamic>>> search(
@@ -1197,14 +1861,22 @@ class LocalKnowledgeBase {
     final phrases = _expandSearchPhrases(foldedQuery);
     final compactPhrases = phrases.map(_compact).toSet();
     final tokens = <String>{for (final phrase in phrases) ..._tokenize(phrase)};
+    final intent = _analyzeSearchIntent(
+      foldedQuery: foldedQuery,
+      tokens: tokens,
+    );
 
     final matches =
         <
           ({
             int score,
+            double coverageRatio,
+            int matchedTokens,
+            bool exactMatch,
             _KnowledgeDocument doc,
             String snippet,
             List<String> fieldHits,
+            List<String> matchReasons,
             String title,
             String docType,
             String summary,
@@ -1231,8 +1903,20 @@ class LocalKnowledgeBase {
       final usage = _sectionOrEmpty(sections, 'USAGE');
       final faq = _sectionOrEmpty(sections, 'FAQ');
       final safetyNote = _sectionOrEmpty(sections, 'SAFETY_NOTE');
+      final additionalSections = <String, String>{
+        if (sections != null)
+          for (final entry in sections.entries)
+            if (!_searchMetaSections.contains(entry.key) &&
+                entry.key != 'CONTENT' &&
+                entry.key != 'USAGE' &&
+                entry.key != 'FAQ' &&
+                entry.key != 'SAFETY_NOTE' &&
+                entry.value.trim().isNotEmpty)
+              entry.key.toLowerCase(): entry.value.trim(),
+      };
 
       final fieldFolded = <String, String>{
+        'name': _foldForSearch(doc.name),
         'title': _foldForSearch(title),
         'aliases': _foldForSearch(aliases.join(' ')),
         'keywords': _foldForSearch(keywords.join(' ')),
@@ -1240,12 +1924,15 @@ class LocalKnowledgeBase {
         'content': _foldForSearch(contentSection),
         'usage': _foldForSearch(usage),
         'faq': _foldForSearch(faq),
+        for (final entry in additionalSections.entries)
+          entry.key: _foldForSearch(entry.value),
       };
       final fieldCompact = <String, String>{
         for (final entry in fieldFolded.entries)
           entry.key: _compact(entry.value),
       };
       final fieldWeights = <String, ({int phrase, int compact, int token})>{
+        'name': (phrase: 72, compact: 56, token: 10),
         'title': (phrase: 56, compact: 42, token: 8),
         'aliases': (phrase: 44, compact: 30, token: 6),
         'keywords': (phrase: 40, compact: 28, token: 5),
@@ -1253,13 +1940,17 @@ class LocalKnowledgeBase {
         'content': (phrase: 18, compact: 12, token: 2),
         'usage': (phrase: 20, compact: 14, token: 2),
         'faq': (phrase: 14, compact: 10, token: 1),
+        for (final entry in additionalSections.entries)
+          entry.key: _weightsForAdditionalSection(entry.key),
       };
 
       final scoreByField = <String, int>{
         for (final key in fieldFolded.keys) key: 0,
       };
       var hasPhraseMatch = false;
-      var tokenMatches = 0;
+      var hasIdentityMatch = false;
+      final matchedTokens = <String>{};
+      final strongFieldTokenMatches = <String>{};
 
       for (final entry in fieldFolded.entries) {
         final key = entry.key;
@@ -1298,20 +1989,65 @@ class LocalKnowledgeBase {
           if (folded.contains(token) ||
               (compactToken.isNotEmpty && compact.contains(compactToken))) {
             scoreByField[key] = (scoreByField[key] ?? 0) + weights.token;
-            tokenMatches += 1;
+            matchedTokens.add(token);
+            if (key == 'name' ||
+                key == 'title' ||
+                key == 'aliases' ||
+                key == 'keywords') {
+              strongFieldTokenMatches.add(token);
+            }
           }
         }
       }
 
-      final totalScore = scoreByField.values.fold<int>(
+      final compactTitle = fieldCompact['title'] ?? '';
+      final compactAliases = fieldCompact['aliases'] ?? '';
+      final compactName = fieldCompact['name'] ?? '';
+      if (compactTitle == intent.compactQuery ||
+          compactAliases.contains(intent.compactQuery) ||
+          compactName == intent.compactQuery) {
+        hasIdentityMatch = true;
+      }
+
+      var totalScore = scoreByField.values.fold<int>(
         0,
         (sum, value) => sum + value,
       );
-      final hasEnoughTokenEvidence = tokenMatches >= 2;
-      if (!hasPhraseMatch && !hasEnoughTokenEvidence) {
+      if (hasIdentityMatch) {
+        totalScore += 64;
+      }
+      if (strongFieldTokenMatches.length >= 2) {
+        totalScore += strongFieldTokenMatches.length * 8;
+      }
+
+      final coverageRatio = tokens.isEmpty
+          ? 0.0
+          : matchedTokens.length / tokens.length;
+      if (coverageRatio >= 1) {
+        totalScore += 26;
+      } else if (coverageRatio >= 0.85) {
+        totalScore += 20;
+      } else if (coverageRatio >= 0.65) {
+        totalScore += 12;
+      } else if (coverageRatio >= 0.45) {
+        totalScore += 6;
+      }
+
+      final docTypeBoost = _docTypeBoostForIntent(
+        docType: docType,
+        intent: intent,
+      );
+      totalScore += docTypeBoost;
+      if (structured) {
+        totalScore += 4;
+      }
+
+      final hasEnoughTokenEvidence =
+          matchedTokens.length >= 2 && coverageRatio >= 0.4;
+      if (!hasPhraseMatch && !hasEnoughTokenEvidence && !hasIdentityMatch) {
         continue;
       }
-      if (totalScore < 6) {
+      if (totalScore < 12) {
         continue;
       }
 
@@ -1320,21 +2056,43 @@ class LocalKnowledgeBase {
             ..sort((a, b) => b.value.compareTo(a.value));
       final fieldHits = sortedFields.map((entry) => entry.key).toList();
       final primaryField = fieldHits.isEmpty ? 'content' : fieldHits.first;
+      final matchReasons = <String>[];
+      if (hasIdentityMatch) {
+        matchReasons.add('exact_identity');
+      }
+      if (docTypeBoost > 0) {
+        matchReasons.add('intent_doc_type');
+      }
+      if (coverageRatio >= 0.85) {
+        matchReasons.add('high_token_coverage');
+      } else if (coverageRatio >= 0.45) {
+        matchReasons.add('partial_token_coverage');
+      }
+      if (structured) {
+        matchReasons.add('structured_kdoc');
+      }
       final snippet = switch (primaryField) {
+        'name' => title,
         'title' => title,
         'aliases' => 'Tên gọi khác: ${aliases.join(', ')}',
         'keywords' => 'Từ khóa: ${keywords.join(', ')}',
         'summary' => summary,
         'usage' => usage,
         'faq' => faq,
+        _ when additionalSections.containsKey(primaryField) =>
+          '${_additionalSectionLabel(primaryField)}: ${_snippetFrom(additionalSections[primaryField] ?? '', query)}',
         _ => _snippetFrom(contentSection, query),
       };
 
       matches.add((
         score: totalScore,
+        coverageRatio: coverageRatio,
+        matchedTokens: matchedTokens.length,
+        exactMatch: hasIdentityMatch,
         doc: doc,
         snippet: snippet.trim(),
         fieldHits: fieldHits,
+        matchReasons: matchReasons,
         title: title,
         docType: docType,
         summary: summary,
@@ -1349,6 +2107,13 @@ class LocalKnowledgeBase {
       if (byScore != 0) {
         return byScore;
       }
+      final byCoverage = b.coverageRatio.compareTo(a.coverageRatio);
+      if (byCoverage != 0) {
+        return byCoverage;
+      }
+      if (a.exactMatch != b.exactMatch) {
+        return b.exactMatch ? 1 : -1;
+      }
       return a.doc.name.compareTo(b.doc.name);
     });
 
@@ -1360,8 +2125,18 @@ class LocalKnowledgeBase {
             'title': item.title,
             'doc_type': item.docType,
             'score': item.score,
+            'coverage_ratio': item.coverageRatio,
+            'matched_tokens': item.matchedTokens,
+            'query_tokens': tokens.length,
+            'exact_match': item.exactMatch,
+            'confidence': _confidenceFromScore(
+              score: item.score,
+              coverageRatio: item.coverageRatio,
+              exactMatch: item.exactMatch,
+            ),
             'snippet': item.snippet,
             'field_hits': item.fieldHits,
+            'match_reasons': item.matchReasons,
             'summary': item.summary,
             'usage': item.usage,
             'safety_note': item.safetyNote,
@@ -1387,7 +2162,9 @@ class LocalKnowledgeBase {
     if (_storageFile != null) {
       return _storageFile!;
     }
-    final baseDir = await getApplicationDocumentsDirectory();
+    final baseDir =
+        await (_documentsDirectoryResolver?.call() ??
+            getApplicationDocumentsDirectory());
     final storageDir = Directory('${baseDir.path}/voicebot');
     if (!await storageDir.exists()) {
       await storageDir.create(recursive: true);
@@ -1442,25 +2219,26 @@ class LocalKnowledgeBase {
   }
 
   Future<void> _persist() async {
-    try {
-      final file = await _resolveStorageFile();
-      final payload = <String, dynamic>{
-        'version': _storageVersion,
-        'saved_at': DateTime.now().toIso8601String(),
-        'documents': _documents.values
-            .map(
-              (doc) => <String, dynamic>{
-                'name': doc.name,
-                'content': doc.rawContent,
-                'updated_at': doc.updatedAt.toIso8601String(),
-              },
-            )
-            .toList(),
-      };
-      await file.writeAsString(jsonEncode(payload), flush: true);
-    } catch (_) {
-      // Keep in-memory state even if disk write fails.
+    final file = await _resolveStorageFile();
+    final payload = <String, dynamic>{
+      'version': _storageVersion,
+      'saved_at': DateTime.now().toIso8601String(),
+      'documents': _documents.values
+          .map(
+            (doc) => <String, dynamic>{
+              'name': doc.name,
+              'content': doc.rawContent,
+              'updated_at': doc.updatedAt.toIso8601String(),
+            },
+          )
+          .toList(),
+    };
+    final contents = jsonEncode(payload);
+    if (_storageWriter != null) {
+      await _storageWriter!(file, contents);
+      return;
     }
+    await file.writeAsString(contents, flush: true);
   }
 
   Map<String, dynamic> _toMeta(_KnowledgeDocument doc) {
@@ -1704,7 +2482,13 @@ class LocalKnowledgeBase {
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchamy\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bcha\s*mi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bbo\s*tranh\b', caseSensitive: false): 'bot chanh',
+      RegExp(r'\bbot\s*tranh\b', caseSensitive: false): 'bot chanh',
+      RegExp(r'\bbo\s*chanh\b', caseSensitive: false): 'bot chanh',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\bcuoc\s*tranh\b', caseSensitive: false): 'cot chanh',
@@ -1722,6 +2506,7 @@ class LocalKnowledgeBase {
     if (normalized.contains('chavi')) {
       phrases.add(normalized.replaceAll('chavi', 'cha vi'));
       phrases.add(normalized.replaceAll('chavi', 'chai vi'));
+      phrases.add(normalized.replaceAll('chavi', 'chami'));
     }
     if (normalized.contains('chanhviet')) {
       phrases.add(normalized.replaceAll('chanhviet', 'chanh viet'));
@@ -1731,14 +2516,210 @@ class LocalKnowledgeBase {
     return phrases.where((item) => item.trim().isNotEmpty).toSet();
   }
 
+  static ({
+    Set<String> preferredDocTypes,
+    Set<String> focusTerms,
+    String compactQuery,
+  })
+  _analyzeSearchIntent({
+    required String foldedQuery,
+    required Set<String> tokens,
+  }) {
+    final preferredDocTypes = <String>{};
+    final focusTerms = <String>{};
+    final normalized = ' ${foldedQuery.trim()} ';
+
+    void addIfMatches({
+      required Set<String> docTypes,
+      required List<String> phrases,
+      required Set<String> tokenHints,
+    }) {
+      final phraseMatched = phrases.any(
+        (phrase) => phrase.isNotEmpty && normalized.contains(' $phrase '),
+      );
+      final matchedTokens = tokenHints.where(tokens.contains).toSet();
+      if (!phraseMatched && matchedTokens.isEmpty) {
+        return;
+      }
+      preferredDocTypes.addAll(docTypes);
+      for (final phrase in phrases) {
+        if (phrase.isNotEmpty && normalized.contains(' $phrase ')) {
+          focusTerms.add(phrase);
+        }
+      }
+      focusTerms.addAll(matchedTokens);
+    }
+
+    addIfMatches(
+      docTypes: <String>{'policy', 'faq'},
+      phrases: const <String>[
+        'chinh sach',
+        'doi tra',
+        'thanh toan',
+        'van chuyen',
+        'giao hang',
+        'bao hanh',
+      ],
+      tokenHints: const <String>{'chinh', 'sach', 'doi', 'tra', 'bao', 'hanh'},
+    );
+    addIfMatches(
+      docTypes: <String>{'company_profile', 'info'},
+      phrases: const <String>[
+        'gioi thieu',
+        'doanh nghiep',
+        'cong ty',
+        'ho so',
+        'nha may',
+        'vung trong',
+        'thi truong',
+        'kenh phan phoi',
+        'phan phoi',
+      ],
+      tokenHints: const <String>{
+        'gioi',
+        'thieu',
+        'doanh',
+        'nghiep',
+        'ty',
+        'profile',
+        'thi',
+        'truong',
+        'kenh',
+        'phan',
+        'phoi',
+      },
+    );
+    addIfMatches(
+      docTypes: <String>{'faq', 'info'},
+      phrases: const <String>['hoi dap', 'cau hoi thuong gap', 'faq'],
+      tokenHints: const <String>{'faq', 'hoi', 'dap'},
+    );
+    addIfMatches(
+      docTypes: <String>{'product', 'info'},
+      phrases: const <String>[
+        'san pham',
+        'thanh phan',
+        'xuat xu',
+        'han su dung',
+        'bao quan',
+        'cong dung',
+        'uu diem',
+        'quy cach',
+        'gia',
+        'huong dan',
+        'cach dung',
+      ],
+      tokenHints: const <String>{
+        'san',
+        'pham',
+        'thanh',
+        'phan',
+        'xuat',
+        'xu',
+        'han',
+        'su',
+        'dung',
+        'bao',
+        'quan',
+        'gia',
+      },
+    );
+    if (tokens.contains('chavi') ||
+        tokens.contains('bot') ||
+        tokens.contains('chanh') ||
+        tokens.contains('tinh') ||
+        tokens.contains('dau') ||
+        tokens.contains('syrup')) {
+      preferredDocTypes.add('product');
+    }
+
+    return (
+      preferredDocTypes: preferredDocTypes,
+      focusTerms: focusTerms,
+      compactQuery: _compact(foldedQuery),
+    );
+  }
+
+  static int _docTypeBoostForIntent({
+    required String docType,
+    required ({
+      Set<String> preferredDocTypes,
+      Set<String> focusTerms,
+      String compactQuery,
+    })
+    intent,
+  }) {
+    if (docType.isEmpty || intent.preferredDocTypes.isEmpty) {
+      return 0;
+    }
+    final docTypes = intent.preferredDocTypes.toList(growable: false);
+    final index = docTypes.indexOf(docType);
+    if (index == 0) {
+      return 26;
+    }
+    if (index > 0) {
+      return 14;
+    }
+    return 0;
+  }
+
+  static ({int phrase, int compact, int token}) _weightsForAdditionalSection(
+    String key,
+  ) {
+    return switch (key.toUpperCase()) {
+      'MARKET' => (phrase: 36, compact: 26, token: 5),
+      'SERVICES' => (phrase: 28, compact: 20, token: 4),
+      'REGULATIONS' => (phrase: 24, compact: 18, token: 3),
+      'RAW_MATERIALS' => (phrase: 24, compact: 18, token: 3),
+      'PROCESS' => (phrase: 22, compact: 16, token: 3),
+      'FOOD_SAFETY' => (phrase: 22, compact: 16, token: 3),
+      _ => (phrase: 18, compact: 12, token: 2),
+    };
+  }
+
+  static String _additionalSectionLabel(String key) {
+    return switch (key.toUpperCase()) {
+      'MARKET' => 'Thị trường & kênh phân phối',
+      'SERVICES' => 'Dịch vụ',
+      'REGULATIONS' => 'Quy định',
+      'RAW_MATERIALS' => 'Nguyên liệu',
+      'PROCESS' => 'Quy trình',
+      'FOOD_SAFETY' => 'An toàn thực phẩm',
+      _ => key.toUpperCase(),
+    };
+  }
+
+  static String _confidenceFromScore({
+    required int score,
+    required double coverageRatio,
+    required bool exactMatch,
+  }) {
+    if (exactMatch || (score >= 120 && coverageRatio >= 0.65)) {
+      return 'high';
+    }
+    if (score >= 54 && coverageRatio >= 0.4) {
+      return 'medium';
+    }
+    return 'low';
+  }
+
   static String _normalizeAliases(String input) {
     var output = input;
     final replacements = <RegExp, String>{
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchamy\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bcha-vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bcha\s*mi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bchamy\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bcha\s*mi\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bbo\s*tranh\b', caseSensitive: false): 'bột chanh',
+      RegExp(r'\bbot\s*tranh\b', caseSensitive: false): 'bột chanh',
+      RegExp(r'\bbo\s*chanh\b', caseSensitive: false): 'bột chanh',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\bchanh\s*việt\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',

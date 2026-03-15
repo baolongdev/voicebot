@@ -133,7 +133,113 @@ void main() {
       );
       expect(images, isEmpty);
     });
+
+    test(
+      'returns only direct document images when knowledge-aligned images exist',
+      () async {
+        requests.clear();
+        repository.dispose();
+        repository = ChatRepositoryImpl(
+          sessionCoordinator: _FakeSessionCoordinator(),
+          webHostBaseUriResolver: () => Uri.parse('http://127.0.0.1:8080/'),
+          mcpHandleMessage: (payload) async {
+            requests.add(Map<String, dynamic>.from(payload));
+            final params = payload['params'];
+            final name = params is Map ? params['name'] : null;
+            final arguments = params is Map<String, dynamic>
+                ? params['arguments'] as Map<String, dynamic>?
+                : null;
+            if (name == 'self.knowledge.search') {
+              return _toolResult(payload['id'], <String, Object?>{
+                'results': <Map<String, Object?>>[
+                  <String, Object?>{
+                    'name': 'company_profile_177.txt',
+                    'title': 'Công ty Chanh Việt',
+                    'score': 88,
+                  },
+                ],
+              });
+            }
+            if (name == 'self.knowledge.list_images') {
+              final docName = (arguments?['doc_name'] ?? '').toString();
+              if (docName == 'Công ty Chanh Việt') {
+                return _toolResult(payload['id'], <String, Object?>{
+                  'images': <Map<String, Object?>>[
+                    <String, Object?>{
+                      'id': 'img_doc',
+                      'doc_name': 'Công ty Chanh Việt',
+                      'file_name': 'doc.jpg',
+                      'mime_type': 'image/jpeg',
+                      'bytes': 120,
+                      'created_at': '2026-03-15T00:00:00.000Z',
+                      'url': '/api/documents/image/content?id=img_doc',
+                    },
+                  ],
+                });
+              }
+              return _toolResult(payload['id'], <String, Object?>{
+                'images': <Map<String, Object?>>[],
+              });
+            }
+            if (name == 'self.knowledge.search_images') {
+              return _toolResult(payload['id'], <String, Object?>{
+                'images': <Map<String, Object?>>[
+                  <String, Object?>{
+                    'id': 'img_search',
+                    'doc_name': 'Công ty Chanh Việt',
+                    'file_name': 'search.jpg',
+                    'mime_type': 'image/jpeg',
+                    'bytes': 140,
+                    'created_at': '2026-03-15T00:10:00.000Z',
+                    'score': 95,
+                    'url': '/api/documents/image/content?id=img_search',
+                  },
+                ],
+              });
+            }
+            return _toolError(payload['id'], 'unknown tool');
+          },
+        );
+
+        final images = await repository.getRelatedImagesForQuery(
+          'định hướng phát triển',
+          topK: 3,
+          maxImages: 4,
+        );
+
+        expect(images, hasLength(1));
+        expect(images.first.id, 'img_doc');
+        expect(
+          requests.any((request) {
+            final params = request['params'] as Map<String, dynamic>?;
+            return params?['name'] == 'self.knowledge.search_images';
+          }),
+          isFalse,
+        );
+      },
+    );
   });
+}
+
+Map<String, dynamic> _toolResult(Object? id, Map<String, Object?> payload) {
+  return <String, dynamic>{
+    'jsonrpc': '2.0',
+    'id': id,
+    'result': <String, dynamic>{
+      'content': <Map<String, dynamic>>[
+        <String, dynamic>{'type': 'text', 'text': jsonEncode(payload)},
+      ],
+      'isError': false,
+    },
+  };
+}
+
+Map<String, dynamic> _toolError(Object? id, String message) {
+  return <String, dynamic>{
+    'jsonrpc': '2.0',
+    'id': id,
+    'error': <String, dynamic>{'message': message},
+  };
 }
 
 class _FakeSessionCoordinator implements SessionCoordinator {
@@ -183,6 +289,9 @@ class _FakeSessionCoordinator implements SessionCoordinator {
 
   @override
   Future<void> disconnect() async {}
+
+  @override
+  Future<void> playChime() async {}
 
   @override
   Future<void> sendAudio(List<int> data) async {}

@@ -18,6 +18,7 @@ abstract class SessionCoordinator {
   Future<void> disconnect();
   Future<void> startListening({bool enableMic = true});
   Future<void> stopListening();
+  Future<void> playChime();
   Future<void> sendText(String text);
   Future<void> sendAudio(List<int> data);
   void setListeningMode(ListeningMode mode);

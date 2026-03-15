@@ -9,6 +9,7 @@ import '../../../../capabilities/voice/transport_client.dart';
 import '../../../../capabilities/voice/websocket_transport_client.dart';
 import '../../../../capabilities/voice/mqtt_transport_client.dart';
 import '../../../../core/config/app_config.dart';
+import '../../../../core/config/default_settings.dart';
 import '../../../form/domain/models/server_form_data.dart';
 import '../../../../core/errors/failure.dart';
 import '../../../../core/result/result.dart';
@@ -28,7 +29,12 @@ class ChatRepositoryImpl implements ChatRepository {
     mcpHandleMessage,
   }) : _sessionCoordinator = sessionCoordinator,
        _webHostBaseUriResolver = webHostBaseUriResolver,
-       _mcpHandleMessage = mcpHandleMessage ?? McpServer.shared.handleMessage,
+       _mcpHandleMessage =
+           mcpHandleMessage ??
+           ((payload) => McpServer.shared.handleMessage(
+             payload,
+             caller: McpCallerType.internal,
+           )),
        _responsesController = StreamController<ChatResponse>.broadcast(),
        _audioController = StreamController<List<int>>.broadcast(),
        _errorController = StreamController<Failure>.broadcast(),
@@ -57,6 +63,8 @@ class ChatRepositoryImpl implements ChatRepository {
   late final XiaozhiTextService _textService;
   bool _isConnected = false;
   bool _isSpeaking = false;
+  TextSendMode _textSendMode =
+      DefaultSettingsRegistry.current.chat.textSendMode;
   int _mcpRequestId = 30000;
   bool _knowledgeVoiceInFlight = false;
   String? _lastKnowledgeVoiceQuery;
@@ -70,13 +78,9 @@ class ChatRepositoryImpl implements ChatRepository {
   String? _lastBlockedInput;
   String? _lastImageContextQuery;
   DateTime _lastImageContextAt = DateTime.fromMillisecondsSinceEpoch(0);
-  String? _lastKnowledgeDocQuery;
-  String? _lastKnowledgeDocName;
-  DateTime _lastKnowledgeDocAt = DateTime.fromMillisecondsSinceEpoch(0);
   final List<_RecentText> _recentBotTexts = <_RecentText>[];
   static const Duration _recentTextWindow = Duration(seconds: 10);
   static const Duration _knowledgeVoiceCooldown = Duration(seconds: 6);
-  static const Duration _knowledgeDocCacheTtl = Duration(seconds: 6);
   static const Duration _imageContextTtl = Duration(minutes: 10);
   static const String _knowledgeMarker = '__KBCTX__';
   static const String _missingMqttCode = 'missing_mqtt';
@@ -269,11 +273,15 @@ class ChatRepositoryImpl implements ChatRepository {
 
   @override
   Future<void> setTextSendMode(TextSendMode mode) async {
-    return;
+    _textSendMode = mode;
   }
 
   @override
   Future<Result<bool>> sendGreeting(String text) async {
+    final input = text.trim();
+    if (input.isEmpty) {
+      return Result.failure(const Failure(message: 'Nội dung trống'));
+    }
     if (!_isConnected) {
       if (_lastConfig == null) {
         return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
@@ -283,7 +291,17 @@ class ChatRepositoryImpl implements ChatRepository {
         return result;
       }
     }
-    return _textService.sendTextRequest(text);
+    final useTextType = _textSendMode == TextSendMode.text;
+    AppLogger.event(
+      'ChatRepository',
+      'send_greeting',
+      fields: <String, Object?>{
+        'mode': _textSendMode.name,
+        'length': input.length,
+      },
+      level: 'D',
+    );
+    return _textService.sendTextRequest(input, useTextType: useTextType);
   }
 
   @override
@@ -314,7 +332,7 @@ class ChatRepositoryImpl implements ChatRepository {
     final textWithKnowledge = _shouldUseKnowledgeContext(input)
         ? await _buildKnowledgeContextPrompt(input)
         : input;
-    return _textService.sendTextRequest(textWithKnowledge);
+    return _textService.sendTextRequest(textWithKnowledge, useTextType: true);
   }
 
   @override
@@ -374,6 +392,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
     final docImages = await _fetchKnowledgeDocImages(
       effectiveQuery,
+      topK: topKValue,
       maxImages: maxImageCount,
     );
     if (docImages.isNotEmpty) {
@@ -387,7 +406,7 @@ class ChatRepositoryImpl implements ChatRepository {
         },
         level: 'D',
       );
-      return docImages;
+      return docImages.take(maxImageCount).toList(growable: false);
     }
 
     final startedAt = DateTime.now();
@@ -403,7 +422,7 @@ class ChatRepositoryImpl implements ChatRepository {
       );
       final payload = _decodeToolPayload(result);
       if (payload is! Map) {
-        return const <RelatedChatImage>[];
+        return docImages.take(maxImageCount).toList(growable: false);
       }
       final rows = payload['images'];
       if (rows is! List || rows.isEmpty) {
@@ -416,7 +435,7 @@ class ChatRepositoryImpl implements ChatRepository {
           },
           level: 'D',
         );
-        return const <RelatedChatImage>[];
+        return docImages.take(maxImageCount).toList(growable: false);
       }
 
       final baseUri = _resolveWebHostBaseUri();
@@ -430,7 +449,7 @@ class ChatRepositoryImpl implements ChatRepository {
           },
           level: 'D',
         );
-        return const <RelatedChatImage>[];
+        return docImages.take(maxImageCount).toList(growable: false);
       }
 
       final imagesById = <String, RelatedChatImage>{};
@@ -482,7 +501,7 @@ class ChatRepositoryImpl implements ChatRepository {
         );
       }
 
-      final merged = imagesById.values.toList(growable: false)
+      final rankedImages = imagesById.values.toList(growable: false)
         ..sort((a, b) {
           final byScore = b.score.compareTo(a.score);
           if (byScore != 0) {
@@ -492,8 +511,8 @@ class ChatRepositoryImpl implements ChatRepository {
           final bMillis = b.createdAt?.millisecondsSinceEpoch ?? 0;
           return bMillis.compareTo(aMillis);
         });
-      final limited = merged.take(maxImageCount).toList(growable: false);
-      if (limited.isNotEmpty) {
+      final selected = rankedImages.take(maxImageCount).toList(growable: false);
+      if (selected.isNotEmpty) {
         _lastImageContextQuery = effectiveQuery;
         _lastImageContextAt = now;
       }
@@ -503,13 +522,16 @@ class ChatRepositoryImpl implements ChatRepository {
         fields: <String, Object?>{
           'query': inputQuery,
           'effective_query': effectiveQuery,
-          'images': limited.length,
+          'images': selected.length,
           'latency_ms': DateTime.now().difference(startedAt).inMilliseconds,
         },
         level: 'D',
       );
-      return limited;
+      return selected;
     } catch (error) {
+      if (docImages.isNotEmpty) {
+        return docImages.take(maxImageCount).toList(growable: false);
+      }
       AppLogger.event(
         'ChatRepository',
         'related_images_error',
@@ -526,56 +548,74 @@ class ChatRepositoryImpl implements ChatRepository {
 
   Future<List<RelatedChatImage>> _fetchKnowledgeDocImages(
     String query, {
+    required int topK,
     required int maxImages,
   }) async {
     final normalized = _normalizeForKnowledge(query);
     if (normalized.isEmpty) {
       return const <RelatedChatImage>[];
     }
-    final now = DateTime.now();
-    String? docName;
-    if (_lastKnowledgeDocQuery == normalized &&
-        now.difference(_lastKnowledgeDocAt) <= _knowledgeDocCacheTtl) {
-      docName = _lastKnowledgeDocName;
-    }
-    docName ??= await _findKnowledgeDocNameForQuery(query);
-    if (docName == null || docName.trim().isEmpty) {
+    final matches = await _searchKnowledgeMatches(
+      query,
+      topK: topK,
+      maxSnippetChars: 480,
+      includeFullContent: false,
+    );
+    final directMatches = _selectDirectKnowledgeMatches(
+      matches,
+      analysis: _analyzeKnowledgeQuestion(query),
+    );
+    if (directMatches.isEmpty) {
       return const <RelatedChatImage>[];
     }
-    _lastKnowledgeDocQuery = normalized;
-    _lastKnowledgeDocName = docName;
-    _lastKnowledgeDocAt = now;
-    return _listImagesForDocument(docName, maxImages: maxImages);
-  }
 
-  Future<String?> _findKnowledgeDocNameForQuery(String query) async {
-    final response = await _callMcpTool(
-      name: 'self.knowledge.search',
-      arguments: <String, dynamic>{'query': query, 'top_k': 1},
-      logRequest: true,
-    );
-    final payload = _decodeToolPayload(response);
-    if (payload is! Map) {
-      return null;
-    }
-    final rows = payload['results'];
-    if (rows is! List || rows.isEmpty) {
-      return null;
-    }
-    for (final row in rows) {
-      if (row is! Map) {
+    List<RelatedChatImage> bestImages = const <RelatedChatImage>[];
+    var bestSetScore = -1;
+    for (final match in directMatches) {
+      final references = <String>[
+        if (match.title.trim().isNotEmpty) match.title.trim(),
+        if (match.name.trim().isNotEmpty) match.name.trim(),
+      ];
+      final images = await _listImagesForReferences(
+        references,
+        maxImages: maxImages,
+      );
+      if (images.isEmpty) {
         continue;
       }
-      final name = (row['name'] ?? '').toString().trim();
-      if (name.isNotEmpty) {
-        return name;
-      }
-      final title = (row['title'] ?? '').toString().trim();
-      if (title.isNotEmpty) {
-        return title;
+      final setScore =
+          (match.score * 1000) +
+          (match.coverageRatio * 100).round() * 10 +
+          images.length;
+      if (setScore > bestSetScore) {
+        bestSetScore = setScore;
+        bestImages = images.take(maxImages).toList(growable: false);
       }
     }
-    return null;
+    return bestImages;
+  }
+
+  Future<List<RelatedChatImage>> _listImagesForReferences(
+    List<String> references, {
+    required int maxImages,
+  }) async {
+    final imagesById = <String, RelatedChatImage>{};
+    for (final reference in references) {
+      if (imagesById.length >= maxImages) {
+        break;
+      }
+      final images = await _listImagesForDocument(
+        reference,
+        maxImages: maxImages,
+      );
+      for (final image in images) {
+        imagesById.putIfAbsent(image.id, () => image);
+        if (imagesById.length >= maxImages) {
+          break;
+        }
+      }
+    }
+    return imagesById.values.toList(growable: false);
   }
 
   Future<List<RelatedChatImage>> _listImagesForDocument(
@@ -806,39 +846,61 @@ class ChatRepositoryImpl implements ChatRepository {
     }
 
     try {
-      final snippets = await _searchKnowledgeSnippets(
+      final matches = await _searchKnowledgeMatches(
         query,
-        topK: _forceKnowledgeModeEnabled ? 1 : 3,
-        maxSnippetChars: 1400,
+        topK: _forceKnowledgeModeEnabled ? 2 : 3,
+        maxSnippetChars: 980,
         includeFullContent: true,
       );
       final normalizedQuestion = _normalizeQuestionForAgent(query);
-      if (snippets.isNotEmpty) {
+      final queryAnalysis = _analyzeKnowledgeQuestion(query);
+      final directMatches = _selectDirectKnowledgeMatches(
+        matches,
+        analysis: queryAnalysis,
+      );
+      if (directMatches.isNotEmpty) {
         AppLogger.event(
           'ChatRepository',
           'knowledge_context_attached',
-          fields: <String, Object?>{'matches': snippets.length},
+          fields: <String, Object?>{'matches': directMatches.length},
           level: 'D',
         );
 
-        final contextBlock = snippets.join('\n');
+        final contextBlock = _buildKnowledgeEvidenceBlock(
+          directMatches,
+          query: query,
+          analysis: queryAnalysis,
+        );
         return '''
 $input
 
-[NGU_CANH_TAI_LIEU_NOI_BO]
+[DU_LIEU_NOI_BO_LIEN_QUAN]
 $contextBlock
-[/NGU_CANH_TAI_LIEU_NOI_BO]
+[/DU_LIEU_NOI_BO_LIEN_QUAN]
 
 THONG_TIN_BO_SUNG:
 - Cau hoi goc: "$query"
 - Cau hoi chuan hoa: "$normalizedQuestion"
+- Loai cau hoi: ${queryAnalysis.kind}
+- Uu tien muc KDOC: ${queryAnalysis.preferredSections.isEmpty ? 'auto' : queryAnalysis.preferredSections.join(', ')}
 - Quy uoc alias: "cha vi", "chai vi", "tra vi", "cha vi", "chá vi" deu la "Chavi".
 
 YEU_CAU_TRA_LOI:
-- Neu NGU_CANH_TAI_LIEU_NOI_BO co thong tin lien quan, bat buoc tra loi theo noi dung do.
-- KHONG duoc noi "khong tim thay", "khong co thong tin", hoac "co the ban nham ten" khi da co du lieu lien quan.
-- Neu du lieu chua du, tra loi phan da co truoc, sau do moi hoi them.
-- Phai bat dau cau dau tien bang: "Theo du lieu noi bo cua Chanh Viet,".
+- Chi tra loi dung phan nguoi dung dang hoi.
+- Chi su dung du kien co trong DU_LIEU_NOI_BO_LIEN_QUAN.
+- UU tien doc muc "HO_SO_TAI_LIEU_DAY_DU" de lay tong quan, sau do dung "BANG_CHUNG_TRUC_TIEP" va "DOAN_LIEN_QUAN_NHAT" de chot cau tra loi dung trong tam.
+- Xem "TAI_LIEU_1" la nguon chinh; chi dung tai lieu khac neu no bo sung truc tiep cung chu de dang hoi.
+- Neu co "BANG_CHUNG_TRUC_TIEP", uu tien dung no truoc vi day la phan sat nhat voi cau hoi.
+- Neu DU_LIEU_NOI_BO_LIEN_QUAN da co muc phu hop voi chu de duoc hoi (vi du: An toan thuc pham, Thi truong, Quy trinh, Nguyen lieu), khong duoc noi la "khong co thong tin".
+- Neu "DOAN_LIEN_QUAN_NHAT" hoac "BANG_CHUNG_TRUC_TIEP" khong rong, khong duoc mo dau bang "Xin loi" hoac noi la "chua co thong tin".
+- Neu tai lieu chi du cho mot phan cau hoi, tra loi phan co bang chung truoc roi noi ngan gon phan nao chua co du lieu.
+- Khong suy dien them tac dung, thong so, chinh sach, gia tri hoac ket luan ngoai tai lieu.
+- Khong duoc chuyen sang mot san pham, tai lieu, hoac chu de khac neu ten do khong xuat hien trong "BANG_CHUNG_TRUC_TIEP" hoac "HO_SO_TAI_LIEU_DAY_DU".
+- Khong duoc tu them thong tin suc khoe, thanh phan hoa hoc, cong dung y hoc hoac loi ich sinh hoc (vi du vitamin C, axit citric, thanh nhiet, ho tro tieu hoa) neu chung khong co trong bang chung.
+- Khong liet ke thong tin khong lien quan truc tiep toi cau hoi.
+- Khong xung "chung toi" hoac dong vai doanh nghiep neu tai lieu chi la ho so/gioi thieu.
+- Tra loi tu nhien bang tieng Viet, khong nhac toi ten block hay metadata noi bo.
+${_buildKnowledgeAnswerGuidance(queryAnalysis)}
 ''';
       }
 
@@ -855,8 +917,9 @@ ${suggestions.map((name) => '- $name').join('\n')}
 [/GOI_Y_TAI_LIEU_NOI_BO]
 
 YEU_CAU_TRA_LOI:
-- Neu chua co ket qua khop truc tiep, hay goi y nguoi dung chon san pham/chu de gan nhat tu GOI_Y_TAI_LIEU_NOI_BO.
-- Khong ket luan "he thong khong co thong tin" khi GOI_Y_TAI_LIEU_NOI_BO khong rong.
+- Chua co bang chung du manh de tra loi chac chan.
+- Hay hoi lai ngan gon de lam ro san pham hoac chu de gan nhat trong GOI_Y_TAI_LIEU_NOI_BO.
+- Khong tu khang dinh thong tin ngoai tai lieu.
 ''';
     } catch (_) {
       return input;
@@ -912,17 +975,26 @@ YEU_CAU_TRA_LOI:
     _lastKnowledgeVoiceQuery = normalized;
     _lastKnowledgeVoiceAt = now;
     try {
-      final snippets = await _searchKnowledgeSnippets(
+      final matches = await _searchKnowledgeMatches(
         text,
-        topK: _forceKnowledgeModeEnabled ? 1 : 3,
-        maxSnippetChars: 1400,
+        topK: _forceKnowledgeModeEnabled ? 2 : 3,
+        maxSnippetChars: 980,
         includeFullContent: true,
       );
       final normalizedQuestion = _normalizeQuestionForAgent(text);
+      final queryAnalysis = _analyzeKnowledgeQuestion(text);
       var knowledgeBlock = '';
       var hasDirectMatch = false;
-      if (snippets.isNotEmpty) {
-        knowledgeBlock = snippets.join('\n');
+      final directMatches = _selectDirectKnowledgeMatches(
+        matches,
+        analysis: queryAnalysis,
+      );
+      if (directMatches.isNotEmpty) {
+        knowledgeBlock = _buildKnowledgeEvidenceBlock(
+          directMatches,
+          query: text,
+          analysis: queryAnalysis,
+        );
         hasDirectMatch = true;
       } else {
         final suggestions = await _listKnowledgeDocumentNames(limit: 5);
@@ -941,23 +1013,33 @@ YEU_CAU_TRA_LOI:
 $_knowledgeMarker
 Cau hoi nguoi dung: "$text"
  Cau hoi chuan hoa: "$normalizedQuestion"
- Quy uoc alias: "cha vi", "chai vi", "tra vi", "cha vi", "chá vi" deu la "Chavi".
+Loai cau hoi: ${queryAnalysis.kind}
+Uu tien muc KDOC: ${queryAnalysis.preferredSections.isEmpty ? 'auto' : queryAnalysis.preferredSections.join(', ')}
+Quy uoc alias: "cha vi", "chai vi", "tra vi", "cha vi", "chá vi" deu la "Chavi".
 ${hasDirectMatch ? 'Du lieu noi bo lien quan:' : 'Danh sach tai lieu hien co (goi y):'}
 $knowledgeBlock
 YEU_CAU_TRA_LOI:
-- Neu co du lieu lien quan, bat buoc uu tien du lieu noi bo o tren.
-- KHONG duoc noi "khong tim thay", "khong co thong tin", hoac "co the ban nham ten" khi da co du lieu lien quan.
-- Neu chua khop truc tiep, goi y nguoi dung chon san pham/chu de gan nhat trong danh sach tai lieu.
-- Khong tra loi "khong tim thay thong tin" khi danh sach tai lieu khong rong.
-- Neu da co du lieu lien quan, phai bat dau cau dau tien bang: "Theo du lieu noi bo cua Chanh Viet,".
+- Chi tra loi dung trong tam cau hoi.
+- Neu co du lieu lien quan, chi dung du kien o tren va khong suy dien them.
+- UU tien doc muc "HO_SO_TAI_LIEU_DAY_DU" de lay tong quan, sau do dung "BANG_CHUNG_TRUC_TIEP" va "DOAN_LIEN_QUAN_NHAT" de chot cau tra loi.
+- Xem "TAI_LIEU_1" la nguon chinh; chi dung tai lieu khac neu no bo sung truc tiep cung chu de dang hoi.
+- Neu co "BANG_CHUNG_TRUC_TIEP", uu tien dung no truoc vi day la phan sat nhat voi cau hoi.
+- Neu du lieu o tren da co muc phu hop voi cau hoi (vi du: An toan thuc pham, Thi truong, Quy trinh, Nguyen lieu), khong duoc noi "khong co thong tin".
+- Neu "DOAN_LIEN_QUAN_NHAT" hoac "BANG_CHUNG_TRUC_TIEP" khong rong, khong duoc mo dau bang "Xin loi" hoac noi la "chua co thong tin".
+- Neu du lieu chi du mot phan, tra loi phan co bang chung truoc roi noi ngan gon phan nao chua co du lieu.
+- Neu chua khop truc tiep, hoi lai de lam ro san pham/chu de gan nhat trong danh sach tai lieu.
 - Bo qua cac cau tra loi chung chung truoc do neu chua dua tren du lieu noi bo.
+- Khong duoc chuyen sang mot san pham, tai lieu, hoac chu de khac neu ten do khong xuat hien trong "BANG_CHUNG_TRUC_TIEP" hoac "HO_SO_TAI_LIEU_DAY_DU".
+- Khong duoc tu them thong tin suc khoe, thanh phan hoa hoc, cong dung y hoc hoac loi ich sinh hoc (vi du vitamin C, axit citric, thanh nhiet, ho tro tieu hoa) neu chung khong co trong bang chung.
+- Khong xung "chung toi" hoac dong vai doanh nghiep neu tai lieu chi la ho so/gioi thieu.
+${_buildKnowledgeAnswerGuidance(queryAnalysis)}
 ''';
-      await _textService.sendTextRequest(assistPrompt, useTextType: false);
+      await _textService.sendTextRequest(assistPrompt, useTextType: true);
       AppLogger.event(
         'ChatRepository',
         'knowledge_voice_context_sent',
         fields: <String, Object?>{
-          'matches': snippets.length,
+          'matches': directMatches.isNotEmpty ? directMatches.length : 0,
           'mode': hasDirectMatch ? 'direct' : 'suggestion',
         },
         level: 'D',
@@ -969,28 +1051,29 @@ YEU_CAU_TRA_LOI:
     }
   }
 
-  Future<List<String>> _searchKnowledgeSnippets(
+  Future<List<_KnowledgeMatch>> _searchKnowledgeMatches(
     String query, {
     required int topK,
     required int maxSnippetChars,
     bool includeFullContent = false,
   }) async {
+    final searchQuery = _normalizeQuestionForAgent(query);
     final response = await _mcpHandleMessage(<String, dynamic>{
       'jsonrpc': '2.0',
       'id': _mcpRequestId++,
       'method': 'tools/call',
       'params': <String, dynamic>{
         'name': 'self.knowledge.search',
-        'arguments': <String, dynamic>{'query': query, 'top_k': topK},
+        'arguments': <String, dynamic>{'query': searchQuery, 'top_k': topK},
       },
     });
     if (response == null) {
-      return const <String>[];
+      return const <_KnowledgeMatch>[];
     }
 
     final error = response['error'];
     if (error is Map && error['message'] is String) {
-      return const <String>[];
+      return const <_KnowledgeMatch>[];
     }
 
     final result = response['result'];
@@ -1002,15 +1085,15 @@ YEU_CAU_TRA_LOI:
           : null,
     );
     if (payload is! Map) {
-      return const <String>[];
+      return const <_KnowledgeMatch>[];
     }
 
     final rows = payload['results'];
     if (rows is! List || rows.isEmpty) {
-      return const <String>[];
+      return const <_KnowledgeMatch>[];
     }
 
-    final snippets = <String>[];
+    final matches = <_KnowledgeMatch>[];
     for (final row in rows) {
       if (row is! Map) {
         continue;
@@ -1025,47 +1108,356 @@ YEU_CAU_TRA_LOI:
       final fieldHits = fieldHitsRaw is List
           ? fieldHitsRaw.map((item) => item.toString()).toList()
           : const <String>[];
+      final matchReasonsRaw = row['match_reasons'];
+      final matchReasons = matchReasonsRaw is List
+          ? matchReasonsRaw.map((item) => item.toString()).toList()
+          : const <String>[];
       final snippet = (row['snippet'] ?? '').toString().trim();
       final content = (row['content'] ?? '').toString().trim();
       final selected = includeFullContent && content.isNotEmpty
-          ? _extractRelevantContext(content: content, query: query)
+          ? _extractRelevantContext(
+              content: content,
+              query: query,
+              preferredFields: fieldHits,
+            )
           : snippet;
+      final overview = content.isNotEmpty
+          ? _extractKnowledgeOverview(content)
+          : summary;
       if (selected.isEmpty) {
         continue;
       }
       final reduced = selected.length > maxSnippetChars
           ? '${selected.substring(0, maxSnippetChars)}...'
           : selected;
-      final label = name.isEmpty ? 'tai_lieu' : name;
-      final buffer = StringBuffer();
-      buffer.writeln('[TAI_LIEU] $label');
-      if (title.isNotEmpty) {
-        buffer.writeln('[TITLE] $title');
-      }
-      if (docType.isNotEmpty) {
-        buffer.writeln('[DOC_TYPE] $docType');
-      }
-      if (fieldHits.isNotEmpty) {
-        buffer.writeln('[FIELD_HITS] ${fieldHits.join(', ')}');
-      }
-      if (summary.isNotEmpty) {
-        buffer.writeln('[SUMMARY] $summary');
-      }
-      buffer.writeln('[CONTENT] $reduced');
-      if (usage.isNotEmpty) {
-        buffer.writeln('[USAGE] $usage');
-      }
-      if (safetyNote.isNotEmpty) {
-        buffer.writeln('[SAFETY_NOTE] $safetyNote');
-      }
-      snippets.add(buffer.toString().trim());
+      matches.add(
+        _KnowledgeMatch(
+          name: name.isEmpty ? 'tai_lieu' : name,
+          title: title,
+          docType: docType,
+          summary: summary,
+          usage: usage,
+          safetyNote: safetyNote,
+          fieldHits: fieldHits,
+          matchReasons: matchReasons,
+          overview: overview,
+          rawContent: content,
+          content: reduced,
+          score: (row['score'] as num?)?.toInt() ?? 0,
+          coverageRatio: (row['coverage_ratio'] as num?)?.toDouble() ?? 0,
+          confidence: (row['confidence'] ?? 'low').toString().trim(),
+          exactMatch: row['exact_match'] == true,
+        ),
+      );
     }
-    return snippets;
+    return matches;
+  }
+
+  List<_KnowledgeMatch> _selectDirectKnowledgeMatches(
+    List<_KnowledgeMatch> matches, {
+    required _KnowledgeQueryAnalysis analysis,
+  }) {
+    if (matches.isEmpty) {
+      return const <_KnowledgeMatch>[];
+    }
+    final direct = matches
+        .where((match) {
+          if (match.exactMatch) {
+            return true;
+          }
+          if (match.confidence == 'high') {
+            return true;
+          }
+          if (match.confidence == 'medium' && match.coverageRatio >= 0.45) {
+            return true;
+          }
+          if (match.coverageRatio >= 0.35 &&
+              (match.fieldHits.contains('content') ||
+                  match.fieldHits.contains('usage') ||
+                  match.fieldHits.any(
+                    (field) =>
+                        field == 'market' ||
+                        field == 'services' ||
+                        field == 'regulations',
+                  ))) {
+            return true;
+          }
+          return false;
+        })
+        .take(2)
+        .toList(growable: false);
+    if (direct.isNotEmpty) {
+      return _refineDirectKnowledgeMatches(direct, analysis: analysis);
+    }
+    final fallback = matches
+        .where((match) {
+          if (match.coverageRatio < 0.45) {
+            return false;
+          }
+          return match.fieldHits.contains('summary') ||
+              match.fieldHits.contains('content') ||
+              match.fieldHits.contains('usage') ||
+              match.fieldHits.contains('faq');
+        })
+        .take(1)
+        .toList(growable: false);
+    return _refineDirectKnowledgeMatches(fallback, analysis: analysis);
+  }
+
+  List<_KnowledgeMatch> _refineDirectKnowledgeMatches(
+    List<_KnowledgeMatch> matches, {
+    required _KnowledgeQueryAnalysis analysis,
+  }) {
+    if (matches.length <= 1) {
+      return matches;
+    }
+
+    final preferredDocTypes = _preferredDocTypesForKnowledgeQuestion(analysis);
+    final filtered = preferredDocTypes.isEmpty
+        ? matches
+        : matches
+              .where((match) => preferredDocTypes.contains(match.docType))
+              .toList(growable: false);
+    final candidates = filtered.isEmpty ? matches : filtered;
+    final top = candidates.first;
+
+    if (analysis.kind != 'general') {
+      return <_KnowledgeMatch>[top];
+    }
+
+    if (top.exactMatch || top.coverageRatio >= 0.75) {
+      return <_KnowledgeMatch>[top];
+    }
+
+    if (candidates.length >= 2) {
+      final second = candidates[1];
+      if (top.docType != second.docType || top.score - second.score >= 18) {
+        return <_KnowledgeMatch>[top];
+      }
+    }
+
+    return candidates.take(2).toList(growable: false);
+  }
+
+  Set<String> _preferredDocTypesForKnowledgeQuestion(
+    _KnowledgeQueryAnalysis analysis,
+  ) {
+    if (analysis.kind == 'overview' || analysis.kind == 'strategy') {
+      return <String>{'company_profile', 'info'};
+    }
+    if (analysis.kind == 'products') {
+      return <String>{'product', 'company_profile', 'info'};
+    }
+    return const <String>{};
+  }
+
+  String _buildKnowledgeEvidenceBlock(
+    List<_KnowledgeMatch> matches, {
+    required String query,
+    required _KnowledgeQueryAnalysis analysis,
+  }) {
+    final buffer = StringBuffer();
+    var totalChars = 0;
+    for (var i = 0; i < matches.length; i++) {
+      final match = matches[i];
+      final fullDossier = _buildKnowledgeFullDossier(match);
+      final directEvidence = _buildKnowledgeDirectEvidence(
+        match,
+        query: query,
+        preferredSections: analysis.preferredSections,
+      );
+      final relevantExcerpt = _trimInline(match.content, maxChars: 520);
+      final segment = StringBuffer();
+      if (i > 0) {
+        segment.writeln();
+      }
+      segment.writeln('[TAI_LIEU_${i + 1}]');
+      segment.writeln(
+        '- Ten: ${match.title.isEmpty ? match.name : match.title}',
+      );
+      if (match.docType.isNotEmpty) {
+        segment.writeln('- Loai: ${match.docType}');
+      }
+      segment.writeln(
+        '- Do phu hop: ${match.confidence} (${(match.coverageRatio * 100).round()}%)',
+      );
+      if (match.fieldHits.isNotEmpty) {
+        segment.writeln('- Truong khop: ${match.fieldHits.join(', ')}');
+      }
+      if (match.summary.isNotEmpty) {
+        segment.writeln(
+          '- Tom tat: ${_trimInline(match.summary, maxChars: 180)}',
+        );
+      }
+      if (fullDossier.isNotEmpty) {
+        segment.writeln('[HO_SO_TAI_LIEU_DAY_DU]');
+        segment.writeln(fullDossier);
+        segment.writeln('[/HO_SO_TAI_LIEU_DAY_DU]');
+      }
+      if (directEvidence.isNotEmpty) {
+        segment.writeln('[BANG_CHUNG_TRUC_TIEP]');
+        segment.writeln(directEvidence);
+        segment.writeln('[/BANG_CHUNG_TRUC_TIEP]');
+      }
+      segment.writeln('[DOAN_LIEN_QUAN_NHAT]');
+      segment.writeln(relevantExcerpt);
+      segment.writeln('[/DOAN_LIEN_QUAN_NHAT]');
+      if (match.usage.isNotEmpty && !match.content.contains(match.usage)) {
+        segment.writeln(
+          '- Huong dan: ${_trimInline(match.usage, maxChars: 180)}',
+        );
+      }
+      if (match.safetyNote.isNotEmpty) {
+        segment.writeln(
+          '- Luu y: ${_trimInline(match.safetyNote, maxChars: 180)}',
+        );
+      }
+      final segmentText = segment.toString().trim();
+      if (segmentText.isEmpty) {
+        continue;
+      }
+      final candidate = totalChars == 0
+          ? segmentText
+          : '${buffer.toString()}\n\n$segmentText';
+      if (candidate.length > 5200 && totalChars > 0) {
+        break;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln();
+      }
+      buffer.write(segmentText);
+      totalChars = buffer.length;
+    }
+    return buffer.toString().trim();
+  }
+
+  String _buildKnowledgeDirectEvidence(
+    _KnowledgeMatch match, {
+    required String query,
+    required List<String> preferredSections,
+  }) {
+    final raw = match.rawContent.trim();
+    if (raw.isEmpty) {
+      return '';
+    }
+    final sections = _parseKdocSections(raw);
+    if (sections == null) {
+      final excerpt = _extractBestExcerpt(
+        content: raw,
+        query: query,
+        maxChars: 900,
+      );
+      return excerpt.isEmpty ? '' : excerpt;
+    }
+
+    final rankedSections = _rankDirectEvidenceSections(
+      sections: sections,
+      query: query,
+      preferredSections: preferredSections,
+    );
+    if (rankedSections.isEmpty) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    for (final candidate in rankedSections.take(2)) {
+      final block = '[${candidate.key}]\n${candidate.value}'.trim();
+      final candidateText = buffer.isEmpty
+          ? block
+          : '${buffer.toString()}\n\n$block';
+      if (candidateText.length > 1800 && buffer.isNotEmpty) {
+        break;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln();
+      }
+      buffer.write(block);
+    }
+    return buffer.toString().trim();
+  }
+
+  String _buildKnowledgeFullDossier(_KnowledgeMatch match) {
+    final raw = match.rawContent.trim();
+    if (raw.isEmpty) {
+      return match.overview;
+    }
+    final sections = _parseKdocSections(raw);
+    if (sections == null) {
+      return _trimInline(raw, maxChars: 2200);
+    }
+
+    final orderedKeys = <String>[
+      'SUMMARY',
+      'CONTENT',
+      'USAGE',
+      'FAQ',
+      'MARKET',
+      'SERVICES',
+      'REGULATIONS',
+      'RAW_MATERIALS',
+      'PROCESS',
+      'FOOD_SAFETY',
+      'CORE_PRODUCTS',
+      'SAFETY_NOTE',
+      ...sections.keys.where(
+        (key) =>
+            key != 'DOC_ID' &&
+            key != 'DOC_TYPE' &&
+            key != 'TITLE' &&
+            key != 'ALIASES' &&
+            key != 'KEYWORDS' &&
+            key != 'LAST_UPDATED' &&
+            key != 'SUMMARY' &&
+            key != 'CONTENT' &&
+            key != 'USAGE' &&
+            key != 'FAQ' &&
+            key != 'MARKET' &&
+            key != 'SERVICES' &&
+            key != 'REGULATIONS' &&
+            key != 'RAW_MATERIALS' &&
+            key != 'PROCESS' &&
+            key != 'FOOD_SAFETY' &&
+            key != 'CORE_PRODUCTS' &&
+            key != 'SAFETY_NOTE',
+      ),
+    ];
+    final seen = <String>{};
+    final buffer = StringBuffer();
+    for (final rawKey in orderedKeys) {
+      final key = rawKey.toUpperCase();
+      if (!seen.add(key)) {
+        continue;
+      }
+      final value = (sections[key] ?? '').trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      final nextBlock = '[${key.toUpperCase()}]\n$value'.trim();
+      final candidate = buffer.isEmpty
+          ? nextBlock
+          : '${buffer.toString()}\n\n$nextBlock';
+      if (candidate.length > 2200) {
+        break;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln();
+      }
+      buffer.write(nextBlock);
+    }
+    final built = buffer.toString().trim();
+    if (built.isNotEmpty) {
+      return built;
+    }
+    return _trimInline(raw, maxChars: 2200);
   }
 
   String _extractRelevantContext({
     required String content,
     required String query,
+    List<String> preferredFields = const <String>[],
   }) {
     final trimmed = content.trim();
     if (trimmed.isEmpty) {
@@ -1074,36 +1466,402 @@ YEU_CAU_TRA_LOI:
 
     final kdocSections = _parseKdocSections(trimmed);
     if (kdocSections != null) {
-      final summary = (kdocSections['SUMMARY'] ?? '').trim();
-      final body = (kdocSections['CONTENT'] ?? '').trim();
-      final usage = (kdocSections['USAGE'] ?? '').trim();
-      final safeNote = (kdocSections['SAFETY_NOTE'] ?? '').trim();
-      final title = (kdocSections['TITLE'] ?? '').trim();
-      final block = StringBuffer();
-      if (title.isNotEmpty) {
-        block.writeln(title);
-      }
-      if (summary.isNotEmpty) {
-        block.writeln(summary);
-      }
-      if (body.isNotEmpty) {
-        block.writeln(body);
-      }
-      if (usage.isNotEmpty) {
-        block.writeln('Hướng dẫn: $usage');
-      }
-      if (safeNote.isNotEmpty) {
-        block.writeln('Lưu ý: $safeNote');
-      }
-      final extracted = block.toString().trim();
+      final extracted = _extractRelevantKdocContext(
+        sections: kdocSections,
+        query: query,
+        preferredFields: preferredFields,
+      );
       if (extracted.isNotEmpty) {
         return extracted;
       }
     }
 
-    final lines = trimmed.split('\n');
-    if (lines.length <= 20) {
+    return _extractBestExcerpt(content: trimmed, query: query, maxChars: 540);
+  }
+
+  String _extractKnowledgeOverview(String content) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    final sections = _parseKdocSections(trimmed);
+    if (sections == null) {
+      return _trimInline(trimmed, maxChars: 1200);
+    }
+
+    final orderedKeys = <String>[
+      'SUMMARY',
+      'CONTENT',
+      'USAGE',
+      'MARKET',
+      'SERVICES',
+      'REGULATIONS',
+      'RAW_MATERIALS',
+      'PROCESS',
+      'FOOD_SAFETY',
+      'FAQ',
+      'SAFETY_NOTE',
+      ...sections.keys.where(
+        (key) =>
+            key != 'DOC_ID' &&
+            key != 'DOC_TYPE' &&
+            key != 'TITLE' &&
+            key != 'ALIASES' &&
+            key != 'KEYWORDS' &&
+            key != 'LAST_UPDATED' &&
+            key != 'SUMMARY' &&
+            key != 'CONTENT' &&
+            key != 'USAGE' &&
+            key != 'MARKET' &&
+            key != 'SERVICES' &&
+            key != 'REGULATIONS' &&
+            key != 'RAW_MATERIALS' &&
+            key != 'PROCESS' &&
+            key != 'FOOD_SAFETY' &&
+            key != 'FAQ' &&
+            key != 'SAFETY_NOTE',
+      ),
+    ];
+    final seen = <String>{};
+    final buffer = StringBuffer();
+    for (final rawKey in orderedKeys) {
+      final key = rawKey.toUpperCase();
+      if (!seen.add(key)) {
+        continue;
+      }
+      final value = (sections[key] ?? '').trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      final nextBlock = '${_sectionLabel(key)}:\n$value'.trim();
+      final candidate = buffer.isEmpty
+          ? nextBlock
+          : '${buffer.toString()}\n\n$nextBlock';
+      if (candidate.length > 1200) {
+        break;
+      }
+      if (buffer.isNotEmpty) {
+        buffer.writeln();
+        buffer.writeln();
+      }
+      buffer.write(nextBlock);
+    }
+    return buffer.toString().trim();
+  }
+
+  _KnowledgeQueryAnalysis _analyzeKnowledgeQuestion(String query) {
+    final normalized = _normalizeForKnowledge(query);
+    final padded = ' $normalized ';
+
+    bool containsAny(List<String> phrases) {
+      for (final phrase in phrases) {
+        if (padded.contains(' ${_normalizeForKnowledge(phrase)} ')) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (containsAny(const <String>[
+      'an toan thuc pham',
+      'chung nhan',
+      'chung chi',
+      'haccp',
+      'halal',
+      'fda',
+      'ocop',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'food_safety',
+        preferredSections: <String>['FOOD_SAFETY', 'SAFETY_NOTE'],
+      );
+    }
+    if (containsAny(const <String>[
+      'thi truong',
+      'kenh phan phoi',
+      'phan phoi',
+      'xuat khau',
+      'noi dia',
+      'ban o dau',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'market',
+        preferredSections: <String>['MARKET', 'SERVICES'],
+      );
+    }
+    if (containsAny(const <String>[
+      'quy trinh',
+      'san xuat',
+      'che bien',
+      'lam nhu the nao',
+      'cong doan',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'process',
+        preferredSections: <String>['PROCESS', 'RAW_MATERIALS', 'CONTENT'],
+      );
+    }
+    if (containsAny(const <String>[
+      'nguyen lieu',
+      'dau vao',
+      'vung trong',
+      'nguon nguyen lieu',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'raw_materials',
+        preferredSections: <String>['RAW_MATERIALS', 'PROCESS', 'CONTENT'],
+      );
+    }
+    if (containsAny(const <String>[
+      'san pham',
+      'mat hang',
+      'san pham chu luc',
+      'danh muc san pham',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'products',
+        preferredSections: <String>['CORE_PRODUCTS', 'CONTENT', 'SUMMARY'],
+      );
+    }
+    if (containsAny(const <String>[
+      'dinh huong phat trien',
+      'dinh huong',
+      'tam nhin',
+      'su menh',
+      'muc tieu',
+      'chien luoc',
+      'huong den',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'strategy',
+        preferredSections: <String>['CONTENT', 'SUMMARY', 'MARKET'],
+      );
+    }
+    if (containsAny(const <String>[
+      'cong ty',
+      'doanh nghiep',
+      'gioi thieu',
+      'tong quat',
+      'tom tat',
+      'ho so',
+      'thong tin cong ty',
+    ])) {
+      return const _KnowledgeQueryAnalysis(
+        kind: 'overview',
+        preferredSections: <String>[
+          'SUMMARY',
+          'CONTENT',
+          'CORE_PRODUCTS',
+          'MARKET',
+        ],
+      );
+    }
+    return const _KnowledgeQueryAnalysis(
+      kind: 'general',
+      preferredSections: <String>[],
+    );
+  }
+
+  String _buildKnowledgeAnswerGuidance(_KnowledgeQueryAnalysis analysis) {
+    return switch (analysis.kind) {
+      'overview' =>
+        '- Vi day la cau hoi tong quat, hay tom tat 4-6 y cu the tu tai lieu nhu: ten doanh nghiep, linh vuc, quy mo, dia diem, san pham, thi truong neu co.',
+      'strategy' =>
+        '- Vi day la cau hoi ve dinh huong/tam nhin/muc tieu phat trien, hay uu tien muc CONTENT va SUMMARY, trich dung y noi ve dinh huong phat trien neu tai lieu co.',
+      'food_safety' =>
+        '- Vi day la cau hoi ve an toan thuc pham, hay uu tien muc FOOD_SAFETY va neu ro cac chung nhan, xep hang, hoac tieu chuan co trong tai lieu.',
+      'market' =>
+        '- Vi day la cau hoi ve thi truong/phan phoi, hay uu tien muc MARKET va tach ro kenh noi dia va thi truong xuat khau neu tai lieu co.',
+      'process' =>
+        '- Vi day la cau hoi ve quy trinh san xuat, hay mo ta theo tung buoc chinh trong muc PROCESS thay vi chi noi dia diem nha may.',
+      'raw_materials' =>
+        '- Vi day la cau hoi ve nguyen lieu, hay neu ro nguon nguyen lieu va cach lien ket vung trong neu tai lieu co.',
+      'products' =>
+        '- Vi day la cau hoi ve danh muc san pham, hay nhom cac san pham theo tung nhom chinh va neu san pham chu luc neu tai lieu co.',
+      _ =>
+        '- Neu cau hoi rong, duoc phep tra loi 3-6 y ngan gon mien la moi y deu co trong tai lieu.',
+    };
+  }
+
+  String _extractRelevantKdocContext({
+    required Map<String, String> sections,
+    required String query,
+    required List<String> preferredFields,
+  }) {
+    final selectedBlocks = <String>[];
+    final summary = (sections['SUMMARY'] ?? '').trim();
+    if (summary.isNotEmpty) {
+      selectedBlocks.add('Tóm tắt: ${_trimInline(summary, maxChars: 220)}');
+    }
+
+    final candidates =
+        <({String key, String label, String value, int score})>[];
+    final orderedKeys = <String>[
+      ...preferredFields,
+      'CONTENT',
+      'USAGE',
+      'FAQ',
+      'SAFETY_NOTE',
+      ...sections.keys.where(
+        (key) =>
+            key != 'DOC_ID' &&
+            key != 'DOC_TYPE' &&
+            key != 'TITLE' &&
+            key != 'ALIASES' &&
+            key != 'KEYWORDS' &&
+            key != 'SUMMARY' &&
+            key != 'LAST_UPDATED',
+      ),
+    ];
+    final seen = <String>{};
+    for (final rawKey in orderedKeys) {
+      final key = rawKey.toUpperCase();
+      if (!seen.add(key)) {
+        continue;
+      }
+      final value = (sections[key] ?? '').trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      final score = _scoreContextBlock(key: key, content: value, query: query);
+      if (score <= 0) {
+        continue;
+      }
+      candidates.add((
+        key: key,
+        label: _sectionLabel(key),
+        value: value,
+        score: score,
+      ));
+    }
+
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+    for (final candidate in candidates.take(2)) {
+      final excerpt = _extractBestExcerpt(
+        content: candidate.value,
+        query: query,
+        maxChars: 280,
+      );
+      if (excerpt.isEmpty) {
+        continue;
+      }
+      selectedBlocks.add('${candidate.label}: $excerpt');
+    }
+
+    if (selectedBlocks.isNotEmpty) {
+      return selectedBlocks.join('\n');
+    }
+
+    final body = (sections['CONTENT'] ?? '').trim();
+    if (body.isNotEmpty) {
+      return _extractBestExcerpt(content: body, query: query, maxChars: 420);
+    }
+    return '';
+  }
+
+  List<({String key, String value, int score})> _rankDirectEvidenceSections({
+    required Map<String, String> sections,
+    required String query,
+    required List<String> preferredSections,
+  }) {
+    final orderedKeys = <String>[
+      ...preferredSections,
+      'CONTENT',
+      'SUMMARY',
+      'USAGE',
+      'FAQ',
+      ...sections.keys.where(
+        (key) =>
+            key != 'DOC_ID' &&
+            key != 'DOC_TYPE' &&
+            key != 'TITLE' &&
+            key != 'ALIASES' &&
+            key != 'KEYWORDS' &&
+            key != 'LAST_UPDATED',
+      ),
+    ];
+    final seen = <String>{};
+    final candidates = <({String key, String value, int score})>[];
+    for (final rawKey in orderedKeys) {
+      final key = rawKey.toUpperCase();
+      if (!seen.add(key)) {
+        continue;
+      }
+      final value = (sections[key] ?? '').trim();
+      if (value.isEmpty) {
+        continue;
+      }
+      final score = _scoreContextBlock(key: key, content: value, query: query);
+      if (score <= 0) {
+        continue;
+      }
+      candidates.add((key: key, value: value, score: score));
+    }
+    candidates.sort((a, b) => b.score.compareTo(a.score));
+    return candidates;
+  }
+
+  int _scoreContextBlock({
+    required String key,
+    required String content,
+    required String query,
+  }) {
+    final foldedQuery = _normalizeForKnowledge(query);
+    final foldedContent = _normalizeForKnowledge(content);
+    if (foldedQuery.isEmpty) {
+      return 0;
+    }
+    final tokens = foldedQuery
+        .split(RegExp(r'\s+'))
+        .where((token) => token.length >= 2)
+        .toSet();
+    var score = 0;
+    if (foldedContent.isNotEmpty && foldedContent.contains(foldedQuery)) {
+      score += 20;
+    }
+    for (final token in tokens) {
+      if (foldedContent.isNotEmpty && foldedContent.contains(token)) {
+        score += 3;
+      }
+    }
+    final sectionIntentTerms = _sectionIntentTerms(key);
+    if (sectionIntentTerms.isNotEmpty) {
+      final normalizedSectionLabel = _normalizeForKnowledge(_sectionLabel(key));
+      final hasSectionIntent = sectionIntentTerms.any(
+        (term) => foldedQuery.contains(_normalizeForKnowledge(term)),
+      );
+      if (hasSectionIntent) {
+        score += 24;
+      }
+      for (final token in tokens) {
+        if (normalizedSectionLabel.contains(token)) {
+          score += 4;
+        }
+      }
+    }
+    return score;
+  }
+
+  String _extractBestExcerpt({
+    required String content,
+    required String query,
+    required int maxChars,
+  }) {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      return '';
+    }
+    if (trimmed.length <= maxChars) {
       return trimmed;
+    }
+
+    final lines = trimmed
+        .split('\n')
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty && !_isSeparatorLine(line))
+        .toList(growable: false);
+    if (lines.isEmpty) {
+      return _trimInline(trimmed, maxChars: maxChars);
     }
 
     final foldedQuery = _normalizeForKnowledge(query);
@@ -1111,9 +1869,6 @@ YEU_CAU_TRA_LOI:
         .split(RegExp(r'\s+'))
         .where((token) => token.length >= 2)
         .toSet();
-    if (tokens.isEmpty) {
-      return trimmed;
-    }
 
     var bestIndex = -1;
     var bestScore = -1;
@@ -1124,11 +1879,11 @@ YEU_CAU_TRA_LOI:
       }
       var score = 0;
       if (foldedLine.contains(foldedQuery)) {
-        score += 16;
+        score += 18;
       }
       for (final token in tokens) {
         if (foldedLine.contains(token)) {
-          score += 2;
+          score += 3;
         }
       }
       if (score > bestScore) {
@@ -1137,24 +1892,115 @@ YEU_CAU_TRA_LOI:
       }
     }
 
-    if (bestIndex < 0) {
-      return trimmed;
+    if (bestIndex < 0 || bestScore <= 0) {
+      return _trimInline(trimmed, maxChars: maxChars);
     }
 
-    // Try extracting one clean product section delimited by separator lines.
-    final section = _extractDelimitedSection(
-      lines: lines,
-      anchorIndex: bestIndex,
-    );
-    if (section != null && section.trim().isNotEmpty) {
-      return section.trim();
+    final chosen = <String>[];
+    var currentChars = 0;
+    final start = (bestIndex - 1).clamp(0, lines.length - 1);
+    final end = (bestIndex + 2).clamp(0, lines.length - 1);
+    for (var i = start; i <= end; i++) {
+      final line = lines[i];
+      final nextChars = currentChars + line.length + (chosen.isEmpty ? 0 : 1);
+      if (nextChars > maxChars) {
+        break;
+      }
+      chosen.add(line);
+      currentChars = nextChars;
     }
 
-    // Fallback: local block around the strongest line.
-    final start = (bestIndex - 2).clamp(0, lines.length - 1);
-    final end = (bestIndex + 20).clamp(0, lines.length - 1);
-    final block = lines.sublist(start, end + 1).join('\n').trim();
-    return block.isEmpty ? trimmed : block;
+    final excerpt = chosen.join('\n').trim();
+    if (excerpt.isEmpty) {
+      return _trimInline(trimmed, maxChars: maxChars);
+    }
+    return excerpt;
+  }
+
+  String _trimInline(String input, {required int maxChars}) {
+    final normalized = input.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (normalized.length <= maxChars) {
+      return normalized;
+    }
+    return '${normalized.substring(0, maxChars)}...';
+  }
+
+  String _sectionLabel(String key) {
+    return switch (key) {
+      'CONTENT' => 'Nội dung liên quan',
+      'USAGE' => 'Hướng dẫn',
+      'FAQ' => 'Hỏi đáp',
+      'SAFETY_NOTE' => 'Lưu ý',
+      'RAW_MATERIALS' => 'Nguyên liệu',
+      'PROCESS' => 'Quy trình',
+      'FOOD_SAFETY' => 'An toàn thực phẩm',
+      'MARKET' => 'Thị trường',
+      'SERVICES' => 'Dịch vụ',
+      'REGULATIONS' => 'Quy định',
+      _ => key,
+    };
+  }
+
+  List<String> _sectionIntentTerms(String key) {
+    return switch (key) {
+      'FOOD_SAFETY' => const <String>[
+        'an toan thuc pham',
+        'chung nhan',
+        'chung chi',
+        'kiem dinh',
+        'tieu chuan',
+        'halal',
+        'haccp',
+        'fda',
+        'ocop',
+      ],
+      'MARKET' => const <String>[
+        'thi truong',
+        'kenh phan phoi',
+        'phan phoi',
+        'xuat khau',
+        'noi dia',
+        'ban o dau',
+        'kenh ban hang',
+      ],
+      'PROCESS' => const <String>[
+        'quy trinh',
+        'che bien',
+        'san xuat',
+        'lam nhu the nao',
+      ],
+      'CONTENT' => const <String>[
+        'dinh huong phat trien',
+        'dinh huong',
+        'tam nhin',
+        'su menh',
+        'muc tieu',
+        'chien luoc',
+        'tong quat',
+        'gioi thieu',
+        'thong tin cong ty',
+      ],
+      'RAW_MATERIALS' => const <String>[
+        'nguyen lieu',
+        'dau vao',
+        'vung trong',
+        'nguon nguyen lieu',
+      ],
+      'CORE_PRODUCTS' => const <String>[
+        'san pham',
+        'san pham chu luc',
+        'mat hang',
+        'danh muc san pham',
+      ],
+      'SERVICES' => const <String>['dich vu', 'ho tro', 'hop tac'],
+      'REGULATIONS' => const <String>[
+        'quy dinh',
+        'chinh sach',
+        'dieu kien',
+        'tieu chuan hop tac',
+      ],
+      _ => const <String>[],
+    };
   }
 
   String? _extractDelimitedSection({
@@ -1824,7 +2670,20 @@ YEU_CAU_TRA_LOI:
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchamy\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bcha\s*mi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bchamy\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bcha\s*mi\s*garden\b', caseSensitive: false): 'chavi garden',
+      RegExp(r'\bhuy\s*trinh\b', caseSensitive: false): 'quy trinh',
+      RegExp(r'\bcanh\s*viet\b', caseSensitive: false): 'chanhviet',
+      RegExp(r'\bton\s*cat\b', caseSensitive: false): 'tong quat',
+      RegExp(r'\btom\s*cat\b', caseSensitive: false): 'tom tat',
+      RegExp(r'\bbo\s*tranh\b', caseSensitive: false): 'bot chanh',
+      RegExp(r'\bbot\s*tranh\b', caseSensitive: false): 'bot chanh',
+      RegExp(r'\bbo\s*chanh\b', caseSensitive: false): 'bot chanh',
       RegExp(r'\btranh\s*viet\b', caseSensitive: false): 'chanhviet',
       RegExp(r'\bchanh\s*viet\b', caseSensitive: false): 'chanhviet',
     };
@@ -1878,7 +2737,10 @@ YEU_CAU_TRA_LOI:
       RegExp(r'\bcha\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchai\s*vi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bchabi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchami\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bchamy\b', caseSensitive: false): 'chavi',
       RegExp(r'\btra\s*vi\b', caseSensitive: false): 'chavi',
+      RegExp(r'\bcha\s*mi\b', caseSensitive: false): 'chavi',
       RegExp(r'\bch[aá]\s*vi\b', caseSensitive: false): 'chavi',
     };
     for (final entry in replacements.entries) {
@@ -1893,4 +2755,50 @@ class _RecentText {
 
   final String text;
   final DateTime at;
+}
+
+class _KnowledgeMatch {
+  const _KnowledgeMatch({
+    required this.name,
+    required this.title,
+    required this.docType,
+    required this.summary,
+    required this.usage,
+    required this.safetyNote,
+    required this.fieldHits,
+    required this.matchReasons,
+    required this.overview,
+    required this.rawContent,
+    required this.content,
+    required this.score,
+    required this.coverageRatio,
+    required this.confidence,
+    required this.exactMatch,
+  });
+
+  final String name;
+  final String title;
+  final String docType;
+  final String summary;
+  final String usage;
+  final String safetyNote;
+  final List<String> fieldHits;
+  final List<String> matchReasons;
+  final String overview;
+  final String rawContent;
+  final String content;
+  final int score;
+  final double coverageRatio;
+  final String confidence;
+  final bool exactMatch;
+}
+
+class _KnowledgeQueryAnalysis {
+  const _KnowledgeQueryAnalysis({
+    required this.kind,
+    required this.preferredSections,
+  });
+
+  final String kind;
+  final List<String> preferredSections;
 }

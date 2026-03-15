@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,7 +32,6 @@ class HomeContent extends StatelessWidget {
     required this.carouselAnimationDuration,
     required this.carouselViewportFraction,
     required this.carouselEnlargeCenter,
-    required this.hideCameraOverlay,
   });
 
   final EmotionPalette palette;
@@ -49,7 +50,6 @@ class HomeContent extends StatelessWidget {
   final Duration carouselAnimationDuration;
   final double carouselViewportFraction;
   final bool carouselEnlargeCenter;
-  final bool hideCameraOverlay;
 
   static const double audioActiveThreshold = 0.02;
   @override
@@ -88,16 +88,16 @@ class HomeContent extends StatelessWidget {
                       Expanded(
                         child: Center(
                           child: Container(
-                            width: 180,
-                            height: 180,
+                            width: ThemeTokens.homeMascotOuterSize,
+                            height: ThemeTokens.homeMascotOuterSize,
                             decoration: BoxDecoration(
                               color: palette.accent,
                               shape: BoxShape.circle,
                             ),
                             child: Center(
                               child: SizedBox(
-                                width: 120,
-                                height: 120,
+                                width: ThemeTokens.homeMascotInnerSize,
+                                height: ThemeTokens.homeMascotInnerSize,
                                 child: CustomPaint(
                                   painter: _SmileFacePainter(
                                     color: palette.accentForeground,
@@ -122,18 +122,17 @@ class HomeContent extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (!hideCameraOverlay)
-                  HomeCameraOverlay(
-                    areaSize: Size(constraints.maxWidth, constraints.maxHeight),
-                    enabled: cameraEnabled,
-                    onEnabledChanged: onCameraEnabledChanged,
-                    onFacePresenceChanged: onFacePresenceChanged,
-                    detectFacesEnabled: detectFacesEnabled,
-                    aspectRatio: cameraAspectRatio,
-                    faceLandmarksEnabled: faceLandmarksEnabled,
-                    faceMeshEnabled: faceMeshEnabled,
-                    eyeTrackingEnabled: eyeTrackingEnabled,
-                  ),
+                HomeCameraOverlay(
+                  areaSize: Size(constraints.maxWidth, constraints.maxHeight),
+                  enabled: cameraEnabled,
+                  onEnabledChanged: onCameraEnabledChanged,
+                  onFacePresenceChanged: onFacePresenceChanged,
+                  detectFacesEnabled: detectFacesEnabled,
+                  aspectRatio: cameraAspectRatio,
+                  faceLandmarksEnabled: faceLandmarksEnabled,
+                  faceMeshEnabled: faceMeshEnabled,
+                  eyeTrackingEnabled: eyeTrackingEnabled,
+                ),
               ],
             );
           },
@@ -170,14 +169,24 @@ class _BottomCarousel extends StatefulWidget {
 
 class _BottomCarouselState extends State<_BottomCarousel>
     with TickerProviderStateMixin {
-  static const double _carouselAspectRatio = 16 / 9;
+  static const double _carouselAspectRatio = 5 / 4;
   int _currentIndex = 0;
+  int _cacheWidthPx = 0;
+  int _cacheHeightPx = 0;
+  String _lastPrecacheSignature = '';
 
   @override
   void didUpdateWidget(covariant _BottomCarousel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.images, widget.images)) {
       _currentIndex = 0;
+      _lastPrecacheSignature = '';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        _precacheNearby(_currentIndex);
+      });
     }
   }
 
@@ -186,7 +195,17 @@ class _BottomCarouselState extends State<_BottomCarousel>
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final height = _resolveCarouselHeight(width);
+        final dpr = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 3.0);
+        final viewport = widget.viewportFraction.clamp(0.4, 1.0);
+        final height = _resolveCarouselHeight(width, viewport);
+        _cacheWidthPx = (width * viewport * dpr).round();
+        _cacheHeightPx = (height * dpr).round();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) {
+            return;
+          }
+          _precacheNearby(_currentIndex);
+        });
         return AnimatedSize(
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOutCubic,
@@ -206,9 +225,7 @@ class _BottomCarouselState extends State<_BottomCarousel>
                     ),
                     decoration: BoxDecoration(
                       color: widget.palette.controlBackground(context),
-                      borderRadius: BorderRadius.circular(
-                        ThemeTokens.radiusLg,
-                      ),
+                      borderRadius: BorderRadius.circular(ThemeTokens.radiusLg),
                       border: Border.all(
                         color: widget.palette.controlBorder(context),
                       ),
@@ -221,17 +238,24 @@ class _BottomCarouselState extends State<_BottomCarousel>
                           child: Image.network(
                             imageUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Center(
-                              child: Text(
-                                'Hình ảnh lỗi',
-                                style: context.theme.typography.sm.copyWith(
-                                  color: widget.palette.controlForeground(
-                                    context,
+                            cacheWidth: _cacheWidthPx > 0
+                                ? _cacheWidthPx
+                                : null,
+                            cacheHeight: _cacheHeightPx > 0
+                                ? _cacheHeightPx
+                                : null,
+                            errorBuilder: (context, error, stackTrace) =>
+                                Center(
+                                  child: Text(
+                                    'Hình ảnh lỗi',
+                                    style: context.theme.typography.sm.copyWith(
+                                      color: widget.palette.controlForeground(
+                                        context,
+                                      ),
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
-                                  fontWeight: FontWeight.w600,
                                 ),
-                              ),
-                            ),
                             loadingBuilder: (context, child, progress) {
                               if (progress == null) {
                                 return child;
@@ -288,6 +312,7 @@ class _BottomCarouselState extends State<_BottomCarousel>
                   setState(() {
                     _currentIndex = index;
                   });
+                  _precacheNearby(index);
                 },
               ),
             ),
@@ -297,16 +322,41 @@ class _BottomCarouselState extends State<_BottomCarousel>
     );
   }
 
-  double _resolveCarouselHeight(double width) {
+  double _resolveCarouselHeight(double width, double viewport) {
     if (width <= 0) {
-      return widget.height;
+      return 0;
     }
-    final computed = width / _carouselAspectRatio;
+    final itemWidth = width * viewport;
+    final computed = itemWidth / _carouselAspectRatio;
     if (!computed.isFinite || computed <= 0) {
-      return widget.height;
+      return 0;
     }
-    // Keep the user-tunable height as upper bound while enforcing stable ratio.
-    return computed > widget.height ? widget.height : computed;
+    // Hard-enforce 5:4 card ratio across all screen sizes.
+    return computed;
+  }
+
+  void _precacheNearby(int centerIndex) {
+    if (widget.images.isEmpty || _cacheWidthPx <= 0 || _cacheHeightPx <= 0) {
+      return;
+    }
+    final signature =
+        '$centerIndex|${widget.images.length}|$_cacheWidthPx|$_cacheHeightPx';
+    if (_lastPrecacheSignature == signature) {
+      return;
+    }
+    _lastPrecacheSignature = signature;
+    for (final offset in const <int>[-1, 1]) {
+      final next = centerIndex + offset;
+      if (next < 0 || next >= widget.images.length) {
+        continue;
+      }
+      final provider = ResizeImage(
+        NetworkImage(widget.images[next]),
+        width: _cacheWidthPx,
+        height: _cacheHeightPx,
+      );
+      unawaited(precacheImage(provider, context));
+    }
   }
 }
 
@@ -330,6 +380,8 @@ void _openImagePreview(BuildContext context, String imageUrl) {
                     child: Image.network(
                       imageUrl,
                       fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      isAntiAlias: true,
                       errorBuilder: (context, error, stackTrace) => Center(
                         child: Text(
                           'Hình ảnh lỗi',

@@ -17,6 +17,17 @@ class ThemeTokens {
   static const double badgePaddingHorizontal = spaceLg;
   static const double badgePaddingVertical = spaceSm;
   static const double footerButtonWidth = 160.0;
+  static const double homeMascotOuterSize = 180.0;
+  static const double homeMascotInnerSize = 120.0;
+  static const double chatBubbleMaxWidth = 280.0;
+  static const double chatRelatedCardMaxWidth = 320.0;
+  static const double chatImageTileWidthLarge = 213.0;
+  static const double chatImageTileHeightLarge = 120.0;
+  static const double chatImageTileWidthSmall = 160.0;
+  static const double chatImageTileHeightSmall = 90.0;
+  static const double chatImageSmallBreakpoint = 380.0;
+  static const double chatImageLoadingSize = 18.0;
+  static const double chatImageLoadingStroke = 2.0;
 
   // Layout sizing tokens to avoid scattered magic numbers.
   static const double formWidthTablet = 480.0;

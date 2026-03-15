@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../capabilities/protocol/protocol.dart';
+import '../../core/config/default_settings.dart';
 import 'ui_settings_store.dart';
 
 class TextSendModeCubit extends Cubit<TextSendMode> {
-  TextSendModeCubit(this._store) : super(TextSendMode.listenDetect);
+  TextSendModeCubit(this._store)
+    : super(DefaultSettingsRegistry.current.chat.textSendMode);
 
   final UiSettingsStore _store;
 

@@ -1,3 +1,12 @@
+# Changelog - main
+
+## 2026-03-15
+- Added MCP knowledge-retrieval hardening: stricter direct-match selection, typo normalization for brand/location aliases, and tighter prompt grounding to reduce off-topic answers.
+- Fixed knowledge-image selection to keep one best-matching document/image set instead of mixing company and product images.
+- Improved web host KDOC management: safer import/export flow, schema-guided editing, section visibility by doc type, and better MCP/web-host consistency.
+- Added default settings registry/loader with YAML-backed app, chat, camera, carousel, and device defaults wired into startup and settings cubits.
+- Refined home/chat UI behavior, session coordination, and related tests for MCP search, knowledge context, and related-image flows.
+
 ## 2026-02-20
 - Always show the connect/disconnect button on the home footer.
 - Keep the camera running during TTS and only hide the overlay.
@@ -23,8 +32,6 @@
 - add auto-reconnect setting with persisted toggle and retry backoff on disconnect/failed connect
 - reorganize settings sections (new Chat section) and wire auto-reconnect into settings UI and DI
 - auto-suppress blocked phrase playback + MCP guard tweaks
-
-# Changelog - main
 
 ## 2026-02-09
 - Updated KDOC templates/fields and doc type validation for web host (profile/info split and new sections).

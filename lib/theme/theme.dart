@@ -6,22 +6,23 @@ import 'theme_palette.dart';
 
 final FThemeData appLightTheme = buildTheme(
   brightness: Brightness.light,
-  palette: AppThemePalette.green,
+  palette: AppThemePalette.neutral,
 );
 
 final FThemeData appDarkTheme = buildTheme(
   brightness: Brightness.dark,
-  palette: AppThemePalette.green,
+  palette: AppThemePalette.neutral,
 );
 
 FThemeData buildTheme({
   required Brightness brightness,
   required AppThemePalette palette,
 }) {
-  final base =
-      brightness == Brightness.dark ? FThemes.zinc.dark : FThemes.zinc.light;
+  final base = brightness == Brightness.dark
+      ? FThemes.zinc.dark
+      : FThemes.zinc.light;
   final paletteColors = semanticColorsForPalette(palette, brightness);
-  final brand = BrandColors.fromPalette(paletteColors);
+  final brand = BrandColors.fromPalette(paletteColors, brightness: brightness);
   final colors = base.colors.copyWith(
     background: paletteColors.background,
     foreground: paletteColors.text,
