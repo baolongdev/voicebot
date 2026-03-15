@@ -3,7 +3,7 @@
   "latestVersionCode": 0,
   "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.4/app-release.apk",
   "releaseNotes": "Update to version 1.0.4",
-  "commitMessage": "Merge branch 'main' of https://github.com/baolongdev/voicebot",
+  "commitMessage": "feat: improve knowledge retrieval and configurable defaults",
   "mandatory": false,
-  "releasedAt": "2026-02-20T17:21:21Z"
+  "releasedAt": "2026-03-15T11:45:09Z"
 }
