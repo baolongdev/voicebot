@@ -54,6 +54,11 @@ const appModalInputWrap = document.getElementById('appModalInputWrap');
 const appModalInput = document.getElementById('appModalInput');
 const appModalCancel = document.getElementById('appModalCancel');
 const appModalConfirm = document.getElementById('appModalConfirm');
+const progressModal = document.getElementById('progressModal');
+const progressModalTitle = document.getElementById('progressModalTitle');
+const progressModalMessage = document.getElementById('progressModalMessage');
+const progressModalBar = document.getElementById('progressModalBar');
+const progressModalMeta = document.getElementById('progressModalMeta');
 
 let documentsCache = [];
 let selectedDocName = '';
@@ -82,6 +87,8 @@ let imagePreviewModal = null;
 let imagePreviewImage = null;
 let imagePreviewTitle = null;
 let imagePreviewMeta = null;
+let bulkActionInProgress = false;
+let bulkActionTitle = '';
 const saveButtonDefaultLabel = uploadBtn ? uploadBtn.textContent : 'Lưu tài liệu';
 
 const DRAFT_KEY = 'voicebot.webhost.editor.draft.v1';
@@ -1367,6 +1374,77 @@ function setStatus(text, tone) {
   const normalizedTone = ['info', 'loading', 'ok', 'warn'].includes(tone) ? tone : 'info';
   uploadStatus.textContent = text;
   uploadStatus.className = 'status-line ' + normalizedTone;
+  if (bulkActionInProgress) {
+    setBulkProgressState({ message: text });
+  }
+}
+
+function hasProgressUI() {
+  return !!(
+    progressModal &&
+    progressModalTitle &&
+    progressModalMessage &&
+    progressModalBar &&
+    progressModalMeta
+  );
+}
+
+function setBulkProgressState(config) {
+  if (!hasProgressUI()) return;
+  const state = config || {};
+  if (state.active === false) {
+    bulkActionInProgress = false;
+    bulkActionTitle = '';
+    progressModal.classList.add('is-hidden');
+    progressModalBar.classList.add('is-indeterminate');
+    progressModalBar.style.width = '34%';
+    progressModalBar.style.transform = '';
+    progressModalMeta.textContent = '';
+    progressModalMessage.textContent = 'Vui lòng chờ trong giây lát.';
+    progressModalTitle.textContent = 'Đang xử lý';
+    return;
+  }
+
+  bulkActionInProgress = true;
+  if (state.title) {
+    bulkActionTitle = String(state.title);
+  }
+  const title = bulkActionTitle || 'Đang xử lý';
+  const message = String(state.message || progressModalMessage.textContent || 'Vui lòng chờ trong giây lát.');
+  const meta = String(state.meta || progressModalMeta.textContent || 'Đang chuẩn bị...');
+  const total = Number(state.total);
+  const current = Number(state.current);
+  const hasProgress = Number.isFinite(total) && total > 0;
+
+  progressModal.classList.remove('is-hidden');
+  progressModalTitle.textContent = title;
+  progressModalMessage.textContent = message;
+  progressModalMeta.textContent = meta;
+
+  if (hasProgress) {
+    const safeCurrent = Math.min(Math.max(Number.isFinite(current) ? current : 0, 0), total);
+    const percent = Math.max(6, Math.round((safeCurrent / total) * 100));
+    progressModalBar.classList.remove('is-indeterminate');
+    progressModalBar.style.transform = '';
+    progressModalBar.style.width = percent + '%';
+    return;
+  }
+
+  progressModalBar.classList.add('is-indeterminate');
+  progressModalBar.style.width = '34%';
+}
+
+function startBulkProgress(title, message, meta) {
+  setBulkProgressState({
+    active: true,
+    title: title,
+    message: message || 'Vui lòng chờ trong giây lát.',
+    meta: meta || 'Đang chuẩn bị...',
+  });
+}
+
+function finishBulkProgress() {
+  setBulkProgressState({ active: false });
 }
 
 function setLastModified(value) {
@@ -1484,7 +1562,10 @@ function makeExportFileName() {
   );
 }
 
-async function collectDocumentsForExport() {
+async function collectDocumentsForExport(options) {
+  const settings = options || {};
+  const progressTitle = String(settings.progressTitle || bulkActionTitle || 'Đang xử lý');
+  const progressLabel = String(settings.progressLabel || 'Đang đọc tài liệu');
   const sourceDocs = documentsCache.length > 0
     ? documentsCache.slice()
     : (await req('/api/documents', { retryCount: 1 })).documents || [];
@@ -1494,6 +1575,14 @@ async function collectDocumentsForExport() {
       const item = normalized[i];
       const name = String(item.name || '').trim();
       if (!name) continue;
+      setBulkProgressState({
+        active: true,
+        title: progressTitle,
+        message: progressLabel + ' ' + (i + 1) + '/' + normalized.length + ': ' + name,
+        meta: 'Tài liệu ' + (i + 1) + '/' + normalized.length,
+        current: i,
+        total: normalized.length || 1,
+      });
       const detail = await req('/api/documents/content?name=' + encodeURIComponent(name), { retryCount: 1 });
       const doc = detail.document || {};
       result.push({
@@ -1536,12 +1625,23 @@ async function fetchImageBase64(imageId) {
   return blobToBase64(blob);
 }
 
-async function collectImagesForExport(docs) {
+async function collectImagesForExport(docs, options) {
+  const settings = options || {};
+  const progressTitle = String(settings.progressTitle || bulkActionTitle || 'Đang xử lý');
+  const progressLabel = String(settings.progressLabel || 'Đang xuất ảnh');
   const result = [];
   const rows = Array.isArray(docs) ? docs : [];
   for (let i = 0; i < rows.length; i += 1) {
     const docName = String(rows[i]?.name || '').trim();
     if (!docName) continue;
+    setBulkProgressState({
+      active: true,
+      title: progressTitle,
+      message: 'Đang kiểm tra ảnh ' + (i + 1) + '/' + rows.length + ': ' + docName,
+      meta: 'Tài liệu ảnh ' + (i + 1) + '/' + rows.length,
+      current: i,
+      total: rows.length || 1,
+    });
     setStatus('Đang kiểm tra ảnh (' + (i + 1) + '/' + rows.length + ')...', 'loading');
     const list = await req('/api/documents/images?name=' + encodeURIComponent(docName), { retryCount: 1 });
     const images = Array.isArray(list.images) ? list.images : [];
@@ -1549,6 +1649,14 @@ async function collectImagesForExport(docs) {
       const item = images[j] || {};
       const imageId = String(item.id || '').trim();
       if (!imageId) continue;
+      setBulkProgressState({
+        active: true,
+        title: progressTitle,
+        message: progressLabel + ' ' + (j + 1) + '/' + images.length + ' (' + docName + ')',
+        meta: 'Ảnh ' + (j + 1) + '/' + images.length + ' của ' + docName,
+        current: j,
+        total: images.length || 1,
+      });
       setStatus(
         'Đang xuất ảnh ' + (j + 1) + '/' + images.length + ' (' + docName + ')...',
         'loading',
@@ -1586,11 +1694,20 @@ async function exportAllData() {
     return;
   }
   try {
+    startBulkProgress('Đang xuất dữ liệu', 'Đang chuẩn bị gói xuất dữ liệu...', 'Đang chuẩn bị...');
     setBulkActionDisabled(true);
     setStatus('Đang chuẩn bị gói xuất dữ liệu...', 'loading');
-    const docs = await collectDocumentsForExport();
+    const docs = await collectDocumentsForExport({
+      progressTitle: 'Đang xuất dữ liệu',
+      progressLabel: 'Đang đọc tài liệu để xuất',
+    });
     const includeImages = exportIncludeImages ? exportIncludeImages.checked : false;
-    const images = includeImages ? await collectImagesForExport(docs) : [];
+    const images = includeImages
+      ? await collectImagesForExport(docs, {
+          progressTitle: 'Đang xuất dữ liệu',
+          progressLabel: 'Đang xuất ảnh',
+        })
+      : [];
     const payload = {
       schema: EXPORT_SCHEMA,
       exported_at: new Date().toISOString(),
@@ -1616,11 +1733,14 @@ async function exportAllData() {
   } catch (error) {
     setStatus('Xuất dữ liệu lỗi: ' + error.message, 'warn');
   } finally {
+    finishBulkProgress();
     setBulkActionDisabled(false);
   }
 }
 
-function parseImportPayload(rawText) {
+function parseImportPayload(rawText, options) {
+  const settings = options || {};
+  const allowEmptyDocuments = settings.allowEmptyDocuments === true;
   const parsed = JSON.parse(rawText);
   const schema = String(parsed?.schema || '').trim();
   if (schema !== EXPORT_SCHEMA) {
@@ -1637,7 +1757,7 @@ function parseImportPayload(rawText) {
         folder: String(doc?.folder || doc?.meta?.folder || '').trim(),
       }))
       .filter((doc) => doc.name.length > 0 && doc.text.length > 0);
-    if (normalizedDocs.length === 0) {
+    if (!allowEmptyDocuments && normalizedDocs.length === 0) {
       throw new Error('File import không có tài liệu hợp lệ.');
     }
   const rawImages = Array.isArray(parsed.images) ? parsed.images : [];
@@ -1682,8 +1802,14 @@ function parseImportPayload(rawText) {
 }
 
 async function buildRollbackSnapshot() {
-  const docs = await collectDocumentsForExport();
-  const images = await collectImagesForExport(docs);
+  const docs = await collectDocumentsForExport({
+    progressTitle: 'Đang sao lưu dữ liệu hiện có',
+    progressLabel: 'Đang sao lưu tài liệu',
+  });
+  const images = await collectImagesForExport(docs, {
+    progressTitle: 'Đang sao lưu dữ liệu hiện có',
+    progressLabel: 'Đang sao lưu ảnh',
+  });
   const payload = {
     schema: EXPORT_SCHEMA,
     documents: docs.map((doc) => ({
@@ -1698,31 +1824,62 @@ async function buildRollbackSnapshot() {
       viewMode: localStorage.getItem(VIEW_MODE_KEY) || 'text',
     },
   };
-  return parseImportPayload(JSON.stringify(payload));
+  return parseImportPayload(JSON.stringify(payload), { allowEmptyDocuments: true });
 }
 
 async function applyImportedData(data, options) {
   const settings = options || {};
   const includeImages = settings.includeImages !== false;
   const clearFirst = settings.clearFirst !== false;
+  const progressTitle = String(settings.progressTitle || 'Đang nhập dữ liệu');
+  const docsTotal = Array.isArray(data.documents) ? data.documents.length : 0;
+  const imagesTotal = includeImages && Array.isArray(data.images) ? data.images.length : 0;
+  const totalSteps = (clearFirst ? 1 : 0) + docsTotal + imagesTotal;
+  let completedSteps = 0;
 
   if (clearFirst) {
+    setBulkProgressState({
+      active: true,
+      title: progressTitle,
+      message: 'Đang xóa dữ liệu cũ trước khi nhập...',
+      meta: 'Bước ' + (completedSteps + 1) + '/' + Math.max(totalSteps, 1),
+      current: completedSteps,
+      total: Math.max(totalSteps, 1),
+    });
     await req('/api/documents', { method: 'DELETE' });
+    completedSteps += 1;
   }
 
   for (let i = 0; i < data.documents.length; i += 1) {
     const item = data.documents[i];
+    setBulkProgressState({
+      active: true,
+      title: progressTitle,
+      message: 'Đang nhập tài liệu ' + (i + 1) + '/' + data.documents.length + ': ' + item.name,
+      meta: 'Bước ' + (completedSteps + 1) + '/' + Math.max(totalSteps, 1),
+      current: completedSteps,
+      total: Math.max(totalSteps, 1),
+    });
     await req('/api/documents/text', {
       method: 'POST',
       retryCount: 1,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: item.name, text: item.text }),
     });
+    completedSteps += 1;
   }
 
   if (includeImages && data.images.length > 0) {
     for (let i = 0; i < data.images.length; i += 1) {
       const image = data.images[i];
+      setBulkProgressState({
+        active: true,
+        title: progressTitle,
+        message: 'Đang nhập ảnh ' + (i + 1) + '/' + data.images.length + ' cho ' + image.doc_name,
+        meta: 'Bước ' + (completedSteps + 1) + '/' + Math.max(totalSteps, 1),
+        current: completedSteps,
+        total: Math.max(totalSteps, 1),
+      });
       await req('/api/documents/image', {
         method: 'POST',
         retryCount: 1,
@@ -1735,6 +1892,7 @@ async function applyImportedData(data, options) {
           caption: image.caption,
         }),
       });
+      completedSteps += 1;
     }
   }
 }
@@ -1786,17 +1944,28 @@ async function importAllDataFromFile(file) {
     if (!confirmed) {
       return;
     }
+    startBulkProgress('Đang nhập dữ liệu', 'Đang đọc file import...', 'Đang chuẩn bị...');
     setBulkActionDisabled(true);
     setStatus('Đang đọc file import...', 'loading');
     const rawText = await file.text();
-    const data = parseImportPayload(rawText);
+    setStatus('Đang kiểm tra cấu trúc file import...', 'loading');
+    const data = await req('/api/import/parse', {
+      method: 'POST',
+      retryCount: 1,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      body: rawText,
+    });
     setStatus('Đang sao lưu dữ liệu hiện có...', 'loading');
     rollbackSnapshot = await buildRollbackSnapshot();
 
     destructiveStarted = true;
     const includeImages = importIncludeImages ? importIncludeImages.checked : true;
     setStatus('Đang thay thế dữ liệu cũ...', 'loading');
-    await applyImportedData(data, { includeImages: includeImages, clearFirst: true });
+    await applyImportedData(data, {
+      includeImages: includeImages,
+      clearFirst: true,
+      progressTitle: 'Đang nhập dữ liệu',
+    });
     applyImportedUiState(data);
 
     await refreshDocuments({ silentStatus: true });
@@ -1817,6 +1986,7 @@ async function importAllDataFromFile(file) {
         await applyImportedData(rollbackSnapshot, {
           includeImages: true,
           clearFirst: true,
+          progressTitle: 'Đang khôi phục dữ liệu cũ',
         });
         applyImportedUiState(rollbackSnapshot);
         await refreshDocuments({ silentStatus: true });
@@ -1840,6 +2010,7 @@ async function importAllDataFromFile(file) {
     if (importAllInput) {
       importAllInput.value = '';
     }
+    finishBulkProgress();
     setBulkActionDisabled(false);
   }
 }
@@ -2479,6 +2650,7 @@ async function clearDocuments() {
   if (!confirmed) return;
   if (clearBtn) clearBtn.disabled = true;
   try {
+    startBulkProgress('Đang xóa dữ liệu', 'Đang xóa toàn bộ tài liệu...', 'Bước 1/1');
     setStatus('Đang xóa toàn bộ tài liệu...', 'loading');
     await req('/api/documents', { method: 'DELETE' });
     documentsCache = [];
@@ -2509,6 +2681,7 @@ async function clearDocuments() {
   } catch (e) {
     setStatus('Xóa lỗi: ' + e.message, 'warn');
   } finally {
+    finishBulkProgress();
     if (clearBtn) clearBtn.disabled = false;
   }
 }
@@ -2908,7 +3081,7 @@ function bindEvents() {
   }
 
   window.addEventListener('beforeunload', function (event) {
-    if (!isDirty) return;
+    if (!isDirty && !bulkActionInProgress) return;
     event.preventDefault();
     event.returnValue = '';
   });

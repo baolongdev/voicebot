@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 // import 'package:flutter/services.dart';
 
 import '../../capabilities/protocol/protocol.dart';
@@ -336,6 +337,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                           builder: (context, detectFaces, _) {
                                             return HomeContent(
                                               palette: palette,
+                                              currentEmotion: emotion,
                                               carouselImages: _carouselImages,
                                               cameraEnabled: cameraEnabled,
                                               cameraAspectRatio:
@@ -1127,6 +1129,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                                                             controller,
                                                                             sheetContext,
                                                                           ),
+                                                                          onOpenLocalWeb: () => _openLocalWeb(
+                                                                            controller,
+                                                                            sheetContext,
+                                                                          ),
                                                                           // onEnterKioskMode:
                                                                           //     _enterKioskMode,
                                                                         );
@@ -1175,16 +1181,66 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     FPersistentSheetController controller,
     BuildContext sheetContext,
   ) {
-    final isOpen =
-        controller.status == AnimationStatus.completed ||
-        controller.status == AnimationStatus.forward;
-    if (isOpen) {
-      controller.toggle();
-    }
+    _closeSettingsSheetOverlay(controller);
     if (!mounted || !sheetContext.mounted) {
       return;
     }
     sheetContext.go(Routes.mcpFlow);
+  }
+
+  Future<void> _openLocalWeb(
+    FPersistentSheetController controller,
+    BuildContext sheetContext,
+  ) async {
+    _closeSettingsSheetOverlay(controller);
+    final hostState = await LocalWebHostService.instance.start(
+      preferredPort: 8080,
+    );
+    final baseUri = hostState.loopbackUri;
+    final targetUri = baseUri?.resolve('manager/');
+    if (!mounted || !sheetContext.mounted) {
+      return;
+    }
+    if (targetUri == null) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        SnackBar(
+          content: Text(hostState.message ?? 'Không thể mở local web.'),
+        ),
+      );
+      return;
+    }
+
+    final launched = await launchUrl(
+      targetUri,
+      mode: LaunchMode.externalApplication,
+    );
+    if (!launched && sheetContext.mounted) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        SnackBar(
+          content: Text('Không thể mở trình duyệt cho $targetUri'),
+        ),
+      );
+    }
+  }
+
+  void _closeSettingsSheetOverlay(FPersistentSheetController controller) {
+    final isOpen =
+        controller.status == AnimationStatus.completed ||
+        controller.status == AnimationStatus.forward;
+    if (!isOpen) {
+      if (_settingsSheetVisible && mounted) {
+        setState(() {
+          _settingsSheetVisible = false;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _settingsSheetVisible = false;
+      });
+    }
+    controller.toggle();
   }
 
   void _setCameraEnabled(bool enabled) {

@@ -6,6 +6,7 @@ import 'package:forui/forui.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../capabilities/mcp/mcp_server.dart';
+import '../../capabilities/web_host/local_web_host_service.dart';
 import '../../core/theme/forui/theme_tokens.dart';
 import '../../routing/routes.dart';
 import '../../shared/widgets/responsive_builder.dart';
@@ -41,6 +42,7 @@ class _McpFlowPageState extends State<McpFlowPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(LocalWebHostService.instance.start(preferredPort: 8080));
     unawaited(
       _runAction(() async {
         await _loadDocuments();

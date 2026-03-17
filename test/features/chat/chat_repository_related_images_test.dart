@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:voicebot/capabilities/protocol/protocol.dart';
+import 'package:voicebot/capabilities/web_host/local_web_host_service.dart';
 import 'package:voicebot/capabilities/voice/session_coordinator.dart';
 import 'package:voicebot/capabilities/voice/transport_client.dart';
 import 'package:voicebot/features/chat/infrastructure/repositories/chat_repository_impl.dart';
@@ -111,6 +112,31 @@ void main() {
         expect(args['query'], 'bot chanh');
         expect(args['top_k'], 3);
         expect(args['max_images'], 2);
+      },
+    );
+
+    test(
+      'uses loopback URI from web-host state when no resolver is injected',
+      () async {
+        repository.dispose();
+        repository = ChatRepositoryImpl(
+          sessionCoordinator: _FakeSessionCoordinator(),
+          webHostStateResolver: () =>
+              const LocalWebHostState.running(ip: '192.168.1.25', port: 9090),
+          mcpHandleMessage: mockMcpHandle,
+        );
+
+        final images = await repository.getRelatedImagesForQuery(
+          'bot chanh',
+          topK: 3,
+          maxImages: 1,
+        );
+
+        expect(images, hasLength(1));
+        expect(
+          images.first.url,
+          'http://127.0.0.1:9090/api/documents/image/content?id=img_1',
+        );
       },
     );
 

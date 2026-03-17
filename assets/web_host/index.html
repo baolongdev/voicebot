@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="/console.css" />
+  <link rel="stylesheet" href="/console.css?v={{ASSET_VERSION}}" />
   <title>Bảng Điều Khiển Tri Thức</title>
 </head>
 <body>
@@ -241,9 +241,25 @@
     </div>
   </div>
 
+  <div id="progressModal" class="app-progress-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="progressModalTitle">
+    <div class="app-progress-panel">
+      <header class="app-modal-header">
+        <h3 id="progressModalTitle">Đang xử lý</h3>
+      </header>
+      <div class="app-modal-body">
+        <p id="progressModalMessage" class="app-modal-message">Vui lòng chờ trong giây lát.</p>
+        <div class="app-progress-track" aria-hidden="true">
+          <div id="progressModalBar" class="app-progress-bar is-indeterminate"></div>
+        </div>
+        <p id="progressModalMeta" class="app-progress-meta">Đang chuẩn bị...</p>
+        <p class="app-progress-hint">Đừng refresh hoặc đóng tab cho tới khi hoàn tất.</p>
+      </div>
+    </div>
+  </div>
+
   <script>
     window.__WEB_HOST_MAX_IMAGE_UPLOAD_MB__ = Number('{{MAX_IMAGE_UPLOAD_MB}}');
   </script>
-  <script src="/console.js"></script>
+  <script src="/console.js?v={{ASSET_VERSION}}"></script>
 </body>
 </html>

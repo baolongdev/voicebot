@@ -71,6 +71,7 @@ class HomeSettingsSheet extends StatefulWidget {
     required this.onCarouselViewportChanged,
     required this.onCarouselEnlargeChanged,
     required this.onOpenMcpFlow,
+    required this.onOpenLocalWeb,
     // required this.onEnterKioskMode,
   });
 
@@ -129,6 +130,7 @@ class HomeSettingsSheet extends StatefulWidget {
   final ValueChanged<double> onCarouselViewportChanged;
   final ValueChanged<bool> onCarouselEnlargeChanged;
   final VoidCallback onOpenMcpFlow;
+  final VoidCallback onOpenLocalWeb;
   // final VoidCallback onEnterKioskMode;
 
   @override
@@ -541,10 +543,15 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
         '${_carouselIntervals[_carouselIntervalIndex].inSeconds}s';
     final carouselAnimLabel =
         '${_carouselAnimations[_carouselAnimationIndex].inMilliseconds}ms';
-    final hostUrl = _webHostState.url;
     final hostStatus = _webHostState.isRunning ? 'Đang chạy' : 'Đang dừng';
-    final hostLabel =
-        hostUrl ?? (_webHostState.message ?? 'Chưa có địa chỉ host');
+    final publicHostUrl = _webHostState.externalUrl;
+    final localHostUrl = _webHostState.loopbackUrl;
+    final hostLabel = _webHostState.isRunning
+        ? [
+            if (publicHostUrl != null) 'Public: $publicHostUrl',
+            if (localHostUrl != null) 'Local: $localHostUrl',
+          ].join('\n')
+        : (_webHostState.message ?? 'Chưa có địa chỉ host');
     final macValid = _isMacValid(_macAddressText);
     final showMacError = _macAddressText.trim().isNotEmpty && !macValid;
     final offline = isOffline(widget.connectivity);
@@ -1732,6 +1739,22 @@ class _HomeSettingsSheetState extends State<HomeSettingsSheet>
                           child: FButton(
                             onPress: widget.onOpenMcpFlow,
                             child: const Text('Mở MCP Manager'),
+                          ),
+                        ),
+                      ),
+                    ),
+                    FItem.raw(
+                      child: Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: ThemeTokens.spaceSm,
+                        ),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: ThemeTokens.buttonHeight,
+                          child: FButton(
+                            onPress: widget.onOpenLocalWeb,
+                            style: FButtonStyle.secondary(),
+                            child: const Text('Mở Local Web'),
                           ),
                         ),
                       ),

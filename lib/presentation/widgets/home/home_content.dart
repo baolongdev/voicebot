@@ -17,6 +17,7 @@ class HomeContent extends StatelessWidget {
   const HomeContent({
     super.key,
     required this.palette,
+    required this.currentEmotion,
     required this.carouselImages,
     required this.cameraEnabled,
     required this.cameraAspectRatio,
@@ -35,6 +36,7 @@ class HomeContent extends StatelessWidget {
   });
 
   final EmotionPalette palette;
+  final String? currentEmotion;
   final List<String> carouselImages;
   final bool cameraEnabled;
   final double cameraAspectRatio;
@@ -52,9 +54,94 @@ class HomeContent extends StatelessWidget {
   final bool carouselEnlargeCenter;
 
   static const double audioActiveThreshold = 0.02;
+
+  static const Map<String, String> _emotionEmojiMap = <String, String>{
+    'neutral': '🙂',
+    'happy': '😁',
+    'laughing': '😆',
+    'funny': '🤡',
+    'silly': '🤪',
+    'confident': '😏',
+    'loving': '🥰',
+    'kissy': '😘',
+    'embarrassed': '😳',
+    'winking': '😉',
+    'sad': '🥺',
+    'crying': '😭',
+    'sleepy': '😴',
+    'angry': '😠',
+    'surprised': '😮',
+    'shocked': '😱',
+    'thinking': '🤔',
+    'relaxed': '😌',
+    'cool': '😎',
+    'delicious': '🤤',
+    'confused': '😕',
+  };
+
+  static const Map<String, String> _emotionAliases = <String, String>{
+    'calm': 'relaxed',
+    'casual': 'cool',
+    'cheerful': 'happy',
+    'clown': 'funny',
+    'comforting': 'loving',
+    'content': 'relaxed',
+    'curious': 'thinking',
+    'delighted': 'happy',
+    'depressed': 'sad',
+    'ecstatic': 'laughing',
+    'elated': 'happy',
+    'emotional': 'crying',
+    'excited': 'happy',
+    'flirty': 'kissy',
+    'frustrated': 'angry',
+    'giggle': 'laughing',
+    'giggly': 'laughing',
+    'glad': 'happy',
+    'gloomy': 'sad',
+    'grateful': 'loving',
+    'grin': 'happy',
+    'grinning': 'happy',
+    'heartbroken': 'crying',
+    'hilarious': 'laughing',
+    'joking': 'funny',
+    'joy': 'happy',
+    'joyful': 'happy',
+    'kiss': 'kissy',
+    'laugh': 'laughing',
+    'love': 'loving',
+    'loved': 'loving',
+    'melancholy': 'sad',
+    'mischievous': 'silly',
+    'nervous': 'embarrassed',
+    'panic': 'shocked',
+    'panicked': 'shocked',
+    'peaceful': 'relaxed',
+    'playful': 'silly',
+    'proud': 'confident',
+    'rage': 'angry',
+    'scared': 'shocked',
+    'serious': 'neutral',
+    'smile': 'happy',
+    'smiling': 'happy',
+    'sorrowful': 'sad',
+    'tearful': 'crying',
+    'teary': 'crying',
+    'touched': 'loving',
+    'upset': 'sad',
+    'worried': 'thinking',
+    'yummy': 'delicious',
+  };
+
   @override
   Widget build(BuildContext context) {
     final images = carouselImages;
+    final emotionEmoji = _resolveEmotionEmoji(currentEmotion);
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(0.85, 1.5);
+    final mascotOuterSize = ThemeTokens.homeMascotOuterSize * textScale;
+    final mascotInnerSize = ThemeTokens.homeMascotInnerSize * textScale;
     return ClipRRect(
       borderRadius: BorderRadius.circular(ThemeTokens.radiusSm),
       child: Container(
@@ -87,20 +174,22 @@ class HomeContent extends StatelessWidget {
                       const SizedBox(height: ThemeTokens.spaceSm),
                       Expanded(
                         child: Center(
-                          child: Container(
-                            width: ThemeTokens.homeMascotOuterSize,
-                            height: ThemeTokens.homeMascotOuterSize,
-                            decoration: BoxDecoration(
-                              color: palette.accent,
-                              shape: BoxShape.circle,
-                            ),
+                          child: SizedBox(
+                            width: mascotOuterSize,
+                            height: mascotOuterSize,
                             child: Center(
                               child: SizedBox(
-                                width: ThemeTokens.homeMascotInnerSize,
-                                height: ThemeTokens.homeMascotInnerSize,
-                                child: CustomPaint(
-                                  painter: _SmileFacePainter(
-                                    color: palette.accentForeground,
+                                width: mascotInnerSize,
+                                height: mascotInnerSize,
+                                child: FittedBox(
+                                  fit: BoxFit.contain,
+                                  child: Text(
+                                    emotionEmoji,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: mascotInnerSize * 0.72,
+                                      height: 1,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -139,6 +228,40 @@ class HomeContent extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _resolveEmotionEmoji(String? emotion) {
+    final normalized = _normalizeEmotion(emotion);
+    if (normalized == null || normalized.isEmpty) {
+      return _emotionEmojiMap['neutral']!;
+    }
+    return _emotionEmojiMap[normalized] ?? _emotionEmojiMap['neutral']!;
+  }
+
+  String? _normalizeEmotion(String? rawEmotion) {
+    final normalized = rawEmotion?.toLowerCase().trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    if (_emotionEmojiMap.containsKey(normalized)) {
+      return normalized;
+    }
+    final alias = _emotionAliases[normalized];
+    if (alias != null) {
+      return alias;
+    }
+
+    for (final entry in _emotionAliases.entries) {
+      if (normalized.contains(entry.key)) {
+        return entry.value;
+      }
+    }
+    for (final key in _emotionEmojiMap.keys) {
+      if (normalized.contains(key)) {
+        return key;
+      }
+    }
+    return 'neutral';
   }
 }
 
@@ -425,64 +548,3 @@ void _openImagePreview(BuildContext context, String imageUrl) {
   );
 }
 
-class _SmileFacePainter extends CustomPainter {
-  const _SmileFacePainter({required this.color});
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final linePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    final dotPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final eyeOffsetX = size.width * 0.18;
-    final eyeOffsetY = size.height * 0.08;
-    final eyeRadius = size.width * 0.04;
-
-    canvas.drawCircle(
-      Offset(center.dx - eyeOffsetX, center.dy - eyeOffsetY),
-      eyeRadius,
-      dotPaint,
-    );
-    canvas.drawCircle(
-      Offset(center.dx + eyeOffsetX, center.dy - eyeOffsetY),
-      eyeRadius,
-      dotPaint,
-    );
-
-    final nosePath = Path()
-      ..moveTo(center.dx, center.dy - size.height * 0.02)
-      ..lineTo(center.dx - size.width * 0.02, center.dy + size.height * 0.03)
-      ..lineTo(center.dx + size.width * 0.02, center.dy + size.height * 0.03);
-    canvas.drawPath(nosePath, linePaint);
-
-    final smileRect = Rect.fromCenter(
-      center: Offset(center.dx, center.dy + size.height * 0.12),
-      width: size.width * 0.32,
-      height: size.height * 0.18,
-    );
-    canvas.drawArc(smileRect, 0, 3.14, false, linePaint);
-
-    final hairPath = Path()
-      ..moveTo(center.dx - size.width * 0.1, center.dy - size.height * 0.32)
-      ..cubicTo(
-        center.dx - size.width * 0.02,
-        center.dy - size.height * 0.42,
-        center.dx + size.width * 0.08,
-        center.dy - size.height * 0.38,
-        center.dx + size.width * 0.04,
-        center.dy - size.height * 0.3,
-      );
-    canvas.drawPath(hairPath, linePaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

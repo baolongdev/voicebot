@@ -21,6 +21,7 @@ class LocalWebHostService {
   final McpServer _mcpServer = McpServer.shared;
 
   HttpServer? _server;
+  Future<LocalWebHostState>? _startFuture;
   LocalWebHostState _state = const LocalWebHostState.stopped();
   int _nextRpcId = 20000;
   int _nextHttpRequestId = 1;
@@ -30,6 +31,8 @@ class LocalWebHostService {
   String? _cssCache;
   String? _jsCache;
   String? _managerJsCache;
+  final String _assetVersionToken =
+      DateTime.now().millisecondsSinceEpoch.toString();
   Future<DocumentImageStore>? _imageStoreFuture;
 
   static const Set<String> _allowedImageMimeTypes = <String>{
@@ -45,7 +48,23 @@ class LocalWebHostService {
     if (_server != null && _state.isRunning) {
       return _state;
     }
+    final pending = _startFuture;
+    if (pending != null) {
+      return pending;
+    }
 
+    final future = _startInternal(preferredPort: preferredPort);
+    _startFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_startFuture, future)) {
+        _startFuture = null;
+      }
+    }
+  }
+
+  Future<LocalWebHostState> _startInternal({required int preferredPort}) async {
     try {
       _server = await HttpServer.bind(
         InternetAddress.anyIPv4,
@@ -162,6 +181,8 @@ class LocalWebHostService {
         await _writeJson(request, <String, Object?>{
           'name': 'voicebot_local_host',
           'url': _state.url,
+          'loopback_url': _state.loopbackUrl,
+          'external_url': _state.externalUrl,
           'status': _state.isRunning ? 'running' : 'stopped',
           'time': DateTime.now().toIso8601String(),
         });
@@ -180,6 +201,11 @@ class LocalWebHostService {
 
       if (path == '/api/documents/text' && method == 'POST') {
         await _handleUploadText(request);
+        return;
+      }
+
+      if (path == '/api/import/parse' && method == 'POST') {
+        await _handleParseImportBundle(request);
         return;
       }
 
@@ -293,6 +319,15 @@ class LocalWebHostService {
     }
     final validation = LocalKnowledgeBase.validateKdocContent(text);
     if (!validation.isValid) {
+      AppLogger.event(
+        'WebHost',
+        'document_upload_validation_error',
+        fields: <String, Object?>{
+          'name': name,
+          'errors': validation.errors.join(' | '),
+        },
+        level: 'W',
+      );
       await _writeJson(request, <String, Object?>{
         'ok': false,
         'error': 'Nội dung không đúng chuẩn KDOC v1.',
@@ -302,10 +337,21 @@ class LocalWebHostService {
       return;
     }
 
-    final upload = await _callTool(
-      name: 'self.knowledge.upload_text',
-      arguments: <String, dynamic>{'name': name, 'text': text},
-    );
+    late final Map<String, dynamic> upload;
+    try {
+      upload = await _callTool(
+        name: 'self.knowledge.upload_text',
+        arguments: <String, dynamic>{'name': name, 'text': text},
+      );
+    } catch (error) {
+      AppLogger.event(
+        'WebHost',
+        'document_upload_error',
+        fields: <String, Object?>{'name': name, 'message': error.toString()},
+        level: 'E',
+      );
+      rethrow;
+    }
     if (oldName.isNotEmpty && oldName != name) {
       final imageStore = await _getImageStore();
       final moved = await imageStore.migrateDocumentName(
@@ -327,12 +373,66 @@ class LocalWebHostService {
     final listPayload = _decodeToolPayload(listResult);
     final documents = _extractRows(listPayload, key: 'documents');
     final count = _extractCount(listPayload, fallback: documents.length);
+    AppLogger.event(
+      'WebHost',
+      'document_upload_success',
+      fields: <String, Object?>{
+        'name': name,
+        'count': count,
+        'characters': text.length,
+      },
+    );
     await _writeJson(request, <String, Object?>{
       'ok': true,
       'upload': uploadPayload,
       'count': count,
       'documents': documents,
     });
+  }
+
+  Future<void> _handleParseImportBundle(HttpRequest request) async {
+    final rawText = await _readTextBody(request);
+    if (rawText.isEmpty) {
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': 'Thiếu nội dung file import.',
+      }, statusCode: HttpStatus.badRequest);
+      return;
+    }
+
+    try {
+      final parsed = _parseImportBundle(rawText);
+      AppLogger.event(
+        'WebHost',
+        'import_bundle_parsed',
+        fields: <String, Object?>{
+          'documents': parsed.documents.length,
+          'images': parsed.images.length,
+          'has_folder_state': parsed.hasFolderState,
+          'view_mode': parsed.viewMode,
+        },
+      );
+      await _writeJson(request, <String, Object?>{
+        'ok': true,
+        'documents': parsed.documents,
+        'images': parsed.images,
+        'folderState': parsed.folderState,
+        'hasFolderState': parsed.hasFolderState,
+        'noteTagState': parsed.noteTagState,
+        'viewMode': parsed.viewMode,
+      });
+    } catch (error) {
+      AppLogger.event(
+        'WebHost',
+        'import_bundle_parse_error',
+        fields: <String, Object?>{'message': error.toString()},
+        level: 'W',
+      );
+      await _writeJson(request, <String, Object?>{
+        'ok': false,
+        'error': error.toString().replaceFirst('Exception: ', ''),
+      }, statusCode: HttpStatus.badRequest);
+    }
   }
 
   Future<void> _handleClearDocuments(HttpRequest request) async {
@@ -342,10 +442,11 @@ class LocalWebHostService {
         ? (clearPayload['removed_images'] as num?)?.toInt() ?? 0
         : 0;
     AppLogger.event(
-      'WebHost',
-      'image_clear_all',
-      fields: <String, Object?>{'removed_images': removedImages},
-    );
+        'WebHost',
+        'image_clear_all',
+        fields: <String, Object?>{'removed_images': removedImages},
+      );
+    AppLogger.event('WebHost', 'document_clear_all');
     await _writeJson(request, <String, Object?>{
       'ok': true,
       'result': clearPayload,
@@ -808,6 +909,245 @@ class LocalWebHostService {
     return <String, dynamic>{};
   }
 
+  Future<String> _readTextBody(HttpRequest request) async {
+    return (await utf8.decoder.bind(request).join()).trim();
+  }
+
+  _ParsedImportBundle _parseImportBundle(String rawText) {
+    final normalizedRawText = rawText.startsWith('\ufeff')
+        ? rawText.substring(1)
+        : rawText;
+    final decoded = jsonDecode(normalizedRawText);
+    if (decoded is! Map) {
+      throw Exception('File import không đúng định dạng JSON object.');
+    }
+
+    final parsed = Map<String, dynamic>.from(decoded);
+    final schema = (parsed['schema'] ?? '').toString().trim();
+    if (schema != 'voicebot_webhost_export_v2') {
+      throw Exception('File import không đúng schema hỗ trợ.');
+    }
+
+    final rawDocs = parsed['documents'];
+    final docs = rawDocs is List ? rawDocs : const <dynamic>[];
+    final normalizedDocs = docs
+        .whereType<Map>()
+        .map((doc) => Map<String, dynamic>.from(doc))
+        .map((doc) {
+          final meta = doc['meta'];
+          final text = _extractImportDocumentText(doc);
+          return <String, Object?>{
+            'name': (doc['name'] ?? '').toString().trim(),
+            'text': text,
+            'folder': (doc['folder'] ??
+                    (meta is Map ? meta['folder'] : null) ??
+                    '')
+                .toString()
+                .trim(),
+          };
+        })
+        .where((doc) {
+          final name = (doc['name'] ?? '').toString();
+          final text = (doc['text'] ?? '').toString();
+          return name.isNotEmpty && text.isNotEmpty;
+        })
+        .toList(growable: false);
+
+    if (normalizedDocs.isEmpty) {
+      final sampleKeys = docs.isNotEmpty && docs.first is Map
+          ? (docs.first as Map).keys.map((key) => key.toString()).join(', ')
+          : 'none';
+      throw Exception(
+        'File import không có tài liệu hợp lệ. raw_documents=${docs.length}, sample_keys=$sampleKeys',
+      );
+    }
+
+    final rawImages = parsed['images'];
+    final images = rawImages is List ? rawImages : const <dynamic>[];
+    final normalizedImages = images
+        .whereType<Map>()
+        .map((img) => Map<String, dynamic>.from(img))
+        .map((img) => <String, Object?>{
+          'doc_name': (img['doc_name'] ?? img['name'] ?? '').toString().trim(),
+          'file_name':
+              ((img['file_name'] ?? 'image').toString().trim().isEmpty
+                  ? 'image'
+                  : (img['file_name'] ?? 'image').toString().trim()),
+          'mime_type': (img['mime_type'] ?? '').toString().trim(),
+          'caption': img['caption'],
+          'data_base64': (img['data_base64'] ?? img['data'] ?? '')
+              .toString()
+              .trim(),
+        })
+        .where((img) {
+          final docName = (img['doc_name'] ?? '').toString();
+          final dataBase64 = (img['data_base64'] ?? '').toString();
+          return docName.isNotEmpty && dataBase64.isNotEmpty;
+        })
+        .toList(growable: false);
+
+    final hasFolderState = parsed.containsKey('folderState');
+    final folderState = hasFolderState
+        ? _normalizeImportFolderState(parsed['folderState'])
+        : _buildFallbackImportFolderState(normalizedDocs);
+    final noteTagState = _normalizeImportTagState(parsed['noteTagState']);
+    final uiState = parsed['uiState'];
+    final viewMode = ((uiState is Map ? uiState['viewMode'] : null) ?? 'text')
+        .toString()
+        .trim();
+
+    return _ParsedImportBundle(
+      documents: normalizedDocs,
+      images: normalizedImages,
+      folderState: folderState,
+      hasFolderState: hasFolderState,
+      noteTagState: noteTagState,
+      viewMode: viewMode == 'kdoc' ? 'kdoc' : 'text',
+    );
+  }
+
+  String _extractImportDocumentText(Map<String, dynamic> doc) {
+    final document = doc['document'];
+    final data = doc['data'];
+    final candidates = <Object?>[
+      doc['content'],
+      doc['text'],
+      document is Map ? document['content'] : null,
+      document is Map ? document['text'] : null,
+      data is Map ? data['content'] : null,
+      data is Map ? data['text'] : null,
+    ];
+    for (final candidate in candidates) {
+      final value = candidate?.toString().trim() ?? '';
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  Map<String, Object?> _normalizeImportFolderState(Object? raw) {
+    final normalized = <String, Object?>{
+      'folders': <String>['Mặc định'],
+      'assignments': <String, String>{},
+    };
+    if (raw is! Map) {
+      return normalized;
+    }
+
+    final folders = (normalized['folders'] as List<String>);
+    final rawFolders = raw['folders'];
+    if (rawFolders is List) {
+      for (final entry in rawFolders) {
+        final folder = _sanitizeImportFolderName(entry);
+        if (folder.isEmpty || folder == 'Tất cả' || folders.contains(folder)) {
+          continue;
+        }
+        folders.add(folder);
+      }
+    }
+
+    final assignments =
+        (normalized['assignments'] as Map<String, String>);
+    final rawAssignments = raw['assignments'];
+    if (rawAssignments is Map) {
+      for (final entry in rawAssignments.entries) {
+        final docName = entry.key.toString().trim();
+        final folder = _sanitizeImportFolderName(entry.value);
+        if (docName.isEmpty || folder.isEmpty) {
+          continue;
+        }
+        if (!folders.contains(folder)) {
+          folders.add(folder);
+        }
+        assignments[docName] = folder;
+      }
+    }
+
+    return normalized;
+  }
+
+  Map<String, Object?> _buildFallbackImportFolderState(
+    List<Map<String, Object?>> docs,
+  ) {
+    final fallback = <String, Object?>{
+      'folders': <String>['Mặc định'],
+      'assignments': <String, String>{},
+    };
+    final folders = fallback['folders'] as List<String>;
+    final assignments = fallback['assignments'] as Map<String, String>;
+    for (final doc in docs) {
+      final name = (doc['name'] ?? '').toString().trim();
+      final folder = _sanitizeImportFolderName(doc['folder']);
+      if (name.isEmpty) {
+        continue;
+      }
+      if (folder.isNotEmpty && folder != 'Tất cả') {
+        if (!folders.contains(folder)) {
+          folders.add(folder);
+        }
+        assignments[name] = folder;
+      } else {
+        assignments[name] = 'Mặc định';
+      }
+    }
+    return fallback;
+  }
+
+  Map<String, List<String>> _normalizeImportTagState(Object? raw) {
+    final normalized = <String, List<String>>{};
+    if (raw is! Map) {
+      return normalized;
+    }
+    for (final entry in raw.entries) {
+      final docName = entry.key.toString().trim();
+      if (docName.isEmpty) {
+        continue;
+      }
+      normalized[docName] = _normalizeImportTagList(entry.value);
+    }
+    return normalized;
+  }
+
+  List<String> _normalizeImportTagList(Object? raw) {
+    if (raw is! List) {
+      return const <String>[];
+    }
+    final unique = <String>[];
+    for (final entry in raw) {
+      final tag = _sanitizeImportTag(entry);
+      if (tag.isEmpty) {
+        continue;
+      }
+      final exists = unique.any(
+        (item) => item.toLowerCase() == tag.toLowerCase(),
+      );
+      if (!exists) {
+        unique.add(tag);
+      }
+      if (unique.length >= 8) {
+        break;
+      }
+    }
+    return unique;
+  }
+
+  String _sanitizeImportFolderName(Object? raw) {
+    final normalized = raw.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.length <= 48) {
+      return normalized;
+    }
+    return normalized.substring(0, 48);
+  }
+
+  String _sanitizeImportTag(Object? raw) {
+    final normalized = raw.toString().trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (normalized.length <= 32) {
+      return normalized;
+    }
+    return normalized.substring(0, 32);
+  }
+
   String _guessMimeTypeFromFileName(String fileName) {
     final lowered = fileName.toLowerCase();
     if (lowered.endsWith('.jpg') || lowered.endsWith('.jpeg')) {
@@ -1012,6 +1352,7 @@ class LocalWebHostService {
   }
 
   Future<void> _writeHtml(HttpRequest request, String html) async {
+    _applyNoStoreHeaders(request.response);
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.contentType = ContentType.html
@@ -1020,6 +1361,7 @@ class LocalWebHostService {
   }
 
   Future<void> _writeCss(HttpRequest request, String css) async {
+    _applyNoStoreHeaders(request.response);
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.set(HttpHeaders.contentTypeHeader, 'text/css; charset=utf-8')
@@ -1028,6 +1370,7 @@ class LocalWebHostService {
   }
 
   Future<void> _writeJavaScript(HttpRequest request, String script) async {
+    _applyNoStoreHeaders(request.response);
     request.response
       ..statusCode = HttpStatus.ok
       ..headers.set(
@@ -1061,6 +1404,7 @@ class LocalWebHostService {
     Map<String, Object?> data, {
     int statusCode = HttpStatus.ok,
   }) async {
+    _applyNoStoreHeaders(request.response);
     request.response
       ..statusCode = statusCode
       ..headers.contentType = ContentType.json
@@ -1074,9 +1418,10 @@ class LocalWebHostService {
       cached: _indexTemplateCache,
       assign: (value) => _indexTemplateCache = value,
     );
-    final url = _state.url ?? 'unknown';
+    final url = _state.externalUrl ?? _state.loopbackUrl ?? 'unknown';
     return template
         .replaceAll('{{WEB_HOST_URL}}', url)
+        .replaceAll('{{ASSET_VERSION}}', _assetVersionToken)
         .replaceAll(
           '{{MAX_IMAGE_UPLOAD_MB}}',
           AppConfig.webHostImageUploadMaxMb.toString(),
@@ -1097,8 +1442,10 @@ class LocalWebHostService {
       cached: _managerTemplateCache,
       assign: (value) => _managerTemplateCache = value,
     );
-    final url = _state.url ?? 'unknown';
-    return template.replaceAll('{{WEB_HOST_URL}}', url);
+    final url = _state.externalUrl ?? _state.loopbackUrl ?? 'unknown';
+    return template
+        .replaceAll('{{WEB_HOST_URL}}', url)
+        .replaceAll('{{ASSET_VERSION}}', _assetVersionToken);
   }
 
   Future<String> _consoleJs() async {
@@ -1171,6 +1518,13 @@ class LocalWebHostService {
       _stateController.add(next);
     }
   }
+
+  void _applyNoStoreHeaders(HttpResponse response) {
+    response.headers
+      ..set(HttpHeaders.cacheControlHeader, 'no-store, no-cache, must-revalidate')
+      ..set(HttpHeaders.pragmaHeader, 'no-cache')
+      ..set(HttpHeaders.expiresHeader, '0');
+  }
 }
 
 class _ImageUploadRequest {
@@ -1207,6 +1561,24 @@ class _ImageUploadFileRequest {
   final String? caption;
 }
 
+class _ParsedImportBundle {
+  const _ParsedImportBundle({
+    required this.documents,
+    required this.images,
+    required this.folderState,
+    required this.hasFolderState,
+    required this.noteTagState,
+    required this.viewMode,
+  });
+
+  final List<Map<String, Object?>> documents;
+  final List<Map<String, Object?>> images;
+  final Map<String, Object?> folderState;
+  final bool hasFolderState;
+  final Map<String, List<String>> noteTagState;
+  final String viewMode;
+}
+
 class LocalWebHostState {
   const LocalWebHostState._({
     required this.isRunning,
@@ -1235,6 +1607,25 @@ class LocalWebHostState {
   final String? message;
 
   String? get url {
+    return loopbackUrl;
+  }
+
+  String? get loopbackUrl {
+    if (!isRunning || port == null) {
+      return null;
+    }
+    return 'http://127.0.0.1:$port';
+  }
+
+  Uri? get loopbackUri {
+    final raw = loopbackUrl;
+    if (raw == null) {
+      return null;
+    }
+    return Uri.parse('$raw/');
+  }
+
+  String? get externalUrl {
     if (!isRunning || ip == null || port == null) {
       return null;
     }

@@ -25,10 +25,12 @@ class ChatRepositoryImpl implements ChatRepository {
   ChatRepositoryImpl({
     required SessionCoordinator sessionCoordinator,
     Uri? Function()? webHostBaseUriResolver,
+    LocalWebHostState Function()? webHostStateResolver,
     Future<Map<String, dynamic>?> Function(Map<String, dynamic> payload)?
     mcpHandleMessage,
   }) : _sessionCoordinator = sessionCoordinator,
        _webHostBaseUriResolver = webHostBaseUriResolver,
+       _webHostStateResolver = webHostStateResolver,
        _mcpHandleMessage =
            mcpHandleMessage ??
            ((payload) => McpServer.shared.handleMessage(
@@ -47,6 +49,7 @@ class ChatRepositoryImpl implements ChatRepository {
 
   final SessionCoordinator _sessionCoordinator;
   final Uri? Function()? _webHostBaseUriResolver;
+  final LocalWebHostState Function()? _webHostStateResolver;
   final Future<Map<String, dynamic>?> Function(Map<String, dynamic> payload)
   _mcpHandleMessage;
   final StreamController<ChatResponse> _responsesController;
@@ -2168,21 +2171,9 @@ ${_buildKnowledgeAnswerGuidance(queryAnalysis)}
     if (injected != null) {
       return injected;
     }
-    final state = LocalWebHostService.instance.state;
-    final rawUrl = state.url;
-    if (!state.isRunning || rawUrl == null || rawUrl.trim().isEmpty) {
-      return null;
-    }
-    final parsed = Uri.tryParse(rawUrl.trim());
-    if (parsed == null || parsed.scheme.isEmpty) {
-      return null;
-    }
-    return Uri(
-      scheme: parsed.scheme,
-      host: '127.0.0.1',
-      port: parsed.hasPort ? parsed.port : null,
-      path: '/',
-    );
+    final state =
+        _webHostStateResolver?.call() ?? LocalWebHostService.instance.state;
+    return state.loopbackUri;
   }
 
   String? _resolveLocalImageUrl(String rawUrl, Uri baseUri) {
