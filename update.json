@@ -1,9 +1,9 @@
 {
-  "latestVersion": "1.0.5",
+  "latestVersion": "1.0.6",
   "latestVersionCode": 0,
-  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.5/app-release.apk",
-  "releaseNotes": "Update to version 1.0.5",
-  "commitMessage": "build: bump app version to 1.0.5",
+  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.6/app-release.apk",
+  "releaseNotes": "Update to version 1.0.6",
+  "commitMessage": "fix: harden local web import flow and bump version 1.0.6",
   "mandatory": false,
-  "releasedAt": "2026-03-15T15:04:22Z"
+  "releasedAt": "2026-03-17T12:27:51Z"
 }
