@@ -1,3 +1,10 @@
+# =============================================================================
+# VoiceBot Default Settings
+# =============================================================================
+# Cấu hình mặc định cho ứng dụng VoiceBot
+# Chỉnh sửa file này để thay đổi các thông số mặc định
+# =============================================================================
+
 theme:
   # [light, dark, system]: Chế độ sáng/tối mặc định của app.
   mode: system
@@ -28,6 +35,30 @@ audio:
   # [1..20]: Số frame tối đa trong buffer.
   max_buffer_frames: 10
 
+app:
+  # [true, false]: Chế độ full screen.
+  fullscreen_enabled: true
+  # [true, false]: Bật kiểm tra/yêu cầu quyền.
+  permissions_enabled: true
+  # [true, false]: Bật tính năng auth.
+  auth_enabled: false
+  # [true, false]: Sử dụng flow mới (v2).
+  use_new_flow: true
+
+github:
+  # [true, false]: Bật tự động kiểm tra update.
+  auto_update_enabled: true
+  # [string]: Tên owner repo GitHub.
+  owner: "baolongdev"
+  # [string]: Tên repo GitHub.
+  repo: "voicebot"
+  # [string]: Tên file asset chứa .apk.
+  asset_extension: ".apk"
+
+web_host:
+  # [1..500]: Kích thước upload tối đa (MB).
+  image_upload_max_mb: 100
+
 chat:
   # [always_on, auto_stop, manual]: Chế độ nghe mặc định.
   listening_mode: auto_stop
@@ -37,6 +68,18 @@ chat:
   connect_greeting: "Xin chào"
   # [true, false]: Tự reconnect khi mất kết nối.
   auto_reconnect: true
+  # [true, false]: Bật tính năng related images.
+  related_images_enabled: true
+  # [1..10]: Số related images tối đa.
+  related_images_max_count: 4
+  # [1..10]: Số images search top k.
+  related_images_search_top_k: 3
+  # [true, false]: Bật animation cho related images.
+  related_images_animation_enabled: true
+
+home:
+  # [1..20]: Số carousel images tối đa.
+  carousel_max_images: 8
 
 camera:
   # [true, false]: Bật/tắt camera overlay.
@@ -65,12 +108,6 @@ carousel:
   viewport_fraction: 0.7
   # [true, false]: Phóng to item ở giữa.
   enlarge_center: true
-
-app:
-  # [true, false]: Chế độ full screen.
-  fullscreen_enabled: true
-  # [true, false]: Bật kiểm tra/yêu cầu quyền.
-  permissions_enabled: true
 
 device:
   # [MAC string]: MAC mặc định cho OTA/device identity.

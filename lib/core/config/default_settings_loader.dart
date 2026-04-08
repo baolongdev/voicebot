@@ -56,6 +56,9 @@ class DefaultSettingsLoader {
       carousel: _parseCarousel(root['carousel'], fallback.carousel),
       app: _parseApp(root['app'], fallback.app),
       device: _parseDevice(root['device'], fallback.device),
+      github: _parseGitHub(root['github'], fallback.github),
+      webHost: _parseWebHost(root['web_host'], fallback.webHost),
+      home: _parseHome(root['home'], fallback.home),
     );
   }
 
@@ -117,6 +120,18 @@ class DefaultSettingsLoader {
       connectGreeting:
           _asString(map['connect_greeting']) ?? fallback.connectGreeting,
       autoReconnect: _asBool(map['auto_reconnect']) ?? fallback.autoReconnect,
+      relatedImagesEnabled:
+          _asBool(map['related_images_enabled']) ??
+          fallback.relatedImagesEnabled,
+      relatedImagesMaxCount:
+          _asInt(map['related_images_max_count'])?.clamp(1, 10) ??
+          fallback.relatedImagesMaxCount,
+      relatedImagesSearchTopK:
+          _asInt(map['related_images_search_top_k'])?.clamp(1, 10) ??
+          fallback.relatedImagesSearchTopK,
+      relatedImagesAnimationEnabled:
+          _asBool(map['related_images_animation_enabled']) ??
+          fallback.relatedImagesAnimationEnabled,
     );
   }
 
@@ -170,6 +185,8 @@ class DefaultSettingsLoader {
           _asBool(map['fullscreen_enabled']) ?? fallback.fullscreenEnabled,
       permissionsEnabled:
           _asBool(map['permissions_enabled']) ?? fallback.permissionsEnabled,
+      authEnabled: _asBool(map['auth_enabled']) ?? fallback.authEnabled,
+      useNewFlow: _asBool(map['use_new_flow']) ?? fallback.useNewFlow,
     );
   }
 
@@ -181,6 +198,45 @@ class DefaultSettingsLoader {
     final mac = _asString(map['default_mac_address']);
     return DeviceDefaultSettings(
       defaultMacAddress: mac ?? fallback.defaultMacAddress,
+    );
+  }
+
+  static GitHubDefaultSettings _parseGitHub(
+    Object? raw,
+    GitHubDefaultSettings fallback,
+  ) {
+    final map = _asMap(raw);
+    return GitHubDefaultSettings(
+      autoUpdateEnabled:
+          _asBool(map['auto_update_enabled']) ?? fallback.autoUpdateEnabled,
+      owner: _asString(map['owner']) ?? fallback.owner,
+      repo: _asString(map['repo']) ?? fallback.repo,
+      assetExtension:
+          _asString(map['asset_extension']) ?? fallback.assetExtension,
+    );
+  }
+
+  static WebHostDefaultSettings _parseWebHost(
+    Object? raw,
+    WebHostDefaultSettings fallback,
+  ) {
+    final map = _asMap(raw);
+    return WebHostDefaultSettings(
+      imageUploadMaxMb:
+          _asInt(map['image_upload_max_mb'])?.clamp(1, 500) ??
+          fallback.imageUploadMaxMb,
+    );
+  }
+
+  static HomeDefaultSettings _parseHome(
+    Object? raw,
+    HomeDefaultSettings fallback,
+  ) {
+    final map = _asMap(raw);
+    return HomeDefaultSettings(
+      carouselMaxImages:
+          _asInt(map['carousel_max_images'])?.clamp(1, 20) ??
+          fallback.carouselMaxImages,
     );
   }
 

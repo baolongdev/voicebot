@@ -1,56 +1,70 @@
+import 'default_settings.dart';
+
 class AppConfig {
-  const AppConfig._();
+  AppConfig._();
 
-  // Temporary switch for feature development; set to true to re-enable auth.
-  static const bool authEnabled = false;
+  static bool get authEnabled =>
+      DefaultSettingsRegistry.current.app.authEnabled;
 
-  // Fullscreen toggle for app-level system UI control.
-  static const bool fullscreenEnabled = true;
+  static bool get fullscreenEnabled =>
+      DefaultSettingsRegistry.current.app.fullscreenEnabled;
 
-  // Permission flow toggle for development; set to true to enable checks/requests.
-  static const bool permissionsEnabled = true;
+  static bool get permissionsEnabled =>
+      DefaultSettingsRegistry.current.app.permissionsEnabled;
 
-  // Feature flag for new v2 flow entry.
-  static const bool useNewFlow = true;
+  static bool get useNewFlow => DefaultSettingsRegistry.current.app.useNewFlow;
 
-  // Default text sent right after connection succeeds.
-  static const String connectGreetingDefault = 'Xin chào';
-  static const bool autoReconnectEnabledDefault = true;
+  static String get connectGreetingDefault =>
+      DefaultSettingsRegistry.current.chat.connectGreeting;
 
-  // Default MAC address used for OTA/device identity when set.
-  // Leave empty to use platform/device-derived MAC.
-  static const String defaultMacAddress = '02:00:00:00:00:12';
+  static bool get autoReconnectEnabledDefault =>
+      DefaultSettingsRegistry.current.chat.autoReconnect;
 
-  // Max upload size for each web-host document image.
-  static const int webHostImageUploadMaxMb = 100;
-  static const int webHostImageUploadMaxBytes =
+  static String get defaultMacAddress =>
+      DefaultSettingsRegistry.current.device.defaultMacAddress;
+
+  static int get webHostImageUploadMaxMb =>
+      DefaultSettingsRegistry.current.webHost.imageUploadMaxMb;
+
+  static int get webHostImageUploadMaxBytes =>
       webHostImageUploadMaxMb * 1024 * 1024;
 
-  // Chat related-images block toggles.
-  static const bool chatRelatedImagesEnabled = true;
-  static const int chatRelatedImagesMaxCount = 4;
-  static const int chatRelatedImagesSearchTopK = 3;
-  static const bool chatRelatedImagesAnimationEnabled = true;
+  static bool get chatRelatedImagesEnabled =>
+      DefaultSettingsRegistry.current.chat.relatedImagesEnabled;
 
-  // Home carousel images pulled from MCP (limit per fetch).
-  static const int homeCarouselMaxImages = 8;
+  static int get chatRelatedImagesMaxCount =>
+      DefaultSettingsRegistry.current.chat.relatedImagesMaxCount;
 
-  // Timeout for local web-host calls used by chat related-images lookup.
+  static int get chatRelatedImagesSearchTopK =>
+      DefaultSettingsRegistry.current.chat.relatedImagesSearchTopK;
+
+  static bool get chatRelatedImagesAnimationEnabled =>
+      DefaultSettingsRegistry.current.chat.relatedImagesAnimationEnabled;
+
+  static int get homeCarouselMaxImages =>
+      DefaultSettingsRegistry.current.home.carouselMaxImages;
+
   static const int chatRelatedImagesRequestTimeoutMs = 2500;
 
-  // GitHub auto-update configuration (Android).
-  static const bool githubAutoUpdateEnabled = true;
-  static const String githubOwner = 'baolongdev';
-  static const String githubRepo = 'voicebot';
+  static bool get githubAutoUpdateEnabled =>
+      DefaultSettingsRegistry.current.github.autoUpdateEnabled;
+
+  static String get githubOwner => DefaultSettingsRegistry.current.github.owner;
+
+  static String get githubRepo => DefaultSettingsRegistry.current.github.repo;
+
   static const String githubAssetNameContains = '';
-  static const String githubAssetExtension = '.apk';
+
+  static String get githubAssetExtension =>
+      DefaultSettingsRegistry.current.github.assetExtension;
+
   static const int githubUpdateCheckTimeoutMs = 20000;
   static const int githubDownloadTimeoutMs = 120000;
   static const String githubToken = String.fromEnvironment(
     'GITHUB_TOKEN',
     defaultValue: '',
   );
-  // update.json URL (raw) - used to check latest version info.
+
   static const String githubUpdateJsonUrl =
       'https://raw.githubusercontent.com/baolongdev/voicebot/refs/heads/main/update.json';
 }

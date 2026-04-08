@@ -25,6 +25,9 @@ class DefaultSettings {
     required this.carousel,
     required this.app,
     required this.device,
+    required this.github,
+    required this.webHost,
+    required this.home,
   });
 
   final ThemeDefaultSettings theme;
@@ -35,6 +38,9 @@ class DefaultSettings {
   final CarouselDefaultSettings carousel;
   final AppDefaultSettings app;
   final DeviceDefaultSettings device;
+  final GitHubDefaultSettings github;
+  final WebHostDefaultSettings webHost;
+  final HomeDefaultSettings home;
 
   static const DefaultSettings fallback = DefaultSettings(
     theme: ThemeDefaultSettings(
@@ -60,6 +66,10 @@ class DefaultSettings {
       textSendMode: TextSendMode.listenDetect,
       connectGreeting: 'Xin chào',
       autoReconnect: true,
+      relatedImagesEnabled: true,
+      relatedImagesMaxCount: 4,
+      relatedImagesSearchTopK: 3,
+      relatedImagesAnimationEnabled: true,
     ),
     camera: CameraDefaultSettings(
       enabled: true,
@@ -77,8 +87,21 @@ class DefaultSettings {
       viewportFraction: 0.7,
       enlargeCenter: true,
     ),
-    app: AppDefaultSettings(fullscreenEnabled: true, permissionsEnabled: true),
+    app: AppDefaultSettings(
+      fullscreenEnabled: true,
+      permissionsEnabled: true,
+      authEnabled: false,
+      useNewFlow: true,
+    ),
     device: DeviceDefaultSettings(defaultMacAddress: '02:00:00:00:00:12'),
+    github: GitHubDefaultSettings(
+      autoUpdateEnabled: true,
+      owner: 'baolongdev',
+      repo: 'voicebot',
+      assetExtension: '.apk',
+    ),
+    webHost: WebHostDefaultSettings(imageUploadMaxMb: 100),
+    home: HomeDefaultSettings(carouselMaxImages: 8),
   );
 }
 
@@ -130,12 +153,20 @@ class ChatDefaultSettings {
     required this.textSendMode,
     required this.connectGreeting,
     required this.autoReconnect,
+    required this.relatedImagesEnabled,
+    required this.relatedImagesMaxCount,
+    required this.relatedImagesSearchTopK,
+    required this.relatedImagesAnimationEnabled,
   });
 
   final ListeningMode listeningMode;
   final TextSendMode textSendMode;
   final String connectGreeting;
   final bool autoReconnect;
+  final bool relatedImagesEnabled;
+  final int relatedImagesMaxCount;
+  final int relatedImagesSearchTopK;
+  final bool relatedImagesAnimationEnabled;
 }
 
 class CameraDefaultSettings {
@@ -178,10 +209,40 @@ class AppDefaultSettings {
   const AppDefaultSettings({
     required this.fullscreenEnabled,
     required this.permissionsEnabled,
+    required this.authEnabled,
+    required this.useNewFlow,
   });
 
   final bool fullscreenEnabled;
   final bool permissionsEnabled;
+  final bool authEnabled;
+  final bool useNewFlow;
+}
+
+class GitHubDefaultSettings {
+  const GitHubDefaultSettings({
+    required this.autoUpdateEnabled,
+    required this.owner,
+    required this.repo,
+    required this.assetExtension,
+  });
+
+  final bool autoUpdateEnabled;
+  final String owner;
+  final String repo;
+  final String assetExtension;
+}
+
+class WebHostDefaultSettings {
+  const WebHostDefaultSettings({required this.imageUploadMaxMb});
+
+  final int imageUploadMaxMb;
+}
+
+class HomeDefaultSettings {
+  const HomeDefaultSettings({required this.carouselMaxImages});
+
+  final int carouselMaxImages;
 }
 
 class DeviceDefaultSettings {

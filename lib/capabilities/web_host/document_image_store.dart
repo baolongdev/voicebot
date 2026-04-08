@@ -6,12 +6,11 @@ import 'dart:typed_data';
 import '../../core/config/app_config.dart';
 
 class DocumentImageStore {
-  DocumentImageStore({
-    required Directory rootDirectory,
-    this.maxFileBytes = defaultMaxFileBytes,
-  }) : _rootDirectory = rootDirectory;
+  DocumentImageStore({required Directory rootDirectory, int? maxFileBytes})
+    : _rootDirectory = rootDirectory,
+      maxFileBytes = maxFileBytes ?? defaultMaxFileBytes;
 
-  static const int defaultMaxFileBytes = AppConfig.webHostImageUploadMaxBytes;
+  static final int defaultMaxFileBytes = AppConfig.webHostImageUploadMaxBytes;
 
   final Directory _rootDirectory;
   final int maxFileBytes;
@@ -30,11 +29,15 @@ class DocumentImageStore {
     if (!await _rootDirectory.exists()) {
       await _rootDirectory.create(recursive: true);
     }
-    _filesDirectory = Directory('${_rootDirectory.path}${Platform.pathSeparator}files');
+    _filesDirectory = Directory(
+      '${_rootDirectory.path}${Platform.pathSeparator}files',
+    );
     if (!await _filesDirectory!.exists()) {
       await _filesDirectory!.create(recursive: true);
     }
-    _metaFile = File('${_rootDirectory.path}${Platform.pathSeparator}images_meta.json');
+    _metaFile = File(
+      '${_rootDirectory.path}${Platform.pathSeparator}images_meta.json',
+    );
     await _load();
     _isInitialized = true;
   }
@@ -55,13 +58,17 @@ class DocumentImageStore {
       throw Exception('File ảnh trống.');
     }
     if (bytes.length > maxFileBytes) {
-      throw Exception('Kích thước ảnh vượt quá giới hạn ${maxFileBytes ~/ (1024 * 1024)}MB.');
+      throw Exception(
+        'Kích thước ảnh vượt quá giới hạn ${maxFileBytes ~/ (1024 * 1024)}MB.',
+      );
     }
 
     final safeMime = mimeType.trim().toLowerCase();
     final safeFileName = _sanitizeFileName(fileName);
-    final extension =
-        _resolveExtension(fileName: safeFileName, mimeType: safeMime);
+    final extension = _resolveExtension(
+      fileName: safeFileName,
+      mimeType: safeMime,
+    );
     final id =
         '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
     final storageFileName = '$id$extension';
@@ -112,8 +119,10 @@ class DocumentImageStore {
 
     final safeMime = mimeType.trim().toLowerCase();
     final safeFileName = _sanitizeFileName(fileName);
-    final extension =
-        _resolveExtension(fileName: safeFileName, mimeType: safeMime);
+    final extension = _resolveExtension(
+      fileName: safeFileName,
+      mimeType: safeMime,
+    );
     final id =
         '${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
     final storageFileName = '$id$extension';
@@ -144,16 +153,17 @@ class DocumentImageStore {
     return _toPublicMap(image);
   }
 
-  Future<List<Map<String, Object?>>> listImagesByDocument(String docName) async {
+  Future<List<Map<String, Object?>>> listImagesByDocument(
+    String docName,
+  ) async {
     await initialize();
     final safeDocName = docName.trim();
     if (safeDocName.isEmpty) {
       return <Map<String, Object?>>[];
     }
-    final items = _imagesById.values
-        .where((item) => item.docName == safeDocName)
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final items =
+        _imagesById.values.where((item) => item.docName == safeDocName).toList()
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return items.map(_toPublicMap).toList();
   }
 
