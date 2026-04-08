@@ -2017,66 +2017,7 @@ ${_buildKnowledgeAnswerGuidance(queryAnalysis)}
     };
   }
 
-  String? _extractDelimitedSection({
-    required List<String> lines,
-    required int anchorIndex,
-  }) {
-    if (lines.isEmpty || anchorIndex < 0 || anchorIndex >= lines.length) {
-      return null;
-    }
-
-    final separators = <int>[];
-    for (var i = 0; i < lines.length; i++) {
-      if (_isSeparatorLine(lines[i])) {
-        separators.add(i);
-      }
-    }
-    if (separators.length < 2) {
-      return null;
-    }
-
-    int? prevSep;
-    for (final sep in separators) {
-      if (sep <= anchorIndex) {
-        prevSep = sep;
-      } else {
-        break;
-      }
-    }
-    if (prevSep == null) {
-      return null;
-    }
-
-    var start = prevSep;
-    final prevSepPos = separators.indexOf(prevSep);
-    if (prevSepPos > 0 && prevSep - separators[prevSepPos - 1] <= 4) {
-      start = separators[prevSepPos - 1];
-    }
-
-    int? firstAfterStart;
-    int? secondAfterStart;
-    for (final sep in separators) {
-      if (sep <= start) {
-        continue;
-      }
-      if (firstAfterStart == null) {
-        firstAfterStart = sep;
-        continue;
-      }
-      secondAfterStart = sep;
-      break;
-    }
-
-    if (firstAfterStart == null) {
-      return null;
-    }
-    final end = (secondAfterStart ?? lines.length) - 1;
-    if (end <= start) {
-      return null;
-    }
-
-    return lines.sublist(start, end + 1).join('\n');
-  }
+  // End of class
 
   bool _isSeparatorLine(String line) {
     final trimmed = line.trim();
