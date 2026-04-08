@@ -19,6 +19,15 @@
   - **presentation**: ForUI-based pages (home/form/auth/chat/activation) plus widgets.
   - **routing**: go_router with guards for auth/permissions; splash/auth/home/form/activation/chat routes.
   - **system**: OTA implementation, permissions cubit/view, platform wrappers.
+- **Dependencies Added (v1.0.6)**:
+  - **State Management**: flutter_bloc (built-in), flutter_riverpod ^2.6.1
+  - **Networking**: dio ^5.7.0, pretty_dio_logger ^1.4.0
+  - **Utilities**: intl ^0.20.1, uuid ^4.5.1, equatable ^2.0.7, logger ^2.5.0, dartz ^0.10.1
+  - **Logging Config**: Controlled via YAML (`assets/config/default_settings.yaml`)
+- **Logging System**:
+  - `AppLog` class với structured logging
+  - Cấu hình qua YAML: verbose, log_audio, log_mcp, log_websocket, log_network
+  - PrettyDioLogger cho network requests
 - Clean Architecture chosen to isolate protocols/audio from UI, enable swapping WebSocket ↔ MQTT/UDP and plugging platform services (OTA, permissions) without touching widgets.
 
 ### 2.1 Branch Naming Convention

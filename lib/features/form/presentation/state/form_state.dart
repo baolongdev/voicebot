@@ -58,10 +58,9 @@ class FormUiState {
   const FormUiState.loading() : this._(FormUiStatus.loading, null);
 
   const FormUiState.success(String message)
-      : this._(FormUiStatus.success, message);
+    : this._(FormUiStatus.success, message);
 
-  const FormUiState.error(String message)
-      : this._(FormUiStatus.error, message);
+  const FormUiState.error(String message) : this._(FormUiStatus.error, message);
 
   final FormUiStatus status;
   final String? message;
@@ -113,10 +112,10 @@ class FormBloc extends Bloc<FormEvent, FormState> {
     required ValidateFormUseCase validateForm,
     required SubmitFormUseCase submitForm,
     required FormRepository repository,
-  })  : _validateForm = validateForm,
-        _submitForm = submitForm,
-        _repository = repository,
-        super(FormState.initial()) {
+  }) : _validateForm = validateForm,
+       _submitForm = submitForm,
+       _repository = repository,
+       super(FormState.initial()) {
     on<FormServerTypeChanged>(_onServerTypeChanged);
     on<FormXiaoZhiConfigChanged>(_onXiaoZhiConfigChanged);
     on<FormSelfHostConfigChanged>(_onSelfHostConfigChanged);
@@ -206,17 +205,16 @@ class FormBloc extends Bloc<FormEvent, FormState> {
     final result = await _submitForm(state.formData);
     emit(
       state.copyWith(
-        uiState: result.isSuccess
+        uiState: result.isRight()
             ? const FormUiState.success('Gửi thành công')
-            : const FormUiState.error('Gửi thất bại'),
+            : FormUiState.error(
+                result.fold((l) => l.message, (r) => 'Gửi thất bại'),
+              ),
       ),
     );
   }
 
-  void _onResultReceived(
-    FormResultReceived event,
-    Emitter<FormState> emit,
-  ) {
+  void _onResultReceived(FormResultReceived event, Emitter<FormState> emit) {
     emit(state.copyWith(lastResult: event.result));
     _logResult(event.result);
   }
@@ -234,9 +232,9 @@ class FormBloc extends Bloc<FormEvent, FormState> {
     AppLogger.log(
       'FormBloc',
       'submit type=${data.serverType}, '
-      'ws=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.webSocketUrl : data.selfHostConfig.webSocketUrl}, '
-      'qta=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.qtaUrl : '-'}, '
-      'transport=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.transportType : data.selfHostConfig.transportType}',
+          'ws=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.webSocketUrl : data.selfHostConfig.webSocketUrl}, '
+          'qta=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.qtaUrl : '-'}, '
+          'transport=${data.serverType == ServerType.xiaoZhi ? data.xiaoZhiConfig.transportType : data.selfHostConfig.transportType}',
     );
   }
 
@@ -249,9 +247,9 @@ class FormBloc extends Bloc<FormEvent, FormState> {
       AppLogger.log(
         'FormBloc',
         'result=xiaozhi '
-        'fw=${ota?.firmware?.version ?? '-'} '
-        'url=${ota?.firmware?.url ?? '-'} '
-        'activation=${ota?.activation?.code ?? '-'}',
+            'fw=${ota?.firmware?.version ?? '-'} '
+            'url=${ota?.firmware?.url ?? '-'} '
+            'activation=${ota?.activation?.code ?? '-'}',
       );
       return;
     }

@@ -1,22 +1,23 @@
+import 'package:dartz/dartz.dart';
 import '../../../../core/errors/failure.dart';
-import '../../../../core/result/result.dart';
 import '../repositories/form_repository.dart';
 import '../models/server_form_data.dart';
 
-// Ported from Android Kotlin: SubmitFormUseCase.kt
+typedef EitherFailure<R> = Either<Failure, R>;
+
 class SubmitFormUseCase {
   const SubmitFormUseCase(this._repository);
 
   final FormRepository _repository;
 
-  Future<Result<bool>> call(ServerFormData formData) async {
+  Future<EitherFailure<bool>> call(ServerFormData formData) async {
     try {
       await _repository.submitForm(formData);
-      return Result.success(true);
+      return right(true);
+    } on Failure catch (e) {
+      return left(e);
     } catch (e) {
-      return Result.failure(
-        Failure(message: e.toString()),
-      );
+      return left(ServerFailure(message: e.toString()));
     }
   }
 }

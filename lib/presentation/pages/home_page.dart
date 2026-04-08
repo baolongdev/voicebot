@@ -42,6 +42,7 @@ import '../../theme/theme_palette.dart';
 import '../../system/permissions/permission_notifier.dart';
 import '../../system/permissions/permission_state.dart';
 import '../widgets/home/emotion_palette.dart';
+import '../widgets/home/home_camera_overlay.dart';
 import '../widgets/home/home_content.dart';
 import '../widgets/home/home_footer.dart';
 import '../widgets/home/home_header.dart';
@@ -137,8 +138,148 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  bool _lastWasSpeakingLandscape = false;
+
   @override
   Widget build(BuildContext context) {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    if (isLandscape) {
+      final screenWidth = MediaQuery.of(context).size.width;
+      final screenHeight = MediaQuery.of(context).size.height;
+      final shortestSide = screenWidth < screenHeight
+          ? screenWidth
+          : screenHeight;
+      final fontSize = (shortestSide / 30).clamp(12.0, 20.0);
+      final padding = (shortestSide / 40).clamp(8.0, 24.0);
+      final cameraSize = (shortestSide / 3).clamp(120.0, 200.0);
+
+      if (!_cameraEnabled.value) {
+        _cameraEnabled.value = true;
+      }
+
+      final cameraAspectRatio = _cameraAspectRatio.value;
+
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: SafeArea(
+          child: BlocBuilder<HomeCubit, HomeState>(
+            builder: (context, homeState) {
+              return BlocBuilder<ChatCubit, ChatState>(
+                builder: (context, chatState) {
+                  final bool isSpeakingNow = chatState.isSpeaking;
+
+                  if (_lastWasSpeakingLandscape && !isSpeakingNow) {
+                    _playChime();
+                  }
+
+                  if (isSpeakingNow) {
+                    _lastWasSpeakingLandscape = true;
+                  } else if (chatState.outgoingLevel > 0.01) {
+                    _lastWasSpeakingLandscape = false;
+                  }
+
+                  return Stack(
+                    children: [
+                      Positioned(
+                        bottom: padding * 2,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: _buildEmotionSelector(
+                            chatState.currentEmotion,
+                            fontSize,
+                            padding,
+                          ),
+                        ),
+                      ),
+                      Column(
+                        children: [
+                          SizedBox(height: padding),
+                          SizedBox(
+                            width: double.infinity,
+                            child: Center(
+                              child: _buildConnectionStatusBadge(
+                                isConnected: homeState.isConnected,
+                                isConnecting: homeState.isConnecting,
+                                isSpeaking: chatState.isSpeaking,
+                                isListening: chatState.outgoingLevel > 0.01,
+                                fontSize: fontSize,
+                                padding: padding,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: EdgeInsets.all(padding),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(width: 80),
+                                SizedBox(
+                                  width: cameraSize,
+                                  height: cameraSize / cameraAspectRatio,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.black12,
+                                      border: Border.all(
+                                        color: Colors.white24,
+                                        width: 1,
+                                      ),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(7),
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          return Stack(
+                                            children: [
+                                              HomeCameraOverlay(
+                                                areaSize: Size(
+                                                  constraints.maxWidth,
+                                                  constraints.maxHeight,
+                                                ),
+                                                enabled: _cameraEnabled.value,
+                                                onEnabledChanged:
+                                                    _setCameraEnabled,
+                                                onFacePresenceChanged:
+                                                    _handleFacePresenceChanged,
+                                                detectFacesEnabled:
+                                                    _detectFacesEnabled.value,
+                                                aspectRatio: cameraAspectRatio,
+                                                faceLandmarksEnabled: false,
+                                                faceMeshEnabled: false,
+                                                eyeTrackingEnabled: false,
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Expanded(
+                            child: _buildChatMessagesList(
+                              chatState.messages,
+                              fontSize,
+                              padding,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      );
+    }
+
     return MultiBlocListener(
       listeners: [
         BlocListener<ListeningModeCubit, ListeningMode>(
@@ -1203,9 +1344,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (targetUri == null) {
       ScaffoldMessenger.of(sheetContext).showSnackBar(
-        SnackBar(
-          content: Text(hostState.message ?? 'Không thể mở local web.'),
-        ),
+        SnackBar(content: Text(hostState.message ?? 'Không thể mở local web.')),
       );
       return;
     }
@@ -1216,9 +1355,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!launched && sheetContext.mounted) {
       ScaffoldMessenger.of(sheetContext).showSnackBar(
-        SnackBar(
-          content: Text('Không thể mở trình duyệt cho $targetUri'),
-        ),
+        SnackBar(content: Text('Không thể mở trình duyệt cho $targetUri')),
       );
     }
   }
@@ -1338,5 +1475,175 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _faceConnectTimer?.cancel();
     _faceConnectTimer = null;
     _faceConnectProgress.value = null;
+  }
+
+  String _lastBadgeStatus = '';
+  DateTime? _badgeStatusChangedAt;
+
+  Widget _buildConnectionStatusBadge({
+    required bool isConnected,
+    required bool isConnecting,
+    required bool isSpeaking,
+    required bool isListening,
+    double fontSize = 14,
+    double padding = 16,
+  }) {
+    String text;
+    Color backgroundColor;
+
+    final now = DateTime.now();
+    final timeSinceChange = _badgeStatusChangedAt != null
+        ? now.difference(_badgeStatusChangedAt!).inMilliseconds
+        : 999999;
+
+    final newStatus = isListening
+        ? 'listening'
+        : isSpeaking
+        ? 'speaking'
+        : isConnecting
+        ? 'connecting'
+        : isConnected
+        ? 'connected'
+        : 'disconnected';
+
+    if (newStatus != _lastBadgeStatus && timeSinceChange < 500) {
+      if (_lastBadgeStatus == 'listening') {
+        text = 'Đang nói';
+        backgroundColor = Colors.purple.withValues(alpha: 0.8);
+      } else if (_lastBadgeStatus == 'speaking') {
+        text = 'Đang nghe';
+        backgroundColor = Colors.blue.withValues(alpha: 0.8);
+      } else if (_lastBadgeStatus == 'connecting') {
+        text = 'Đang kết nối';
+        backgroundColor = Colors.orange.withValues(alpha: 0.8);
+      } else if (_lastBadgeStatus == 'connected') {
+        text = 'Đã kết nối';
+        backgroundColor = Colors.green.withValues(alpha: 0.8);
+      } else {
+        text = 'Chưa kết nối';
+        backgroundColor = Colors.grey.withValues(alpha: 0.6);
+      }
+    } else {
+      if (newStatus != _lastBadgeStatus) {
+        _lastBadgeStatus = newStatus;
+        _badgeStatusChangedAt = now;
+      }
+
+      if (isListening) {
+        text = 'Đang nói';
+        backgroundColor = Colors.purple.withValues(alpha: 0.8);
+      } else if (isSpeaking) {
+        text = 'Đang nghe';
+        backgroundColor = Colors.blue.withValues(alpha: 0.8);
+      } else if (_lastWasSpeakingLandscape) {
+        text = 'Đang nói';
+        backgroundColor = Colors.purple.withValues(alpha: 0.8);
+      } else if (isConnecting) {
+        text = 'Đang kết nối';
+        backgroundColor = Colors.orange.withValues(alpha: 0.8);
+      } else if (isConnected) {
+        text = 'Đã kết nối';
+        backgroundColor = Colors.green.withValues(alpha: 0.8);
+      } else {
+        text = 'Chưa kết nối';
+        backgroundColor = Colors.grey.withValues(alpha: 0.6);
+      }
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: padding, vertical: padding / 2),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(padding * 1.25),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChatMessagesList(
+    List<ChatMessage> messages,
+    double fontSize,
+    double padding,
+  ) {
+    if (messages.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final latestMessage = messages.last;
+    final isUser = latestMessage.isUser;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(padding),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              isUser ? Icons.person : Icons.smart_toy,
+              color: isUser ? Colors.blue : Colors.purple,
+              size: fontSize * 1.2,
+            ),
+            SizedBox(width: padding / 2),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isUser ? 'Bạn' : 'Agent',
+                    style: TextStyle(
+                      color: isUser ? Colors.blue : Colors.purple,
+                      fontSize: fontSize * 0.8,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    latestMessage.text,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: Colors.white, fontSize: fontSize),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmotionSelector(
+    String? currentEmotion,
+    double fontSize,
+    double padding,
+  ) {
+    final emotion = currentEmotion ?? 'neutral';
+    final emojiSize = fontSize * 30;
+
+    return SizedBox(
+      width: emojiSize,
+      height: emojiSize,
+      child: Image.asset(
+        'assets/emojis/$emotion.gif',
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return Icon(
+            Icons.emoji_emotions,
+            color: Colors.white54,
+            size: emojiSize,
+          );
+        },
+      ),
+    );
   }
 }

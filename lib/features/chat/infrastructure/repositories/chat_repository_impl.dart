@@ -160,13 +160,16 @@ class ChatRepositoryImpl implements ChatRepository {
     if (config.transportType == TransportType.webSockets) {
       if (config.url.isEmpty || config.accessToken.isEmpty) {
         return Result.failure(
-          const Failure(message: 'Thiếu thông tin kết nối'),
+          const GenericFailure(message: 'Thiếu thông tin kết nối'),
         );
       }
     } else if (config.transportType == TransportType.mqtt &&
         config.mqttConfig == null) {
       return Result.failure(
-        const Failure(message: 'Chưa có cấu hình MQTT', code: _missingMqttCode),
+        const GenericFailure(
+          message: 'Chưa có cấu hình MQTT',
+          code: _missingMqttCode,
+        ),
       );
     }
     _lastConfig = config;
@@ -178,7 +181,9 @@ class ChatRepositoryImpl implements ChatRepository {
 
     _transport = _buildTransport(config);
     if (_transport == null) {
-      return Result.failure(const Failure(message: 'Không thể chọn transport'));
+      return Result.failure(
+        const GenericFailure(message: 'Không thể chọn transport'),
+      );
     }
 
     final opened = await _sessionCoordinator.connect(_transport!);
@@ -194,7 +199,7 @@ class ChatRepositoryImpl implements ChatRepository {
       await _sessionCoordinator.disconnect();
       _transport = null;
       return Result.failure(
-        Failure(
+        GenericFailure(
           message: config.transportType == TransportType.mqtt
               ? 'Không thể kết nối MQTT'
               : 'Không thể kết nối WebSocket',
@@ -211,13 +216,15 @@ class ChatRepositoryImpl implements ChatRepository {
     _jsonSubscription = _sessionCoordinator.incomingJson.listen(
       _handleIncomingJson,
       onError: (_) {
-        _errorController.add(const Failure(message: 'Lỗi nhận dữ liệu'));
+        _errorController.add(const GenericFailure(message: 'Lỗi nhận dữ liệu'));
       },
     );
     _audioSubscription = _sessionCoordinator.incomingAudio.listen(
       (data) => _audioController.add(data),
       onError: (_) {
-        _errorController.add(const Failure(message: 'Lỗi nhận âm thanh'));
+        _errorController.add(
+          const GenericFailure(message: 'Lỗi nhận âm thanh'),
+        );
       },
     );
     _errorSubscription = _sessionCoordinator.errors.listen((error) {
@@ -230,7 +237,7 @@ class ChatRepositoryImpl implements ChatRepository {
         );
       }
       _isConnected = false;
-      _errorController.add(Failure(message: error));
+      _errorController.add(GenericFailure(message: error));
     });
     _speakingSubscription = _sessionCoordinator.speaking.listen(_setSpeaking);
 
@@ -283,11 +290,13 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<Result<bool>> sendGreeting(String text) async {
     final input = text.trim();
     if (input.isEmpty) {
-      return Result.failure(const Failure(message: 'Nội dung trống'));
+      return Result.failure(const GenericFailure(message: 'Nội dung trống'));
     }
     if (!_isConnected) {
       if (_lastConfig == null) {
-        return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
+        return Result.failure(
+          const GenericFailure(message: 'Chưa cấu hình kết nối'),
+        );
       }
       final result = await connect(_lastConfig!);
       if (!result.isSuccess) {
@@ -311,11 +320,13 @@ class ChatRepositoryImpl implements ChatRepository {
   Future<Result<bool>> sendMessage(String text) async {
     final input = text.trim();
     if (input.isEmpty) {
-      return Result.failure(const Failure(message: 'Nội dung trống'));
+      return Result.failure(const GenericFailure(message: 'Nội dung trống'));
     }
     if (!_isConnected) {
       if (_lastConfig == null) {
-        return Result.failure(const Failure(message: 'Chưa cấu hình kết nối'));
+        return Result.failure(
+          const GenericFailure(message: 'Chưa cấu hình kết nối'),
+        );
       }
       final result = await connect(_lastConfig!);
       if (!result.isSuccess) {
@@ -2006,66 +2017,7 @@ ${_buildKnowledgeAnswerGuidance(queryAnalysis)}
     };
   }
 
-  String? _extractDelimitedSection({
-    required List<String> lines,
-    required int anchorIndex,
-  }) {
-    if (lines.isEmpty || anchorIndex < 0 || anchorIndex >= lines.length) {
-      return null;
-    }
-
-    final separators = <int>[];
-    for (var i = 0; i < lines.length; i++) {
-      if (_isSeparatorLine(lines[i])) {
-        separators.add(i);
-      }
-    }
-    if (separators.length < 2) {
-      return null;
-    }
-
-    int? prevSep;
-    for (final sep in separators) {
-      if (sep <= anchorIndex) {
-        prevSep = sep;
-      } else {
-        break;
-      }
-    }
-    if (prevSep == null) {
-      return null;
-    }
-
-    var start = prevSep;
-    final prevSepPos = separators.indexOf(prevSep);
-    if (prevSepPos > 0 && prevSep - separators[prevSepPos - 1] <= 4) {
-      start = separators[prevSepPos - 1];
-    }
-
-    int? firstAfterStart;
-    int? secondAfterStart;
-    for (final sep in separators) {
-      if (sep <= start) {
-        continue;
-      }
-      if (firstAfterStart == null) {
-        firstAfterStart = sep;
-        continue;
-      }
-      secondAfterStart = sep;
-      break;
-    }
-
-    if (firstAfterStart == null) {
-      return null;
-    }
-    final end = (secondAfterStart ?? lines.length) - 1;
-    if (end <= start) {
-      return null;
-    }
-
-    return lines.sublist(start, end + 1).join('\n');
-  }
+  // End of class
 
   bool _isSeparatorLine(String line) {
     final trimmed = line.trim();

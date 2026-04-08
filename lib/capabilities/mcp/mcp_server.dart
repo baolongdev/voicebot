@@ -1116,7 +1116,7 @@ class McpServer {
 
   Future<DocumentImageStore> _createImageStore() async {
     if (_imageStoreLoader != null) {
-      return _imageStoreLoader!.call();
+      return _imageStoreLoader.call();
     }
     final baseDir = await getApplicationDocumentsDirectory();
     final root = Directory(
@@ -2235,7 +2235,7 @@ class LocalKnowledgeBase {
     };
     final contents = jsonEncode(payload);
     if (_storageWriter != null) {
-      await _storageWriter!(file, contents);
+      await _storageWriter(file, contents);
       return;
     }
     await file.writeAsString(contents, flush: true);

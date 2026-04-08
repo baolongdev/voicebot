@@ -1100,7 +1100,7 @@ class _SearchResults extends StatelessWidget {
       if (currentKey == null) {
         return;
       }
-      sections[currentKey!] = buffer.join('\n').trim();
+      sections[currentKey] = buffer.join('\n').trim();
       buffer.clear();
     }
 
