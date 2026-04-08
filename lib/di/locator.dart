@@ -2,6 +2,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/network/api_service.dart';
+import '../core/network/dio_client.dart';
 import '../core/system/ota/model/device_info.dart';
 import '../core/system/ota/model/ota_result.dart';
 import '../core/system/ota/ota_service.dart' as core_ota;
@@ -32,6 +34,18 @@ final GetIt getIt = GetIt.instance;
 Future<void> configureDependencies() async {
   if (!getIt.isRegistered<GoRouter>()) {
     getIt.registerLazySingleton<GoRouter>(() => AppRouter.router);
+  }
+
+  if (!getIt.isRegistered<DioClient>()) {
+    getIt.registerLazySingleton<DioClient>(
+      () => DioClient(baseUrl: 'https://api.example.com'),
+    );
+  }
+
+  if (!getIt.isRegistered<ApiService>()) {
+    getIt.registerLazySingleton<ApiService>(
+      () => ApiService(client: getIt<DioClient>()),
+    );
   }
 
   if (!getIt.isRegistered<FlutterSecureStorage>()) {
@@ -102,7 +116,10 @@ Future<void> configureDependencies() async {
 
   if (!getIt.isRegistered<DeviceMacCubit>()) {
     getIt.registerLazySingleton<DeviceMacCubit>(
-      () => DeviceMacCubit(getIt<UiSettingsStore>(), getIt<core_ota.OtaService>()),
+      () => DeviceMacCubit(
+        getIt<UiSettingsStore>(),
+        getIt<core_ota.OtaService>(),
+      ),
     );
   }
 

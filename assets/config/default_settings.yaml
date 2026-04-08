@@ -6,6 +6,28 @@ theme:
   # [0.85..1.5]: Tỉ lệ phóng chữ toàn app.
   text_scale: 1.5
 
+logging:
+  # [true, false]: Bật/tắt verbose logging (debug logs).
+  verbose: false
+  # [true, false]: Log audio events (frame sends, playback).
+  log_audio: false
+  # [true, false]: Log MCP tool calls.
+  log_mcp: false
+  # [true, false]: Log WebSocket messages.
+  log_websocket: false
+  # [true, false]: Log network requests.
+  log_network: false
+
+audio:
+  # [true, false]: Bật/tắt VAD (Voice Activity Detection).
+  vad_enabled: false
+  # [0..1000]: Ngưỡng VAD (âm lượng tối thiểu).
+  vad_threshold: 500
+  # [1..10]: Số frame tối thiểu trong buffer.
+  min_buffer_frames: 3
+  # [1..20]: Số frame tối đa trong buffer.
+  max_buffer_frames: 10
+
 chat:
   # [always_on, auto_stop, manual]: Chế độ nghe mặc định.
   listening_mode: auto_stop
@@ -52,4 +74,4 @@ app:
 
 device:
   # [MAC string]: MAC mặc định cho OTA/device identity.
-  default_mac_address: "02:00:00:00:00:12"
+  default_mac_address: "02:00:00:00:00:16"

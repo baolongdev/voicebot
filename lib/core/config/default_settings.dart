@@ -18,6 +18,8 @@ class DefaultSettingsRegistry {
 class DefaultSettings {
   const DefaultSettings({
     required this.theme,
+    required this.logging,
+    required this.audio,
     required this.chat,
     required this.camera,
     required this.carousel,
@@ -26,6 +28,8 @@ class DefaultSettings {
   });
 
   final ThemeDefaultSettings theme;
+  final LoggingDefaultSettings logging;
+  final AudioDefaultSettings audio;
   final ChatDefaultSettings chat;
   final CameraDefaultSettings camera;
   final CarouselDefaultSettings carousel;
@@ -37,6 +41,19 @@ class DefaultSettings {
       mode: ThemeMode.system,
       palette: AppThemePalette.green,
       textScale: 1.0,
+    ),
+    logging: LoggingDefaultSettings(
+      verbose: false,
+      logAudio: false,
+      logMcp: true,
+      logWebsocket: true,
+      logNetwork: true,
+    ),
+    audio: AudioDefaultSettings(
+      vadEnabled: false,
+      vadThreshold: 500,
+      minBufferFrames: 3,
+      maxBufferFrames: 10,
     ),
     chat: ChatDefaultSettings(
       listeningMode: ListeningMode.autoStop,
@@ -75,6 +92,36 @@ class ThemeDefaultSettings {
   final ThemeMode mode;
   final AppThemePalette palette;
   final double textScale;
+}
+
+class LoggingDefaultSettings {
+  const LoggingDefaultSettings({
+    required this.verbose,
+    required this.logAudio,
+    required this.logMcp,
+    required this.logWebsocket,
+    required this.logNetwork,
+  });
+
+  final bool verbose;
+  final bool logAudio;
+  final bool logMcp;
+  final bool logWebsocket;
+  final bool logNetwork;
+}
+
+class AudioDefaultSettings {
+  const AudioDefaultSettings({
+    required this.vadEnabled,
+    required this.vadThreshold,
+    required this.minBufferFrames,
+    required this.maxBufferFrames,
+  });
+
+  final bool vadEnabled;
+  final int vadThreshold;
+  final int minBufferFrames;
+  final int maxBufferFrames;
 }
 
 class ChatDefaultSettings {

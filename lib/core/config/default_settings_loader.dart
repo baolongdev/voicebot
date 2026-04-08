@@ -49,6 +49,8 @@ class DefaultSettingsLoader {
     final fallback = DefaultSettings.fallback;
     return DefaultSettings(
       theme: _parseTheme(root['theme'], fallback.theme),
+      logging: _parseLogging(root['logging'], fallback.logging),
+      audio: _parseAudio(root['audio'], fallback.audio),
       chat: _parseChat(root['chat'], fallback.chat),
       camera: _parseCamera(root['camera'], fallback.camera),
       carousel: _parseCarousel(root['carousel'], fallback.carousel),
@@ -67,6 +69,38 @@ class DefaultSettingsLoader {
       palette: _parsePalette(map['palette']) ?? fallback.palette,
       textScale:
           _asDouble(map['text_scale'])?.clamp(0.85, 1.5) ?? fallback.textScale,
+    );
+  }
+
+  static LoggingDefaultSettings _parseLogging(
+    Object? raw,
+    LoggingDefaultSettings fallback,
+  ) {
+    final map = _asMap(raw);
+    return LoggingDefaultSettings(
+      verbose: _asBool(map['verbose']) ?? fallback.verbose,
+      logAudio: _asBool(map['log_audio']) ?? fallback.logAudio,
+      logMcp: _asBool(map['log_mcp']) ?? fallback.logMcp,
+      logWebsocket: _asBool(map['log_websocket']) ?? fallback.logWebsocket,
+      logNetwork: _asBool(map['log_network']) ?? fallback.logNetwork,
+    );
+  }
+
+  static AudioDefaultSettings _parseAudio(
+    Object? raw,
+    AudioDefaultSettings fallback,
+  ) {
+    final map = _asMap(raw);
+    return AudioDefaultSettings(
+      vadEnabled: _asBool(map['vad_enabled']) ?? fallback.vadEnabled,
+      vadThreshold:
+          _asInt(map['vad_threshold'])?.clamp(0, 1000) ?? fallback.vadThreshold,
+      minBufferFrames:
+          _asInt(map['min_buffer_frames'])?.clamp(1, 10) ??
+          fallback.minBufferFrames,
+      maxBufferFrames:
+          _asInt(map['max_buffer_frames'])?.clamp(1, 20) ??
+          fallback.maxBufferFrames,
     );
   }
 

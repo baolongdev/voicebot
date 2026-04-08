@@ -11,8 +11,8 @@ class ChatConfigProviderImpl implements ChatConfigProvider {
   ChatConfigProviderImpl({
     required SettingsRepository settings,
     required core_ota.OtaService ota,
-  })  : _settings = settings,
-        _ota = ota;
+  }) : _settings = settings,
+       _ota = ota;
 
   final SettingsRepository _settings;
   final core_ota.OtaService _ota;
@@ -44,26 +44,35 @@ class ChatConfigProviderImpl implements ChatConfigProvider {
     if (deviceInfo == null) {
       _logMessage('connect skipped: missing device id');
       return Result.failure(
-        const Failure(message: 'Chưa có thông tin thiết bị', code: _missingDeviceCode),
+        const GenericFailure(
+          message: 'Chưa có thông tin thiết bị',
+          code: _missingDeviceCode,
+        ),
       );
     }
     if (transportType == TransportType.mqtt && mqttConfig == null) {
       _logMessage('connect skipped: missing mqtt config');
       return Result.failure(
-        const Failure(message: 'Chưa có cấu hình MQTT', code: _missingMqttCode),
+        const GenericFailure(
+          message: 'Chưa có cấu hình MQTT',
+          code: _missingMqttCode,
+        ),
       );
     }
     if (transportType == TransportType.webSockets) {
       if (url.isEmpty) {
         _logMessage('connect skipped: missing url');
         return Result.failure(
-          const Failure(message: 'Chưa có WebSocket URL', code: _missingUrlCode),
+          const GenericFailure(
+            message: 'Chưa có WebSocket URL',
+            code: _missingUrlCode,
+          ),
         );
       }
       if (token.isEmpty) {
         _logMessage('connect skipped: missing websocket token');
         return Result.failure(
-          const Failure(
+          const GenericFailure(
             message: 'Chưa có websocket token',
             code: _missingTokenCode,
           ),

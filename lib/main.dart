@@ -12,6 +12,8 @@ import 'package:voicebot/core/config/default_settings.dart';
 import 'package:voicebot/core/config/default_settings_loader.dart';
 import 'package:voicebot/core/opus/opus_loader.dart';
 import 'package:voicebot/core/logging/app_logger.dart';
+import 'package:voicebot/core/logging/structured_logger.dart';
+import 'package:voicebot/core/audio/audio_config.dart';
 import 'package:voicebot/system/update/github_updater.dart';
 
 Future<void> main() async {
@@ -27,6 +29,9 @@ Future<void> main() async {
   await _initOpus();
   await DefaultSettingsLoader.loadIntoRegistry();
   final settings = DefaultSettingsRegistry.current;
+
+  AppLog.I.updateSettings(settings.logging);
+  AudioConfig.setSettings(settings.audio);
   if (settings.app.fullscreenEnabled) {
     // Keep fullscreen at the app boundary so feature UI stays clean.
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
