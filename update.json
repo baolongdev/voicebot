@@ -3,7 +3,7 @@
   "latestVersionCode": 0,
   "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.6/app-release.apk",
   "releaseNotes": "Update to version 1.0.6",
-  "commitMessage": "fix: harden local web import flow and bump version 1.0.6",
+  "commitMessage": "Merge pull request #2 from baolongdev/feat/add-state-management-and-utilities",
   "mandatory": false,
-  "releasedAt": "2026-03-17T12:27:51Z"
+  "releasedAt": "2026-04-08T10:22:30Z"
 }
