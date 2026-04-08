@@ -479,9 +479,10 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
       height = maxHeight;
       width = height * safeAspect;
     }
-    width = width.clamp(120, maxWidth);
+    final minWidth = math.min(120.0, maxWidth);
+    width = width.clamp(minWidth, maxWidth > 0 ? maxWidth : double.infinity);
     height = width / safeAspect;
-    return Size(width.toDouble(), height.toDouble());
+    return Size(width, height);
   }
 
   FaceDetectionMode _resolveDetectionMode() {
