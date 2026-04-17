@@ -3,7 +3,7 @@
   "latestVersionCode": 0,
   "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.7/app-release.apk",
   "releaseNotes": "Update to version 1.0.7",
-  "commitMessage": "fix: sync chat control flow and polish landscape camera UI",
+  "commitMessage": "fix: sync chat flow, landscape UI, and bump v1.0.7",
   "mandatory": false,
-  "releasedAt": "2026-04-17T16:30:00Z"
+  "releasedAt": "2026-04-17T17:06:03Z"
 }
