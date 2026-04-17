@@ -194,19 +194,16 @@ List<TextSpan> highlightTranscriptTokens(
     if (segment.startsWith('**') && segment.endsWith('**')) {
       segment = segment.substring(2, segment.length - 2);
     }
-    final boldNumberStyle =
-        numberStyle.copyWith(fontWeight: braceStyle.fontWeight);
-    spans.addAll(
-      highlightNumbers(
-        segment,
-        braceStyle,
-        boldNumberStyle,
-      ),
+    final boldNumberStyle = numberStyle.copyWith(
+      fontWeight: braceStyle.fontWeight,
     );
+    spans.addAll(highlightNumbers(segment, braceStyle, boldNumberStyle));
     index = match.end;
   }
   if (index < text.length) {
-    spans.addAll(highlightNumbers(text.substring(index), baseStyle, numberStyle));
+    spans.addAll(
+      highlightNumbers(text.substring(index), baseStyle, numberStyle),
+    );
   }
   return spans;
 }

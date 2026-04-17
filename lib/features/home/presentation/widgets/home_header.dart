@@ -19,18 +19,15 @@ class HomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final crossAxisAlignment =
-        alignment == Alignment.center ? CrossAxisAlignment.center : CrossAxisAlignment.start;
+    final crossAxisAlignment = alignment == Alignment.center
+        ? CrossAxisAlignment.center
+        : CrossAxisAlignment.start;
     return Align(
       alignment: alignment,
       child: Column(
         crossAxisAlignment: crossAxisAlignment,
         children: [
-          Text(
-            title,
-            textAlign: textAlign,
-            style: context.theme.typography.xl,
-          ),
+          Text(title, textAlign: textAlign, style: context.theme.typography.xl),
           SizedBox(height: gap),
           Text(
             subtitle,

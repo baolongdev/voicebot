@@ -5,8 +5,8 @@ import 'dart:math';
 import 'package:http/http.dart' as http;
 
 void main(List<String> args) async {
-  final url = _argValue(args, '--url') ??
-      'https://api.tenclass.net/xiaozhi/ota/';
+  final url =
+      _argValue(args, '--url') ?? 'https://api.tenclass.net/xiaozhi/ota/';
   final mac = _argValue(args, '--mac') ?? _generateMac(Random());
   final uuid = _argValue(args, '--uuid') ?? _generateUuidV4(Random());
 

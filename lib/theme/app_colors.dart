@@ -103,9 +103,17 @@ class AppHslTokens {
   static const AppHsl firstColorAlt = AppHsl(firstHue, firstSat, firstAltLig);
   static const AppHsl titleColor = AppHsl(secondHue, titleSat, titleLig);
   static const AppHsl textColor = AppHsl(secondHue, textSat, textLig);
-  static const AppHsl textColorLight = AppHsl(secondHue, textLightSat, textLightLig);
+  static const AppHsl textColorLight = AppHsl(
+    secondHue,
+    textLightSat,
+    textLightLig,
+  );
   static const AppHsl bodyColor = AppHsl(secondHue, bodySat, bodyLig);
-  static const AppHsl containerColor = AppHsl(secondHue, containerSat, containerLig);
+  static const AppHsl containerColor = AppHsl(
+    secondHue,
+    containerSat,
+    containerLig,
+  );
 
   static const double dangerHue = 4;
   static const AppHsl dangerColor = AppHsl(dangerHue, 0.60, 0.65);
@@ -245,7 +253,11 @@ class AppSemanticColors {
     required AppThemePaletteSpec spec,
   }) {
     final isDark = brightness == Brightness.dark;
-    final primaryHsl = AppHsl(spec.primaryHue, spec.primarySat, spec.primaryLig);
+    final primaryHsl = AppHsl(
+      spec.primaryHue,
+      spec.primarySat,
+      spec.primaryLig,
+    );
     final primaryAltHsl = AppHsl(
       spec.primaryHue,
       spec.primarySat,
@@ -255,29 +267,34 @@ class AppSemanticColors {
     final primaryAlt = primaryAltHsl.toColor();
 
     final bodyBase = AppHsl(spec.accentHue, spec.bodySat, spec.bodyLig);
-    final containerBase =
-        AppHsl(spec.accentHue, spec.containerSat, spec.containerLig);
+    final containerBase = AppHsl(
+      spec.accentHue,
+      spec.containerSat,
+      spec.containerLig,
+    );
     final backgroundHsl = isDark ? bodyBase : bodyBase.invertLightness();
     final surfaceHsl = isDark ? containerBase : containerBase.invertLightness();
-    final containerHsl =
-        isDark ? containerBase : containerBase.invertLightness();
+    final containerHsl = isDark
+        ? containerBase
+        : containerBase.invertLightness();
 
     final titleBase = AppHsl(spec.accentHue, spec.titleSat, spec.titleLig);
     final textBase = AppHsl(spec.accentHue, spec.textSat, spec.textLig);
-    final textLightBase =
-        AppHsl(spec.accentHue, spec.textLightSat, spec.textLightLig);
+    final textLightBase = AppHsl(
+      spec.accentHue,
+      spec.textLightSat,
+      spec.textLightLig,
+    );
     final titleHsl = isDark ? titleBase : titleBase.invertLightness();
     final textHsl = isDark ? textBase : textBase.invertLightness();
-    final textLightHsl =
-        isDark ? textLightBase : textLightBase.invertLightness();
+    final textLightHsl = isDark
+        ? textLightBase
+        : textLightBase.invertLightness();
 
-    final onPrimary =
-        isDark ? titleHsl.toColor() : bodyBase.toColor();
+    final onPrimary = isDark ? titleHsl.toColor() : bodyBase.toColor();
     final onBackground = titleHsl.toColor();
     final onSurface = titleHsl.toColor();
-    final outline = textLightHsl.toColor().withValues(
-      alpha: AppAlphas.a32,
-    );
+    final outline = textLightHsl.toColor().withValues(alpha: AppAlphas.a32);
 
     final error = AppHslTokens.dangerColor.toColor();
     final onError = AppHslTokens.dangerOnColor.toColor();
@@ -344,8 +361,10 @@ class AppSemanticColors {
 class AppColors {
   const AppColors._();
 
-  static final AppSemanticColors light =
-      AppSemanticColors.fromTokens(brightness: Brightness.light);
-  static final AppSemanticColors dark =
-      AppSemanticColors.fromTokens(brightness: Brightness.dark);
+  static final AppSemanticColors light = AppSemanticColors.fromTokens(
+    brightness: Brightness.light,
+  );
+  static final AppSemanticColors dark = AppSemanticColors.fromTokens(
+    brightness: Brightness.dark,
+  );
 }

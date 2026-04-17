@@ -14,6 +14,7 @@ import '../../features/chat/application/state/chat_cubit.dart';
 import '../../features/home/application/state/home_cubit.dart';
 import '../../presentation/app/listening_mode_cubit.dart';
 import '../../presentation/app/carousel_settings_cubit.dart';
+import '../../presentation/app/related_images_settings_cubit.dart';
 import '../../presentation/app/text_send_mode_cubit.dart';
 import '../../presentation/app/connect_greeting_cubit.dart';
 import '../../presentation/app/auto_reconnect_cubit.dart';
@@ -54,6 +55,7 @@ class _ApplicationState extends State<Application> with WidgetsBindingObserver {
     getIt<AutoReconnectCubit>().hydrate();
     getIt<CarouselSettingsCubit>().hydrate();
     getIt<FaceDetectionSettingsCubit>().hydrate();
+    getIt<RelatedImagesSettingsCubit>().hydrate();
     getIt<DeviceMacCubit>().hydrate();
   }
 
@@ -99,6 +101,9 @@ class _ApplicationState extends State<Application> with WidgetsBindingObserver {
         ),
         BlocProvider<CarouselSettingsCubit>.value(
           value: getIt<CarouselSettingsCubit>(),
+        ),
+        BlocProvider<RelatedImagesSettingsCubit>.value(
+          value: getIt<RelatedImagesSettingsCubit>(),
         ),
         BlocProvider<FaceDetectionSettingsCubit>.value(
           value: getIt<FaceDetectionSettingsCubit>(),

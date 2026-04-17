@@ -3,22 +3,13 @@ import 'dart:io';
 import 'package:voicebot/core/permissions/permission_status.dart';
 import 'package:voicebot/core/permissions/permission_type.dart';
 
-enum PermissionFlowStatus {
-  initial,
-  checking,
-  requesting,
-  ready,
-  denied,
-}
+enum PermissionFlowStatus { initial, checking, requesting, ready, denied }
 
 class PermissionState {
   static final List<PermissionType> requiredPermissions =
       _buildRequiredPermissions();
 
-  const PermissionState({
-    required this.status,
-    required this.statuses,
-  });
+  const PermissionState({required this.status, required this.statuses});
 
   factory PermissionState.initial() {
     return const PermissionState(
@@ -36,12 +27,12 @@ class PermissionState {
       status == PermissionFlowStatus.requesting;
 
   bool get isReady => requiredPermissions.every(
-        (type) => statuses[type] == PermissionStatus.granted,
-      );
+    (type) => statuses[type] == PermissionStatus.granted,
+  );
 
   bool get hasPermanentlyDenied => statuses.values.any(
-        (status) => status == PermissionStatus.permanentlyDenied,
-      );
+    (status) => status == PermissionStatus.permanentlyDenied,
+  );
 
   PermissionState copyWith({
     PermissionFlowStatus? status,

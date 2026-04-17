@@ -84,8 +84,7 @@ class _AudioWaveIndicatorState extends State<AudioWaveIndicator>
   @override
   void didUpdateWidget(covariant AudioWaveIndicator oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final levelChanged =
-        (oldWidget.level - widget.level).abs() > _minDelta;
+    final levelChanged = (oldWidget.level - widget.level).abs() > _minDelta;
     final idleChanged = oldWidget.idle != widget.idle;
     if (levelChanged || idleChanged) {
       _syncAnimation();
@@ -111,8 +110,7 @@ class _AudioWaveIndicatorState extends State<AudioWaveIndicator>
 
   void _syncAnimation({bool force = false}) {
     final target = widget.level.clamp(0.0, 1.0);
-    final idleRequested =
-        widget.idle && target <= 0.001 && !_disableAnimations;
+    final idleRequested = widget.idle && target <= 0.001 && !_disableAnimations;
     if (idleRequested) {
       _idleMode = true;
       if (force || !_controller.isAnimating) {
@@ -204,8 +202,10 @@ class _AudioWavePainter extends CustomPainter {
       final drive = idle
           ? (0.22 + 0.12 * math.sin(phase + i * 0.45))
           : math.pow(level, 0.5).toDouble();
-      final scaled = (base * 1.35 * (0.2 + 1.2 * drive * seed))
-          .clamp(6.0, base * 1.8);
+      final scaled = (base * 1.35 * (0.2 + 1.2 * drive * seed)).clamp(
+        6.0,
+        base * 1.8,
+      );
       final x = startX + i * (barWidth + gap);
       final rect = Rect.fromCenter(
         center: Offset(x + barWidth / 2, centerY),

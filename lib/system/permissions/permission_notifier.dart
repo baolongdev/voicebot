@@ -20,12 +20,7 @@ class PermissionCubit extends Cubit<PermissionState> {
       final result = await _service.check(type);
       statuses[type] = result.status;
     }
-    emit(
-      state.copyWith(
-        status: _resolveStatus(statuses),
-        statuses: statuses,
-      ),
-    );
+    emit(state.copyWith(status: _resolveStatus(statuses), statuses: statuses));
   }
 
   Future<void> requestRequiredPermissions() async {
@@ -34,12 +29,7 @@ class PermissionCubit extends Cubit<PermissionState> {
     final statuses = <PermissionType, PermissionStatus>{
       for (final result in results) result.type: result.status,
     };
-    emit(
-      state.copyWith(
-        status: _resolveStatus(statuses),
-        statuses: statuses,
-      ),
-    );
+    emit(state.copyWith(status: _resolveStatus(statuses), statuses: statuses));
   }
 
   Future<void> requestPermission(PermissionType type) async {
@@ -47,12 +37,7 @@ class PermissionCubit extends Cubit<PermissionState> {
     final result = await _service.request(type);
     final statuses = Map<PermissionType, PermissionStatus>.from(state.statuses);
     statuses[result.type] = result.status;
-    emit(
-      state.copyWith(
-        status: _resolveStatus(statuses),
-        statuses: statuses,
-      ),
-    );
+    emit(state.copyWith(status: _resolveStatus(statuses), statuses: statuses));
   }
 
   PermissionFlowStatus _resolveStatus(

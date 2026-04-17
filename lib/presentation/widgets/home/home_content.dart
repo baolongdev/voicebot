@@ -547,4 +547,3 @@ void _openImagePreview(BuildContext context, String imageUrl) {
     },
   );
 }
-

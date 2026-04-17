@@ -157,7 +157,8 @@ class SettingsRepositoryImpl implements SettingsRepository {
     required WebsocketConfig? websocket,
     required MqttConfig? mqtt,
   }) {
-    final hasWs = websocket != null &&
+    final hasWs =
+        websocket != null &&
         websocket.url.isNotEmpty &&
         websocket.token.isNotEmpty;
     final hasMqtt = _isValidMqttConfig(mqtt);

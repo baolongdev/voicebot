@@ -16,4 +16,3 @@ class XiaoZhiResult extends FormResult {
 
   final OtaResult? otaResult;
 }
-

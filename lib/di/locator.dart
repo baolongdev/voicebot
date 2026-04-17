@@ -15,6 +15,7 @@ import '../features/form/presentation/state/form_state.dart';
 import '../features/form/domain/repositories/form_repository.dart';
 import '../presentation/app/listening_mode_cubit.dart';
 import '../presentation/app/carousel_settings_cubit.dart';
+import '../presentation/app/related_images_settings_cubit.dart';
 import '../presentation/app/text_send_mode_cubit.dart';
 import '../presentation/app/connect_greeting_cubit.dart';
 import '../presentation/app/auto_reconnect_cubit.dart';
@@ -81,6 +82,12 @@ Future<void> configureDependencies() async {
   if (!getIt.isRegistered<CarouselSettingsCubit>()) {
     getIt.registerLazySingleton<CarouselSettingsCubit>(
       () => CarouselSettingsCubit(getIt<UiSettingsStore>()),
+    );
+  }
+
+  if (!getIt.isRegistered<RelatedImagesSettingsCubit>()) {
+    getIt.registerLazySingleton<RelatedImagesSettingsCubit>(
+      () => RelatedImagesSettingsCubit(getIt<UiSettingsStore>()),
     );
   }
 

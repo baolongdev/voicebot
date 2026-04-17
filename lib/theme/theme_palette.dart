@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 
-enum AppThemePalette {
-  neutral,
-  green,
-  lime,
-}
+enum AppThemePalette { neutral, green, lime }
 
 extension AppThemePaletteX on AppThemePalette {
   String get label {
@@ -36,10 +32,7 @@ AppSemanticColors semanticColorsForPalette(
   AppThemePalette palette,
   Brightness brightness,
 ) {
-  return AppSemanticColors.fromSpec(
-    brightness: brightness,
-    spec: palette.spec,
-  );
+  return AppSemanticColors.fromSpec(brightness: brightness, spec: palette.spec);
 }
 
 const AppThemePaletteSpec _neutralSpec = AppThemePaletteSpec(

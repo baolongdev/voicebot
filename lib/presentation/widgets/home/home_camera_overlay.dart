@@ -23,6 +23,9 @@ class HomeCameraOverlay extends StatefulWidget {
     required this.faceLandmarksEnabled,
     required this.faceMeshEnabled,
     required this.eyeTrackingEnabled,
+    this.edgePadding = ThemeTokens.spaceSm,
+    this.decorateContainer = true,
+    this.borderRadius = ThemeTokens.radiusMd,
   });
 
   final Size areaSize;
@@ -34,6 +37,9 @@ class HomeCameraOverlay extends StatefulWidget {
   final bool faceLandmarksEnabled;
   final bool faceMeshEnabled;
   final bool eyeTrackingEnabled;
+  final double edgePadding;
+  final bool decorateContainer;
+  final double borderRadius;
 
   @override
   State<HomeCameraOverlay> createState() => _HomeCameraOverlayState();
@@ -42,7 +48,6 @@ class HomeCameraOverlay extends StatefulWidget {
 class _HomeCameraOverlayState extends State<HomeCameraOverlay>
     with WidgetsBindingObserver {
   static const Size _defaultBoxSize = Size(200, 130);
-  static const double _edgePadding = ThemeTokens.spaceSm;
   static const int _detectIntervalMs = 240;
   bool _cameraEnabled = false;
   bool _cameraInitializing = false;
@@ -139,20 +144,98 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
         }
       });
     }
-    final nextBoxSize = _resolveBoxSize(widget.areaSize, widget.aspectRatio);
+    final facesForOverlay = widget.detectFacesEnabled ? _faces : const <Face>[];
+    final radius = BorderRadius.circular(widget.borderRadius);
+    final cameraContent = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (_cameraEnabled && _controller?.value.isInitialized == true)
+          _CameraPreviewLayer(
+            controller: _controller!,
+            faces: facesForOverlay,
+            imageSize: _lastImageSize,
+            previewSize: _previewSize,
+            rotationDegrees: _rotationDegrees,
+            color: context.theme.colors.primary,
+          )
+        else
+          Container(color: context.theme.colors.background),
+        if (!_cameraEnabled)
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.52),
+                  Colors.black.withValues(alpha: 0.32),
+                ],
+              ),
+            ),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: ThemeTokens.spaceSm,
+                  vertical: ThemeTokens.spaceXs,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.34),
+                  borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.videocam_off_rounded,
+                      size: 30,
+                      color: Colors.white70,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Camera tắt',
+                      style: context.theme.typography.sm.copyWith(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (_cameraInitializing)
+          const Center(child: CircularProgressIndicator()),
+      ],
+    );
+
+    if (!widget.decorateContainer) {
+      return ClipRRect(
+        borderRadius: radius,
+        child: SizedBox.expand(child: cameraContent),
+      );
+    }
+
+    final nextBoxSize = _resolveBoxSize(
+      widget.areaSize,
+      widget.aspectRatio,
+      widget.edgePadding,
+    );
     if (nextBoxSize != _boxSize) {
       _boxSize = nextBoxSize;
     }
-    final facesForOverlay = widget.detectFacesEnabled ? _faces : const <Face>[];
     return Positioned(
-      top: _edgePadding,
-      right: _edgePadding,
+      top: widget.edgePadding,
+      right: widget.edgePadding,
       child: Container(
         width: _boxSize.width,
         height: _boxSize.height,
         decoration: BoxDecoration(
           color: context.theme.colors.muted,
-          borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
+          borderRadius: radius,
           border: Border.all(color: context.theme.colors.border),
           boxShadow: [
             BoxShadow(
@@ -162,59 +245,7 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (_cameraEnabled && _controller?.value.isInitialized == true)
-                _CameraPreviewLayer(
-                  controller: _controller!,
-                  faces: facesForOverlay,
-                  imageSize: _lastImageSize,
-                  previewSize: _previewSize,
-                  rotationDegrees: _rotationDegrees,
-                  color: context.theme.colors.primary,
-                )
-              else
-                Container(color: context.theme.colors.background),
-              if (!_cameraEnabled)
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: ThemeTokens.spaceSm,
-                      vertical: ThemeTokens.spaceXs,
-                    ),
-                    decoration: BoxDecoration(
-                      color: context.theme.colors.muted,
-                      borderRadius: BorderRadius.circular(ThemeTokens.radiusMd),
-                      border: Border.all(color: context.theme.colors.border),
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.videocam_outlined,
-                          size: 32,
-                          color: context.theme.colors.mutedForeground,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Camera',
-                          style: context.theme.typography.sm.copyWith(
-                            color: context.theme.colors.mutedForeground,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              if (_cameraInitializing)
-                const Center(child: CircularProgressIndicator()),
-            ],
-          ),
-        ),
+        child: ClipRRect(borderRadius: radius, child: cameraContent),
       ),
     );
   }
@@ -469,10 +500,10 @@ class _HomeCameraOverlayState extends State<HomeCameraOverlay>
     }
   }
 
-  Size _resolveBoxSize(Size areaSize, double aspectRatio) {
+  Size _resolveBoxSize(Size areaSize, double aspectRatio, double edgePadding) {
     final safeAspect = aspectRatio <= 0 ? 1.0 : aspectRatio;
-    final maxWidth = math.max(0.0, areaSize.width - _edgePadding * 2);
-    final maxHeight = math.max(0.0, areaSize.height - _edgePadding * 2);
+    final maxWidth = math.max(0.0, areaSize.width - edgePadding * 2);
+    final maxHeight = math.max(0.0, areaSize.height - edgePadding * 2);
     var width = math.min(_defaultBoxSize.width, maxWidth);
     var height = width / safeAspect;
     if (height > maxHeight && maxHeight > 0) {

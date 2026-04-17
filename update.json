@@ -1,9 +1,9 @@
 {
-  "latestVersion": "1.0.6",
+  "latestVersion": "1.0.7",
   "latestVersionCode": 0,
-  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.6/app-release.apk",
-  "releaseNotes": "Update to version 1.0.6",
-  "commitMessage": "Merge pull request #3 from baolongdev/feat/add-state-management-and-utilities",
+  "downloadUrl": "https://github.com/baolongdev/voicebot/releases/download/v1.0.7/app-release.apk",
+  "releaseNotes": "Update to version 1.0.7",
+  "commitMessage": "fix: sync chat control flow and polish landscape camera UI",
   "mandatory": false,
-  "releasedAt": "2026-04-08T14:15:31Z"
+  "releasedAt": "2026-04-17T16:30:00Z"
 }

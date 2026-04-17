@@ -1,5 +1,1 @@
-enum PermissionStatus {
-  granted,
-  denied,
-  permanentlyDenied,
-}
+enum PermissionStatus { granted, denied, permanentlyDenied }

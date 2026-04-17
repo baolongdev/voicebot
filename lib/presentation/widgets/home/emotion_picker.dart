@@ -34,8 +34,9 @@ class _EmotionPickerState extends State<EmotionPicker> {
     if (widget.options.isEmpty) {
       return const SizedBox.shrink();
     }
-    final textScale =
-        MediaQuery.textScalerOf(context).scale(1.0).clamp(0.85, 1.5);
+    final textScale = MediaQuery.textScalerOf(
+      context,
+    ).scale(1.0).clamp(0.85, 1.5);
     final baseHeight = ThemeTokens.buttonHeight - ThemeTokens.spaceXs;
     final height = (baseHeight * textScale).clamp(baseHeight, 72.0);
     final visibleCount = textScale > 1.0 ? 3 : 5;
@@ -74,8 +75,8 @@ class _EmotionPickerState extends State<EmotionPicker> {
               final offset = slot - centerSlot;
               final index = (selected + offset + length) % length;
               final isSelected = offset == 0;
-                final scale = isSelected ? 1.0 : 0.96;
-                final opacity = isSelected ? 1.0 : 0.72;
+              final scale = isSelected ? 1.0 : 0.96;
+              final opacity = isSelected ? 1.0 : 0.72;
               children.add(
                 SizedBox(
                   width: itemExtent,
@@ -95,8 +96,9 @@ class _EmotionPickerState extends State<EmotionPicker> {
                           vertical: verticalPadding,
                         ),
                         decoration: BoxDecoration(
-                          color:
-                              isSelected ? palette.accent : Colors.transparent,
+                          color: isSelected
+                              ? palette.accent
+                              : Colors.transparent,
                           borderRadius: BorderRadius.circular(999),
                           boxShadow: isSelected
                               ? [

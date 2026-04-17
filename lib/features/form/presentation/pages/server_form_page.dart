@@ -9,8 +9,7 @@ import '../../../../core/theme/forui/theme_tokens.dart';
 import '../../../../di/locator.dart';
 import '../../../../routing/routes.dart';
 import '../../../../shared/widgets/responsive_builder.dart';
-import '../../domain/models/server_form_data.dart';
-import '../../domain/repositories/form_result.dart';
+
 import '../state/form_state.dart' as form;
 import '../widgets/server_config_section.dart';
 import '../widgets/server_type_section.dart';
@@ -129,10 +128,7 @@ class _ServerFormViewState extends State<_ServerFormView> {
                   sectionGap: fieldGap,
                 ),
                 SizedBox(height: sectionGap),
-                Text(
-                  'Cài đặt máy chủ',
-                  style: context.theme.typography.xl,
-                ),
+                Text('Cài đặt máy chủ', style: context.theme.typography.xl),
                 SizedBox(height: fieldGap),
                 ServerConfigSection(
                   serverType: state.formData.serverType,
@@ -162,16 +158,7 @@ class _ServerFormViewState extends State<_ServerFormView> {
                 SizedBox(height: fieldGap),
                 _StatusMessage(uiState: state.uiState),
                 SizedBox(height: sectionGap),
-                _DebugPanel(
-                  formData: state.formData,
-                  validationErrors: state.validationResult.errors,
-                  uiState: state.uiState,
-                  lastResult: state.lastResult,
-                ),
-                SizedBox(height: sectionGap),
-                _McpFlowCard(
-                  onOpen: () => context.go(Routes.mcpFlow),
-                ),
+                _McpFlowCard(onOpen: () => context.go(Routes.mcpFlow)),
               ],
             ),
           ),
@@ -218,158 +205,6 @@ class _StatusMessage extends StatelessWidget {
       case form.FormUiStatus.idle:
         return const SizedBox.shrink();
     }
-  }
-}
-
-class _DebugPanel extends StatelessWidget {
-  const _DebugPanel({
-    required this.formData,
-    required this.validationErrors,
-    required this.uiState,
-    required this.lastResult,
-  });
-
-  final ServerFormData formData;
-  final Map<String, String> validationErrors;
-  final form.FormUiState uiState;
-  final FormResult? lastResult;
-
-  @override
-  Widget build(BuildContext context) {
-    return FCard(
-      child: Padding(
-        padding: const EdgeInsets.all(ThemeTokens.spaceMd),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Dữ liệu gửi',
-              style: context.theme.typography.base,
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            _InfoRow(label: 'Loại', value: formData.serverType.name),
-            _InfoRow(
-              label: 'WebSocket',
-              value: _webSocketUrl(formData),
-            ),
-            if (formData.serverType == ServerType.xiaoZhi)
-              _InfoRow(
-                label: 'QTA',
-                value: formData.xiaoZhiConfig.qtaUrl,
-              ),
-            _InfoRow(
-              label: 'Truyền tải',
-              value: _transportType(formData),
-            ),
-            const SizedBox(height: ThemeTokens.spaceMd),
-            Text(
-              'Trạng thái',
-              style: context.theme.typography.base,
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            _InfoRow(
-              label: 'UI',
-              value: uiState.status.name,
-            ),
-            if (uiState.message != null && uiState.message!.isNotEmpty)
-              _InfoRow(
-                label: 'Thông báo',
-                value: uiState.message!,
-              ),
-            if (validationErrors.isNotEmpty) ...[
-              const SizedBox(height: ThemeTokens.spaceMd),
-              Text(
-                'Lỗi kiểm tra',
-                style: context.theme.typography.base,
-              ),
-              const SizedBox(height: ThemeTokens.spaceSm),
-              ...validationErrors.entries.map(
-                (entry) => _InfoRow(
-                  label: entry.key,
-                  value: entry.value,
-                ),
-              ),
-            ],
-            const SizedBox(height: ThemeTokens.spaceMd),
-            Text(
-              'Kết quả trả về',
-              style: context.theme.typography.base,
-            ),
-            const SizedBox(height: ThemeTokens.spaceSm),
-            ..._resultLines(lastResult).map(
-              (line) => _InfoRow(label: line.$1, value: line.$2),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _webSocketUrl(ServerFormData data) {
-    return data.serverType == ServerType.xiaoZhi
-        ? data.xiaoZhiConfig.webSocketUrl
-        : data.selfHostConfig.webSocketUrl;
-  }
-
-  String _transportType(ServerFormData data) {
-    return data.serverType == ServerType.xiaoZhi
-        ? data.xiaoZhiConfig.transportType.name
-        : data.selfHostConfig.transportType.name;
-  }
-
-  List<(String, String)> _resultLines(FormResult? result) {
-    if (result == null) {
-      return const [('Kết quả', 'Chưa có')];
-    }
-    if (result is SelfHostResult) {
-      return const [('Loại', 'SelfHost')];
-    }
-    if (result is XiaoZhiResult) {
-      final ota = result.otaResult;
-      return [
-        const ('Loại', 'XiaoZhi'),
-        ('Firmware', ota?.firmware?.version ?? '-'),
-        ('Firmware URL', ota?.firmware?.url ?? '-'),
-        ('Activation', ota?.activation?.code ?? '-'),
-        ('MQTT Endpoint', ota?.mqttConfig.endpoint ?? '-'),
-        ('MQTT ClientId', ota?.mqttConfig.clientId ?? '-'),
-      ];
-    }
-    return const [('Kết quả', 'Không xác định')];
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: ThemeTokens.spaceXs),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(
-              label,
-              style: context.theme.typography.sm.copyWith(
-                color: context.theme.colors.muted,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: context.theme.typography.sm,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

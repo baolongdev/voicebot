@@ -29,9 +29,7 @@ class OtaResult {
           : fromJsonToActivation(json['activation'] as Map<String, dynamic>),
       serverTime: json['server_time'] == null
           ? null
-          : fromJsonToServerTime(
-              json['server_time'] as Map<String, dynamic>,
-            ),
+          : fromJsonToServerTime(json['server_time'] as Map<String, dynamic>),
       firmware: json['firmware'] == null
           ? null
           : fromJsonToFirmware(json['firmware'] as Map<String, dynamic>),
@@ -65,7 +63,9 @@ class ServerTime {
   factory ServerTime.fromJson(Map<String, dynamic> json) {
     return ServerTime(
       timestamp: (json['timestamp'] as num).toInt(),
-      timezone: json.containsKey('timezone') ? json['timezone'] as String? : null,
+      timezone: json.containsKey('timezone')
+          ? json['timezone'] as String?
+          : null,
       timezoneOffset: json['timezone_offset'] as int,
     );
   }
@@ -78,10 +78,7 @@ ServerTime fromJsonToServerTime(Map<String, dynamic> json) {
 
 // Ported from Android Kotlin: OtaResult.kt
 class Firmware {
-  const Firmware({
-    required this.version,
-    required this.url,
-  });
+  const Firmware({required this.version, required this.url});
 
   final String version;
   final String url;
@@ -101,10 +98,7 @@ Firmware fromJsonToFirmware(Map<String, dynamic> json) {
 
 // Ported from Android Kotlin: OtaResult.kt
 class Activation {
-  const Activation({
-    required this.code,
-    required this.message,
-  });
+  const Activation({required this.code, required this.message});
 
   final String code;
   final String message;
@@ -159,10 +153,7 @@ MqttConfig fromJsonToMqttConfig(Map<String, dynamic> json) {
 
 // Ported from Android Kotlin: OtaResult.kt
 class WebsocketConfig {
-  const WebsocketConfig({
-    required this.url,
-    required this.token,
-  });
+  const WebsocketConfig({required this.url, required this.token});
 
   final String url;
   final String token;

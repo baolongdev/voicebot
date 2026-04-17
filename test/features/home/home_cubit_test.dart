@@ -70,10 +70,7 @@ class _FakeHomeSystemService implements HomeSystemService {
   Future<List<HomeWifiNetwork>> scanWifiNetworks() async => wifiNetworks;
 
   @override
-  Future<bool> connectToWifi(
-    HomeWifiNetwork network,
-    String password,
-  ) async =>
+  Future<bool> connectToWifi(HomeWifiNetwork network, String password) async =>
       connectResult;
 
   @override
@@ -143,10 +140,7 @@ class _FakeSettingsRepository implements SettingsRepository {
 }
 
 class _FakeOta implements core_ota.OtaService {
-  _FakeOta({
-    this.deviceInfo,
-    this.nextResult,
-  });
+  _FakeOta({this.deviceInfo, this.nextResult});
 
   @override
   OtaResult? otaResult;
@@ -172,7 +166,7 @@ class _FakeOta implements core_ota.OtaService {
 
 class _FakeChatSession implements ChatSession {
   _FakeChatSession({ChatState? initial})
-      : _state = initial ?? ChatState.initial();
+    : _state = initial ?? ChatState.initial();
 
   final StreamController<ChatState> _controller =
       StreamController<ChatState>.broadcast();

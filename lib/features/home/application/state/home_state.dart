@@ -91,15 +91,19 @@ class HomeState {
     final nextBatteryState = batteryState == _noChange
         ? this.batteryState
         : batteryState as HomeBatteryState?;
-    final nextWifiName = wifiName == _noChange ? this.wifiName : wifiName as String?;
-    final nextCarrierName =
-        carrierName == _noChange ? this.carrierName : carrierName as String?;
+    final nextWifiName = wifiName == _noChange
+        ? this.wifiName
+        : wifiName as String?;
+    final nextCarrierName = carrierName == _noChange
+        ? this.carrierName
+        : carrierName as String?;
     final nextVolume = volume == _noChange ? this.volume : volume as double?;
     final nextAudioDevice = audioDevice == _noChange
         ? this.audioDevice
         : audioDevice as HomeAudioDevice?;
-    final nextWifiError =
-        wifiError == _noChange ? this.wifiError : wifiError as String?;
+    final nextWifiError = wifiError == _noChange
+        ? this.wifiError
+        : wifiError as String?;
     return HomeState(
       now: now ?? this.now,
       isConnecting: isConnecting ?? this.isConnecting,

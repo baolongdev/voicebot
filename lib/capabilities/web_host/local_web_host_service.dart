@@ -31,8 +31,8 @@ class LocalWebHostService {
   String? _cssCache;
   String? _jsCache;
   String? _managerJsCache;
-  final String _assetVersionToken =
-      DateTime.now().millisecondsSinceEpoch.toString();
+  final String _assetVersionToken = DateTime.now().millisecondsSinceEpoch
+      .toString();
   Future<DocumentImageStore>? _imageStoreFuture;
 
   static const Set<String> _allowedImageMimeTypes = <String>{
@@ -442,10 +442,10 @@ class LocalWebHostService {
         ? (clearPayload['removed_images'] as num?)?.toInt() ?? 0
         : 0;
     AppLogger.event(
-        'WebHost',
-        'image_clear_all',
-        fields: <String, Object?>{'removed_images': removedImages},
-      );
+      'WebHost',
+      'image_clear_all',
+      fields: <String, Object?>{'removed_images': removedImages},
+    );
     AppLogger.event('WebHost', 'document_clear_all');
     await _writeJson(request, <String, Object?>{
       'ok': true,
@@ -939,11 +939,10 @@ class LocalWebHostService {
           return <String, Object?>{
             'name': (doc['name'] ?? '').toString().trim(),
             'text': text,
-            'folder': (doc['folder'] ??
-                    (meta is Map ? meta['folder'] : null) ??
-                    '')
-                .toString()
-                .trim(),
+            'folder':
+                (doc['folder'] ?? (meta is Map ? meta['folder'] : null) ?? '')
+                    .toString()
+                    .trim(),
           };
         })
         .where((doc) {
@@ -967,18 +966,22 @@ class LocalWebHostService {
     final normalizedImages = images
         .whereType<Map>()
         .map((img) => Map<String, dynamic>.from(img))
-        .map((img) => <String, Object?>{
-          'doc_name': (img['doc_name'] ?? img['name'] ?? '').toString().trim(),
-          'file_name':
-              ((img['file_name'] ?? 'image').toString().trim().isEmpty
-                  ? 'image'
-                  : (img['file_name'] ?? 'image').toString().trim()),
-          'mime_type': (img['mime_type'] ?? '').toString().trim(),
-          'caption': img['caption'],
-          'data_base64': (img['data_base64'] ?? img['data'] ?? '')
-              .toString()
-              .trim(),
-        })
+        .map(
+          (img) => <String, Object?>{
+            'doc_name': (img['doc_name'] ?? img['name'] ?? '')
+                .toString()
+                .trim(),
+            'file_name':
+                ((img['file_name'] ?? 'image').toString().trim().isEmpty
+                ? 'image'
+                : (img['file_name'] ?? 'image').toString().trim()),
+            'mime_type': (img['mime_type'] ?? '').toString().trim(),
+            'caption': img['caption'],
+            'data_base64': (img['data_base64'] ?? img['data'] ?? '')
+                .toString()
+                .trim(),
+          },
+        )
         .where((img) {
           final docName = (img['doc_name'] ?? '').toString();
           final dataBase64 = (img['data_base64'] ?? '').toString();
@@ -1047,8 +1050,7 @@ class LocalWebHostService {
       }
     }
 
-    final assignments =
-        (normalized['assignments'] as Map<String, String>);
+    final assignments = (normalized['assignments'] as Map<String, String>);
     final rawAssignments = raw['assignments'];
     if (rawAssignments is Map) {
       for (final entry in rawAssignments.entries) {
@@ -1521,7 +1523,10 @@ class LocalWebHostService {
 
   void _applyNoStoreHeaders(HttpResponse response) {
     response.headers
-      ..set(HttpHeaders.cacheControlHeader, 'no-store, no-cache, must-revalidate')
+      ..set(
+        HttpHeaders.cacheControlHeader,
+        'no-store, no-cache, must-revalidate',
+      )
       ..set(HttpHeaders.pragmaHeader, 'no-cache')
       ..set(HttpHeaders.expiresHeader, '0');
   }

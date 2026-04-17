@@ -68,7 +68,8 @@ chat:
   connect_greeting: "Xin chào"
   # [true, false]: Tự reconnect khi mất kết nối.
   auto_reconnect: true
-  # [true, false]: Bật tính năng related images.
+  # [true, false]: Trạng thái mặc định của related images lúc khởi động app.
+  # Có thể được người dùng bật/tắt lại ngay trong màn chat.
   related_images_enabled: true
   # [1..10]: Số related images tối đa.
   related_images_max_count: 4

@@ -12,10 +12,10 @@ class FormRepositoryImpl implements FormRepository {
   FormRepositoryImpl({
     required OtaService ota,
     required SettingsRepository settingsRepository,
-  })  : _ota = ota,
-        _settingsRepository = settingsRepository,
-        _controller = StreamController<FormResult?>.broadcast(),
-        _lastResult = null {
+  }) : _ota = ota,
+       _settingsRepository = settingsRepository,
+       _controller = StreamController<FormResult?>.broadcast(),
+       _lastResult = null {
     _controller.add(null);
   }
 

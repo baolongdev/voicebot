@@ -395,4 +395,3 @@ Uint8List _buildWavHeaderWithLength({
 
   return buffer;
 }
-

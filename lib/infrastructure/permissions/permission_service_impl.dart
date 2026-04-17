@@ -9,10 +9,7 @@ class PermissionServiceImpl implements PermissionService {
   @override
   Future<PermissionResult> check(PermissionType type) async {
     if (type == PermissionType.audio) {
-      return PermissionResult(
-        type: type,
-        status: PermissionStatus.granted,
-      );
+      return PermissionResult(type: type, status: PermissionStatus.granted);
     }
     final permission = _mapPermission(type);
     final status = await permission.status;
@@ -22,10 +19,7 @@ class PermissionServiceImpl implements PermissionService {
   @override
   Future<PermissionResult> request(PermissionType type) async {
     if (type == PermissionType.audio) {
-      return PermissionResult(
-        type: type,
-        status: PermissionStatus.granted,
-      );
+      return PermissionResult(type: type, status: PermissionStatus.granted);
     }
     final permission = _mapPermission(type);
     final status = await permission.request();

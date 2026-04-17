@@ -12,10 +12,9 @@ class OtaAndroidPlatform implements OtaPlatform {
 
   @override
   Future<void> installFirmware(File file) async {
-    await _channel.invokeMethod<void>(
-      'installFirmware',
-      <String, dynamic>{'path': file.path},
-    );
+    await _channel.invokeMethod<void>('installFirmware', <String, dynamic>{
+      'path': file.path,
+    });
   }
 
   @override

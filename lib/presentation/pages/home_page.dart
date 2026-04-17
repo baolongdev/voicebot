@@ -81,6 +81,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Timer? _carouselHideTimer;
   bool _facePresent = false;
   List<String> _carouselImages = const <String>[];
+  bool _landscapeWsActionInFlight = false;
   static const Duration _faceConnectDelay = Duration(seconds: 3);
   static const Duration _carouselDisplayDuration = Duration(minutes: 2);
 
@@ -154,10 +155,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final padding = (shortestSide / 40).clamp(8.0, 24.0);
       final cameraSize = (shortestSide / 3).clamp(120.0, 200.0);
 
-      if (!_cameraEnabled.value) {
-        _cameraEnabled.value = true;
-      }
-
       final cameraAspectRatio = _cameraAspectRatio.value;
 
       return Scaffold(
@@ -179,6 +176,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
               return Stack(
                 children: [
+                  Positioned(
+                    top: padding * 0.5,
+                    left: padding * 0.75,
+                    child: _buildLandscapeConnectionButton(
+                      status: chatState.status,
+                      fontSize: fontSize,
+                      padding: padding,
+                      inFlight: _landscapeWsActionInFlight,
+                    ),
+                  ),
                   Positioned(
                     bottom: padding * 2,
                     left: 0,
@@ -217,50 +224,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                       ),
                     ],
                   ),
-                  Positioned(
-                    top: 2,
-                    right: 2,
-                    child: SizedBox(
-                      width: cameraSize,
-                      height: cameraSize / cameraAspectRatio,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black12,
-                          border: Border.all(
-                            color: Colors.white24,
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(7),
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              return Stack(
-                                children: [
-                                  HomeCameraOverlay(
-                                    areaSize: Size(
-                                      constraints.maxWidth,
-                                      constraints.maxHeight,
-                                    ),
-                                    enabled: _cameraEnabled.value,
-                                    onEnabledChanged: _setCameraEnabled,
-                                    onFacePresenceChanged:
-                                        _handleFacePresenceChanged,
-                                    detectFacesEnabled:
-                                        _detectFacesEnabled.value,
-                                    aspectRatio: cameraAspectRatio,
-                                    faceLandmarksEnabled: false,
-                                    faceMeshEnabled: false,
-                                    eyeTrackingEnabled: false,
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
+                  _buildLandscapeCameraPanel(
+                    cameraSize: cameraSize,
+                    cameraAspectRatio: cameraAspectRatio,
+                    fontSize: fontSize,
+                    padding: padding,
                   ),
                 ],
               );
@@ -366,6 +334,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   Future<void> _handleDisconnectChat() async {
     await context.read<HomeCubit>().disconnect();
+  }
+
+  Future<void> _toggleLandscapeWsConnection(ChatConnectionStatus status) async {
+    if (_landscapeWsActionInFlight || !mounted) {
+      return;
+    }
+    if (status == ChatConnectionStatus.connecting ||
+        status == ChatConnectionStatus.reconnecting) {
+      return;
+    }
+    setState(() {
+      _landscapeWsActionInFlight = true;
+    });
+    try {
+      if (status == ChatConnectionStatus.connected) {
+        await _handleDisconnectChat();
+        return;
+      }
+      await _handleConnectChat();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _landscapeWsActionInFlight = false;
+        });
+      }
+    }
   }
 
   Future<void> _handleManualSend() async {
@@ -1375,6 +1369,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       return;
     }
     _cameraEnabled.value = enabled;
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _setCameraAspectRatio(double aspectRatio) {
@@ -1386,7 +1383,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _handleFacePresenceChanged(bool hasFace) {
+    final changed = _facePresent != hasFace;
     _facePresent = hasFace;
+    if (changed && mounted) {
+      setState(() {});
+    }
     if (!hasFace) {
       _stopFaceCountdown();
       return;
@@ -1479,9 +1480,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     double fontSize = 14,
     double padding = 16,
   }) {
-    String text;
-    Color backgroundColor;
-
     final now = DateTime.now();
     final timeSinceChange = _badgeStatusChangedAt != null
         ? now.difference(_badgeStatusChangedAt!).inMilliseconds
@@ -1490,7 +1488,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final isConnectionError =
         status == ChatConnectionStatus.error ||
         (connectionError?.isNotEmpty ?? false);
-    final newStatus = status == ChatConnectionStatus.connecting ||
+    final nextStatusKey =
+        status == ChatConnectionStatus.connecting ||
             status == ChatConnectionStatus.reconnecting
         ? 'connecting'
         : isConnectionError
@@ -1503,105 +1502,351 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : 'connected'
         : 'disconnected';
 
-    if (newStatus != _lastBadgeStatus && timeSinceChange < 500) {
-      if (_lastBadgeStatus == 'listening') {
-        text = 'Đang nghe';
-        backgroundColor = Colors.blue.withValues(alpha: 0.8);
-      } else if (_lastBadgeStatus == 'speaking') {
-        text = 'Đang nói';
-        backgroundColor = Colors.purple.withValues(alpha: 0.8);
-      } else if (_lastBadgeStatus == 'connecting') {
-        text = 'Đang kết nối';
-        backgroundColor = Colors.orange.withValues(alpha: 0.8);
-      } else if (_lastBadgeStatus == 'error') {
-        text = networkWarning ? 'Mất kết nối do mạng yếu' : 'Mất kết nối';
-        backgroundColor = Colors.red.withValues(alpha: 0.85);
-      } else if (_lastBadgeStatus == 'connected') {
-        text = 'Đã kết nối';
-        backgroundColor = Colors.green.withValues(alpha: 0.8);
-      } else {
-        text = 'Chưa kết nối';
-        backgroundColor = Colors.grey.withValues(alpha: 0.6);
-      }
-    } else {
-      if (newStatus != _lastBadgeStatus) {
-        _lastBadgeStatus = newStatus;
-        _badgeStatusChangedAt = now;
-      }
+    final shouldHoldPrevious =
+        nextStatusKey != _lastBadgeStatus &&
+        _lastBadgeStatus.isNotEmpty &&
+        timeSinceChange < 500;
 
-      if (status == ChatConnectionStatus.connecting ||
-          status == ChatConnectionStatus.reconnecting) {
-        text = 'Đang kết nối';
-        backgroundColor = Colors.orange.withValues(alpha: 0.8);
-      } else if (isConnectionError) {
-        text = networkWarning ? 'Mất kết nối do mạng yếu' : 'Mất kết nối';
-        backgroundColor = Colors.red.withValues(alpha: 0.85);
-      } else if (status == ChatConnectionStatus.connected) {
-        if (isSpeaking) {
-          text = 'Đang nói';
-          backgroundColor = Colors.purple.withValues(alpha: 0.8);
-        } else if (isListening) {
-          text = 'Đang nghe';
-          backgroundColor = Colors.blue.withValues(alpha: 0.8);
-        } else if (_lastWasSpeakingLandscape) {
-          text = 'Đang nói';
-          backgroundColor = Colors.purple.withValues(alpha: 0.8);
-        } else {
-          text = 'Đang nghe';
-          backgroundColor = Colors.blue.withValues(alpha: 0.8);
-        }
-      } else if (status == ChatConnectionStatus.idle) {
-        text = 'Chưa kết nối';
-        backgroundColor = Colors.grey.withValues(alpha: 0.6);
-      } else {
-        text = 'Chưa kết nối';
-        backgroundColor = Colors.grey.withValues(alpha: 0.6);
-      }
+    if (!shouldHoldPrevious && nextStatusKey != _lastBadgeStatus) {
+      _lastBadgeStatus = nextStatusKey;
+      _badgeStatusChangedAt = now;
     }
+
+    final statusKey = shouldHoldPrevious ? _lastBadgeStatus : nextStatusKey;
+
+    final visual = switch (statusKey) {
+      'listening' => (
+        label: 'Đang nghe',
+        icon: Icons.hearing_rounded,
+        fg: Colors.lightBlue.shade100,
+        bg: Colors.lightBlue.withValues(alpha: 0.18),
+        border: Colors.lightBlue.withValues(alpha: 0.65),
+        loading: false,
+      ),
+      'speaking' => (
+        label: 'Đang nói',
+        icon: Icons.graphic_eq_rounded,
+        fg: Colors.purple.shade100,
+        bg: Colors.purple.withValues(alpha: 0.18),
+        border: Colors.purple.withValues(alpha: 0.65),
+        loading: false,
+      ),
+      'connecting' => (
+        label: 'Đang kết nối',
+        icon: Icons.sync_rounded,
+        fg: Colors.orange.shade100,
+        bg: Colors.orange.withValues(alpha: 0.18),
+        border: Colors.orange.withValues(alpha: 0.65),
+        loading: true,
+      ),
+      'error' => (
+        label: networkWarning ? 'Mạng yếu, đang reconnect' : 'Mất kết nối',
+        icon: Icons.wifi_off_rounded,
+        fg: Colors.red.shade100,
+        bg: Colors.red.withValues(alpha: 0.18),
+        border: Colors.red.withValues(alpha: 0.65),
+        loading: false,
+      ),
+      'connected' => (
+        label: 'Đã kết nối',
+        icon: Icons.wifi_rounded,
+        fg: Colors.green.shade100,
+        bg: Colors.green.withValues(alpha: 0.18),
+        border: Colors.green.withValues(alpha: 0.65),
+        loading: false,
+      ),
+      _ => (
+        label: 'Chưa kết nối',
+        icon: Icons.wifi_tethering_off_rounded,
+        fg: Colors.white70,
+        bg: Colors.white.withValues(alpha: 0.08),
+        border: Colors.white24,
+        loading: false,
+      ),
+    };
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           padding: EdgeInsets.symmetric(
-            horizontal: padding,
-            vertical: padding / 2,
+            horizontal: padding * 0.9,
+            vertical: padding * 0.35,
           ),
           decoration: BoxDecoration(
-            color: backgroundColor,
+            color: visual.bg,
             borderRadius: BorderRadius.circular(padding * 1.25),
+            border: Border.all(color: visual.border, width: 1),
           ),
-          child: Text(
-            text,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-            ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (visual.loading)
+                SizedBox(
+                  width: fontSize,
+                  height: fontSize,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(visual.fg),
+                  ),
+                )
+              else
+                Icon(visual.icon, size: fontSize * 1.05, color: visual.fg),
+              SizedBox(width: padding * 0.35),
+              Text(
+                visual.label,
+                style: TextStyle(
+                  color: visual.fg,
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
         ),
         if (status == ChatConnectionStatus.connected && networkWarning) ...[
           SizedBox(height: padding / 3),
           Container(
             padding: EdgeInsets.symmetric(
-              horizontal: padding * 0.75,
-              vertical: padding * 0.2,
+              horizontal: padding * 0.65,
+              vertical: padding * 0.22,
             ),
             decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.9),
+              color: Colors.orange.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(padding),
-            ),
-            child: Text(
-              'Mạng yếu',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: fontSize * 0.9,
-                fontWeight: FontWeight.w600,
+              border: Border.all(
+                color: Colors.orange.withValues(alpha: 0.65),
+                width: 1,
               ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.network_check_rounded,
+                  size: fontSize * 0.9,
+                  color: Colors.orange.shade100,
+                ),
+                SizedBox(width: padding * 0.25),
+                Text(
+                  'Mạng yếu',
+                  style: TextStyle(
+                    color: Colors.orange.shade100,
+                    fontSize: fontSize * 0.85,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildLandscapeCameraPanel({
+    required double cameraSize,
+    required double cameraAspectRatio,
+    required double fontSize,
+    required double padding,
+  }) {
+    final panelWidth = cameraSize;
+    final panelHeight = cameraSize / cameraAspectRatio;
+    final panelRadius = (padding * 0.75).clamp(10.0, 14.0).toDouble();
+    final cameraEnabled = _cameraEnabled.value;
+    final hasFace = _facePresent && cameraEnabled;
+    final faceLabel = !cameraEnabled
+        ? 'Camera tắt'
+        : (hasFace ? 'Đã nhận diện mặt' : 'Chưa nhận diện mặt');
+    final faceColor = !cameraEnabled
+        ? Colors.white70
+        : (hasFace ? Colors.green.shade100 : Colors.orange.shade100);
+    final faceIcon = !cameraEnabled
+        ? Icons.videocam_off_rounded
+        : (hasFace ? Icons.verified_user_rounded : Icons.person_search_rounded);
+
+    return Positioned(
+      top: padding * 0.45,
+      right: padding * 0.45,
+      child: SizedBox(
+        width: panelWidth,
+        height: panelHeight,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withValues(alpha: 0.3),
+                Colors.black.withValues(alpha: 0.14),
+              ],
+            ),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.28),
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(panelRadius),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(panelRadius - 1),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 180;
+                final statusLabel = compact
+                    ? (!cameraEnabled
+                          ? 'Tắt'
+                          : (hasFace ? 'Có mặt' : 'Chưa thấy'))
+                    : faceLabel;
+                return Stack(
+                  children: [
+                    HomeCameraOverlay(
+                      areaSize: Size(
+                        constraints.maxWidth,
+                        constraints.maxHeight,
+                      ),
+                      enabled: cameraEnabled,
+                      onEnabledChanged: _setCameraEnabled,
+                      onFacePresenceChanged: _handleFacePresenceChanged,
+                      detectFacesEnabled: _detectFacesEnabled.value,
+                      aspectRatio: cameraAspectRatio,
+                      faceLandmarksEnabled: false,
+                      faceMeshEnabled: false,
+                      eyeTrackingEnabled: false,
+                      edgePadding: 0,
+                      decorateContainer: false,
+                      borderRadius: panelRadius - 1,
+                    ),
+                    Positioned(
+                      top: padding * 0.25,
+                      left: padding * 0.25,
+                      right: padding * 0.25,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: padding * 0.45,
+                          vertical: padding * 0.18,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.38),
+                          borderRadius: BorderRadius.circular(padding),
+                          border: Border.all(
+                            color: faceColor.withValues(alpha: 0.72),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              faceIcon,
+                              size: fontSize * 0.85,
+                              color: faceColor,
+                            ),
+                            SizedBox(width: padding * 0.2),
+                            Expanded(
+                              child: Text(
+                                statusLabel,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: faceColor,
+                                  fontSize: compact
+                                      ? fontSize * 0.56
+                                      : fontSize * 0.62,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLandscapeConnectionButton({
+    required ChatConnectionStatus status,
+    required double fontSize,
+    required double padding,
+    required bool inFlight,
+  }) {
+    final isConnecting =
+        status == ChatConnectionStatus.connecting ||
+        status == ChatConnectionStatus.reconnecting ||
+        inFlight;
+    final isConnected = status == ChatConnectionStatus.connected;
+    final label = isConnected ? 'Ngắt kết nối' : 'Kết nối';
+    final background = isConnected
+        ? Colors.red.withValues(alpha: 0.18)
+        : Colors.green.withValues(alpha: 0.18);
+    final border = isConnected
+        ? Colors.red.withValues(alpha: 0.65)
+        : Colors.green.withValues(alpha: 0.65);
+    final foreground = isConnected
+        ? Colors.red.shade100
+        : Colors.green.shade100;
+
+    return GestureDetector(
+      onTap: isConnecting
+          ? null
+          : () {
+              unawaited(_toggleLandscapeWsConnection(status));
+            },
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: padding * 0.7,
+          vertical: padding * 0.3,
+        ),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(padding),
+          border: Border.all(color: border, width: 1),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isConnecting)
+              SizedBox(
+                width: fontSize,
+                height: fontSize,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.orangeAccent,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                isConnected ? Icons.wifi_off_rounded : Icons.wifi_rounded,
+                size: fontSize * 1.1,
+                color: foreground,
+              ),
+            SizedBox(width: padding * 0.35),
+            Text(
+              isConnecting ? 'Đang kết nối' : label,
+              style: TextStyle(
+                color: isConnecting ? Colors.orangeAccent : foreground,
+                fontSize: fontSize * 0.9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

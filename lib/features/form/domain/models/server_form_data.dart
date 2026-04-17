@@ -12,10 +12,7 @@ class ServerFormData {
 }
 
 // Ported from Android Kotlin: ServerFormData.kt
-enum ServerType {
-  xiaoZhi,
-  selfHost,
-}
+enum ServerType { xiaoZhi, selfHost }
 
 // Ported from Android Kotlin: ServerFormData.kt
 class XiaoZhiConfig {
@@ -42,10 +39,7 @@ class SelfHostConfig {
 }
 
 // Ported from Android Kotlin: ServerFormData.kt
-enum TransportType {
-  mqtt,
-  webSockets,
-}
+enum TransportType { mqtt, webSockets }
 
 // Ported from Android Kotlin: ValidationResult.kt
 class ValidationResult {

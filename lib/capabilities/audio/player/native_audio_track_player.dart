@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 class NativeAudioTrackPlayer {
   NativeAudioTrackPlayer({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel('voicebot/audio_player');
+    : _channel = channel ?? const MethodChannel('voicebot/audio_player');
 
   final MethodChannel _channel;
   bool _initialized = false;
@@ -12,14 +12,11 @@ class NativeAudioTrackPlayer {
     required int channels,
     required int bufferSize,
   }) async {
-    await _channel.invokeMethod<void>(
-      'init',
-      <String, dynamic>{
-        'sampleRate': sampleRate,
-        'channels': channels,
-        'bufferSize': bufferSize,
-      },
-    );
+    await _channel.invokeMethod<void>('init', <String, dynamic>{
+      'sampleRate': sampleRate,
+      'channels': channels,
+      'bufferSize': bufferSize,
+    });
     _initialized = true;
   }
 

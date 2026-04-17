@@ -27,17 +27,17 @@ class ServerConfigSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return switch (serverType) {
       ServerType.xiaoZhi => _XiaoZhiSection(
-          config: xiaoZhiConfig,
-          errors: errors,
-          fieldGap: fieldGap,
-          onUpdate: onXiaoZhiUpdate,
-        ),
+        config: xiaoZhiConfig,
+        errors: errors,
+        fieldGap: fieldGap,
+        onUpdate: onXiaoZhiUpdate,
+      ),
       ServerType.selfHost => _SelfHostSection(
-          config: selfHostConfig,
-          errors: errors,
-          fieldGap: fieldGap,
-          onUpdate: onSelfHostUpdate,
-        ),
+        config: selfHostConfig,
+        errors: errors,
+        fieldGap: fieldGap,
+        onUpdate: onSelfHostUpdate,
+      ),
     };
   }
 }
@@ -120,10 +120,7 @@ class _XiaoZhiSection extends StatelessWidget {
           ),
         ),
         SizedBox(height: fieldGap),
-        Text(
-          'Loại truyền tải',
-          style: context.theme.typography.base,
-        ),
+        Text('Loại truyền tải', style: context.theme.typography.base),
         SizedBox(height: fieldGap),
         FocusTraversalOrder(
           order: const NumericFocusOrder(3.5),

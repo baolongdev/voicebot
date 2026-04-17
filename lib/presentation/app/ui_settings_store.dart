@@ -27,6 +27,7 @@ class UiSettingsStore {
   static const _autoReconnectKey = 'ui_auto_reconnect';
   static const _deviceMacKey = 'ota_device_mac';
   static const _deviceUuidKey = 'ota_device_uuid';
+  static const _relatedImagesEnabledKey = 'ui_related_images_enabled';
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _storage.read(key: _themeModeKey);
@@ -129,8 +130,20 @@ class UiSettingsStore {
   }
 
   Future<void> writeAutoReconnectEnabled(bool enabled) async {
+    await _storage.write(key: _autoReconnectKey, value: enabled ? '1' : '0');
+  }
+
+  Future<bool?> readRelatedImagesEnabled() async {
+    final value = await _storage.read(key: _relatedImagesEnabledKey);
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+    return value == '1' || value == 'true';
+  }
+
+  Future<void> writeRelatedImagesEnabled(bool enabled) async {
     await _storage.write(
-      key: _autoReconnectKey,
+      key: _relatedImagesEnabledKey,
       value: enabled ? '1' : '0',
     );
   }
@@ -156,10 +169,7 @@ class UiSettingsStore {
   }
 
   Future<void> writeCarouselAutoPlay(bool enabled) async {
-    await _storage.write(
-      key: _carouselAutoPlayKey,
-      value: enabled ? '1' : '0',
-    );
+    await _storage.write(key: _carouselAutoPlayKey, value: enabled ? '1' : '0');
   }
 
   Future<int?> readCarouselIntervalMs() async {
@@ -207,10 +217,7 @@ class UiSettingsStore {
   }
 
   Future<void> writeCarouselEnlarge(bool enabled) async {
-    await _storage.write(
-      key: _carouselEnlargeKey,
-      value: enabled ? '1' : '0',
-    );
+    await _storage.write(key: _carouselEnlargeKey, value: enabled ? '1' : '0');
   }
 
   Future<bool?> readFaceLandmarksEnabled() async {
@@ -222,10 +229,7 @@ class UiSettingsStore {
   }
 
   Future<void> writeFaceLandmarksEnabled(bool enabled) async {
-    await _storage.write(
-      key: _faceLandmarksKey,
-      value: enabled ? '1' : '0',
-    );
+    await _storage.write(key: _faceLandmarksKey, value: enabled ? '1' : '0');
   }
 
   Future<bool?> readFaceMeshEnabled() async {
@@ -237,10 +241,7 @@ class UiSettingsStore {
   }
 
   Future<void> writeFaceMeshEnabled(bool enabled) async {
-    await _storage.write(
-      key: _faceMeshKey,
-      value: enabled ? '1' : '0',
-    );
+    await _storage.write(key: _faceMeshKey, value: enabled ? '1' : '0');
   }
 
   Future<bool?> readEyeTrackingEnabled() async {
@@ -252,10 +253,7 @@ class UiSettingsStore {
   }
 
   Future<void> writeEyeTrackingEnabled(bool enabled) async {
-    await _storage.write(
-      key: _eyeTrackingKey,
-      value: enabled ? '1' : '0',
-    );
+    await _storage.write(key: _eyeTrackingKey, value: enabled ? '1' : '0');
   }
 
   Future<String?> readDeviceMacAddress() async {

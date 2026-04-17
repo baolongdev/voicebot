@@ -205,32 +205,32 @@ void main() {
   setUpAll(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(storageChannel, (call) async {
-      final args =
-          (call.arguments as Map?)?.cast<String, dynamic>() ??
-          <String, dynamic>{};
-      final key = args['key'] as String?;
-      switch (call.method) {
-        case 'read':
-          return key == null ? null : storage[key];
-        case 'write':
-          if (key != null) {
-            storage[key] = args['value'] as String? ?? '';
+          final args =
+              (call.arguments as Map?)?.cast<String, dynamic>() ??
+              <String, dynamic>{};
+          final key = args['key'] as String?;
+          switch (call.method) {
+            case 'read':
+              return key == null ? null : storage[key];
+            case 'write':
+              if (key != null) {
+                storage[key] = args['value'] as String? ?? '';
+              }
+              return null;
+            case 'delete':
+              if (key != null) {
+                storage.remove(key);
+              }
+              return null;
+            case 'deleteAll':
+              storage.clear();
+              return null;
+            case 'readAll':
+              return storage;
+            default:
+              return null;
           }
-          return null;
-        case 'delete':
-          if (key != null) {
-            storage.remove(key);
-          }
-          return null;
-        case 'deleteAll':
-          storage.clear();
-          return null;
-        case 'readAll':
-          return storage;
-        default:
-          return null;
-      }
-    });
+        });
   });
 
   setUp(() {
@@ -239,7 +239,9 @@ void main() {
 
   group('OTA checkVersion', () {
     test('Given short URL, When checkVersion, Then returns false', () async {
-      final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
+      final ota = system_ota.OtaClient(
+        device_info.DummyDataGenerator.generate(),
+      );
       final result = await ota.checkVersion('short');
       expect(result, isFalse);
     });
@@ -309,7 +311,9 @@ void main() {
         }, (_) {});
         final overrides = _FakeHttpOverrides(fakeClient);
 
-        final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
+        final ota = system_ota.OtaClient(
+          device_info.DummyDataGenerator.generate(),
+        );
         final result = await HttpOverrides.runZoned(
           () => ota.checkVersion('https://example.com/ota'),
           createHttpClient: overrides.createHttpClient,
@@ -331,7 +335,9 @@ void main() {
       }, (_) {});
       final overrides = _FakeHttpOverrides(fakeClient);
 
-      final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
+      final ota = system_ota.OtaClient(
+        device_info.DummyDataGenerator.generate(),
+      );
       final result = await HttpOverrides.runZoned(
         () => ota.checkVersion('https://example.com/ota'),
         createHttpClient: overrides.createHttpClient,
@@ -354,7 +360,9 @@ void main() {
         }, (_) {});
         final overrides = _FakeHttpOverrides(fakeClient);
 
-        final ota = system_ota.OtaClient(device_info.DummyDataGenerator.generate());
+        final ota = system_ota.OtaClient(
+          device_info.DummyDataGenerator.generate(),
+        );
         final result = await HttpOverrides.runZoned(
           () => ota.checkVersion('https://example.com/ota'),
           createHttpClient: overrides.createHttpClient,

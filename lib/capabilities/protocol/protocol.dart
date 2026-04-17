@@ -7,6 +7,7 @@ enum AbortReason { wakeWordDetected, none }
 
 // Ported from Android Kotlin: Protocol.kt
 enum ListeningMode { alwaysOn, autoStop, manual }
+
 enum TextSendMode { listenDetect, text }
 
 // Ported from Android Kotlin: Protocol.kt
@@ -15,10 +16,10 @@ enum AudioState { opened, closed }
 // Ported from Android Kotlin: Protocol.kt
 abstract class Protocol {
   Protocol()
-      : incomingJsonStream = StreamController<Map<String, dynamic>>.broadcast(),
-        incomingAudioStream = StreamController<Uint8List>.broadcast(),
-        audioChannelStateStream = StreamController<AudioState>.broadcast(),
-        networkErrorStream = StreamController<String>.broadcast();
+    : incomingJsonStream = StreamController<Map<String, dynamic>>.broadcast(),
+      incomingAudioStream = StreamController<Uint8List>.broadcast(),
+      audioChannelStateStream = StreamController<AudioState>.broadcast(),
+      networkErrorStream = StreamController<String>.broadcast();
 
   String sessionId = '';
 
@@ -35,10 +36,7 @@ abstract class Protocol {
   Future<void> sendText(String text);
 
   Future<void> sendAbortSpeaking(AbortReason reason) async {
-    final payload = <String, dynamic>{
-      'session_id': sessionId,
-      'type': 'abort',
-    };
+    final payload = <String, dynamic>{'session_id': sessionId, 'type': 'abort'};
     if (reason == AbortReason.wakeWordDetected) {
       payload['reason'] = 'wake_word_detected';
     }

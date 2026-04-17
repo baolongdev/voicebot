@@ -7,9 +7,7 @@ import '../protocol/mqtt_protocol.dart';
 import 'transport_client.dart';
 
 class MqttTransportClient implements TransportClient {
-  MqttTransportClient({
-    required this.mqttConfig,
-  });
+  MqttTransportClient({required this.mqttConfig});
 
   final MqttConfig mqttConfig;
 

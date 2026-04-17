@@ -131,7 +131,11 @@ class HomeFooter extends StatelessWidget {
             ),
           ],
           const SizedBox(height: ThemeTokens.spaceSm),
-          BlocSelector<ChatCubit, ChatState, ({double incoming, double outgoing, bool isSpeaking})>(
+          BlocSelector<
+            ChatCubit,
+            ChatState,
+            ({double incoming, double outgoing, bool isSpeaking})
+          >(
             selector: (state) => (
               incoming: state.incomingLevel,
               outgoing: state.outgoingLevel,
@@ -178,19 +182,20 @@ class HomeFooter extends StatelessWidget {
                             style: isConnected
                                 ? FButtonStyle.secondary(
                                     (style) => style.copyWith(
-                                      contentStyle: (content) => content.copyWith(
-                                        textStyle: content.textStyle.map(
-                                          (style) => style.copyWith(
-                                            fontWeight: FontWeight.w700,
+                                      contentStyle: (content) =>
+                                          content.copyWith(
+                                            textStyle: content.textStyle.map(
+                                              (style) => style.copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: ThemeTokens
+                                                  .buttonPaddingHorizontal,
+                                              vertical: ThemeTokens
+                                                  .buttonPaddingVertical,
+                                            ),
                                           ),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal:
-                                              ThemeTokens.buttonPaddingHorizontal,
-                                          vertical:
-                                              ThemeTokens.buttonPaddingVertical,
-                                        ),
-                                      ),
                                     ),
                                   )
                                 : FButtonStyle.primary(
@@ -204,18 +209,19 @@ class HomeFooter extends StatelessWidget {
                                         ).copyWith(
                                           contentStyle: (content) =>
                                               content.copyWith(
-                                                textStyle: content.textStyle.map(
-                                                  (style) => style.copyWith(
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: ThemeTokens
-                                                          .buttonPaddingHorizontal,
-                                                      vertical: ThemeTokens
-                                                          .buttonPaddingVertical,
+                                                textStyle: content.textStyle
+                                                    .map(
+                                                      (style) => style.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                      ),
                                                     ),
+                                                padding: const EdgeInsets.symmetric(
+                                                  horizontal: ThemeTokens
+                                                      .buttonPaddingHorizontal,
+                                                  vertical: ThemeTokens
+                                                      .buttonPaddingVertical,
+                                                ),
                                               ),
                                         ),
                                   ),

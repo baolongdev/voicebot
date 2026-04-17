@@ -1,11 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-enum LogLevel {
-  debug,
-  info,
-  warn,
-  error,
-}
+enum LogLevel { debug, info, warn, error }
 
 class Logger {
   const Logger._();

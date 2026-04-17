@@ -29,7 +29,6 @@ class ThemeTokens {
   static const double chatImageLoadingSize = 18.0;
   static const double chatImageLoadingStroke = 2.0;
 
-  // Layout sizing tokens to avoid scattered magic numbers.
   static const double formWidthTablet = 480.0;
   static const double formWidthDesktop = 560.0;
   static const double paddingMobile = spaceLg;
@@ -42,7 +41,6 @@ class ThemeTokens {
   static const double sectionGapTablet = spaceXl;
   static const double sectionGapDesktop = spaceXl;
 
-  // Home layout sizing tokens for responsive content width.
   static const double homeWidthTablet = 480.0;
   static const double homeWidthDesktop = 720.0;
   static const double homePaddingMobile = spaceLg;
@@ -58,4 +56,12 @@ class ThemeTokens {
   static const Duration motionFast = Duration(milliseconds: 150);
   static const Duration motionBase = Duration(milliseconds: 250);
   static const Duration motionSlow = Duration(milliseconds: 400);
+
+  static const double radiusPill = 500.0;
+  static const double radiusFullPill = 9999.0;
+  static const double radiusCircle = 0.5;
+
+  static const double borderLight = 1.0;
+  static const double borderMedium = 4.0;
+  static const double borderHeavy = 8.0;
 }

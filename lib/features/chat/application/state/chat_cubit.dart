@@ -117,6 +117,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   int _relatedImagesRequestToken = 0;
   String? _lastRelatedQuery;
   DateTime _lastRelatedQueryAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _relatedImagesEnabled = AppConfig.chatRelatedImagesEnabled;
   static const Duration _networkWarningHold = Duration(seconds: 12);
   static const String _relatedImagesMessageId = '__related_images__';
   String _connectGreeting =
@@ -162,6 +163,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
           currentEmotion: 'neutral',
           incomingLevel: 0,
           outgoingLevel: 0,
+          isListening: false,
           status: ChatConnectionStatus.idle,
           connectionError: userInitiated ? null : state.connectionError,
           networkWarning: userInitiated ? false : state.networkWarning,
@@ -238,8 +240,44 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     }
   }
 
+  void setRelatedImagesEnabled(bool enabled) {
+    if (_relatedImagesEnabled == enabled) {
+      return;
+    }
+    _relatedImagesEnabled = enabled;
+    if (!enabled) {
+      _relatedImagesRequestToken += 1;
+      _lastRelatedQuery = null;
+      _clearRelatedImagesMessage();
+    }
+  }
+
+  Future<void> startListening({bool enableMic = true}) async {
+    if (!state.isConnected || _disposed || isClosed) {
+      return;
+    }
+    await _setListeningMode(ListeningMode.manual);
+    await _startListening(enableMic: enableMic);
+    if (_disposed || isClosed) {
+      return;
+    }
+    emit(state.copyWith(isListening: true, connectionError: null));
+  }
+
+  Future<void> toggleListening({bool enableMic = true}) async {
+    if (state.isListening) {
+      await stopListening();
+      return;
+    }
+    await startListening(enableMic: enableMic);
+  }
+
   Future<void> stopListening() async {
     await _stopListening();
+    if (_disposed || isClosed) {
+      return;
+    }
+    emit(state.copyWith(isListening: false));
   }
 
   Future<void> _attachStreams() async {
@@ -298,7 +336,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
   }
 
   Future<void> _loadRelatedImagesForQuery(String query) async {
-    if (!AppConfig.chatRelatedImagesEnabled || _disposed || isClosed) {
+    if (!_relatedImagesEnabled || _disposed || isClosed) {
       return;
     }
     final trimmed = query.trim();
@@ -409,6 +447,20 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
     );
   }
 
+  void _clearRelatedImagesMessage() {
+    if (_disposed || isClosed) {
+      return;
+    }
+    final nextMessages = List<ChatMessage>.from(state.messages);
+    nextMessages.removeWhere((item) => item.id == _relatedImagesMessageId);
+    if (nextMessages.length == state.messages.length) {
+      return;
+    }
+    emit(
+      state.copyWith(messages: List<ChatMessage>.unmodifiable(nextMessages)),
+    );
+  }
+
   String _normalizeRelatedQuery(String value) {
     return value.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
   }
@@ -450,6 +502,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
         incomingLevel: 0,
         outgoingLevel: 0,
         isSpeaking: false,
+        isListening: false,
         connectionError: failure.message,
         status: ChatConnectionStatus.error,
         networkWarning: isNetworkIssue,
@@ -628,6 +681,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
             incomingLevel: 0,
             outgoingLevel: 0,
             isSpeaking: false,
+            isListening: false,
             connectionError: message,
             status: ChatConnectionStatus.error,
             networkWarning: isNetworkIssue,
@@ -640,6 +694,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
         state.copyWith(
           connectionError: null,
           status: ChatConnectionStatus.connected,
+          isListening: false,
         ),
       );
       _resetAutoReconnect();
@@ -648,6 +703,10 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
       }
       await _sendGreetingBeforeListening();
       await _startListening().timeout(const Duration(seconds: 4));
+      if (_disposed || isClosed || generation != _connectGeneration) {
+        return;
+      }
+      emit(state.copyWith(isListening: true));
     } on TimeoutException {
       if (_disposed || isClosed || generation != _connectGeneration) {
         return;
@@ -656,6 +715,7 @@ class ChatCubit extends Cubit<ChatState> implements ChatSession {
         state.copyWith(
           connectionError: 'Kết nối quá lâu, vui lòng thử lại.',
           status: ChatConnectionStatus.error,
+          isListening: false,
         ),
       );
       _scheduleAutoReconnect(reason: 'connect_timeout', isNetworkIssue: true);

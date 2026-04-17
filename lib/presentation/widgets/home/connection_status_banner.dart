@@ -138,15 +138,15 @@ class _ConnectionStatusBannerState extends State<ConnectionStatusBanner> {
 
     final warningBadge =
         status == ChatConnectionStatus.connected && networkWarning
-            ? FBadge(
-                style: _buildBadgeStyle(
-                  context,
-                  background: colors.primary,
-                  foreground: colors.primaryForeground,
-                ).call,
-                child: const Text('Mạng yếu'),
-              )
-            : null;
+        ? FBadge(
+            style: _buildBadgeStyle(
+              context,
+              background: colors.primary,
+              foreground: colors.primaryForeground,
+            ).call,
+            child: const Text('Mạng yếu'),
+          )
+        : null;
 
     return Center(
       child: Column(

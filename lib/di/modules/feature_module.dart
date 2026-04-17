@@ -33,9 +33,7 @@ import '../../capabilities/voice/voice_platform_factory.dart';
 void registerChatFeature(GetIt getIt) {
   if (!getIt.isRegistered<ChatRepository>()) {
     getIt.registerLazySingleton<ChatRepository>(
-      () => ChatRepositoryImpl(
-        sessionCoordinator: getIt<SessionCoordinator>(),
-      ),
+      () => ChatRepositoryImpl(sessionCoordinator: getIt<SessionCoordinator>()),
     );
   }
 
@@ -178,9 +176,7 @@ void registerChatFeature(GetIt getIt) {
 
 void registerHomeFeature(GetIt getIt) {
   if (!getIt.isRegistered<HomeSystemService>()) {
-    getIt.registerLazySingleton<HomeSystemService>(
-      HomeSystemServiceImpl.new,
-    );
+    getIt.registerLazySingleton<HomeSystemService>(HomeSystemServiceImpl.new);
   }
   if (!getIt.isRegistered<HomeCubit>()) {
     getIt.registerLazySingleton<HomeCubit>(

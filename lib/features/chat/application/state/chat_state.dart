@@ -1,18 +1,13 @@
 import '../../domain/entities/chat_message.dart';
 
-enum ChatConnectionStatus {
-  idle,
-  connecting,
-  connected,
-  reconnecting,
-  error,
-}
+enum ChatConnectionStatus { idle, connecting, connected, reconnecting, error }
 
 class ChatState {
   const ChatState({
     required this.messages,
     required this.isSending,
     required this.isSpeaking,
+    required this.isListening,
     required this.currentEmotion,
     required this.incomingLevel,
     required this.outgoingLevel,
@@ -28,6 +23,7 @@ class ChatState {
       messages: <ChatMessage>[],
       isSending: false,
       isSpeaking: false,
+      isListening: false,
       currentEmotion: 'neutral',
       incomingLevel: 0,
       outgoingLevel: 0,
@@ -42,6 +38,7 @@ class ChatState {
   final List<ChatMessage> messages;
   final bool isSending;
   final bool isSpeaking;
+  final bool isListening;
   final String? currentEmotion;
   final double incomingLevel;
   final double outgoingLevel;
@@ -61,6 +58,7 @@ class ChatState {
     List<ChatMessage>? messages,
     bool? isSending,
     bool? isSpeaking,
+    bool? isListening,
     String? currentEmotion,
     double? incomingLevel,
     double? outgoingLevel,
@@ -83,6 +81,7 @@ class ChatState {
       messages: messages ?? this.messages,
       isSending: isSending ?? this.isSending,
       isSpeaking: isSpeaking ?? this.isSpeaking,
+      isListening: isListening ?? this.isListening,
       currentEmotion: currentEmotion ?? this.currentEmotion,
       incomingLevel: incomingLevel ?? this.incomingLevel,
       outgoingLevel: outgoingLevel ?? this.outgoingLevel,

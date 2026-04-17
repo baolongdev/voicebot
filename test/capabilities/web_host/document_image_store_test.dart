@@ -10,7 +10,9 @@ void main() {
     late DocumentImageStore store;
 
     setUp(() async {
-      tempRoot = await Directory.systemTemp.createTemp('voicebot_image_store_test_');
+      tempRoot = await Directory.systemTemp.createTemp(
+        'voicebot_image_store_test_',
+      );
       store = DocumentImageStore(rootDirectory: tempRoot);
       await store.initialize();
     });
@@ -22,7 +24,9 @@ void main() {
     });
 
     test('save/list/read/delete image lifecycle works', () async {
-      final bytes = Uint8List.fromList(List<int>.generate(32, (index) => index));
+      final bytes = Uint8List.fromList(
+        List<int>.generate(32, (index) => index),
+      );
       final created = await store.saveImage(
         docName: 'doc_a.txt',
         fileName: 'sample.png',
@@ -49,7 +53,9 @@ void main() {
     });
 
     test('migrate document name keeps image mapping', () async {
-      final bytes = Uint8List.fromList(List<int>.generate(24, (index) => index + 1));
+      final bytes = Uint8List.fromList(
+        List<int>.generate(24, (index) => index + 1),
+      );
       await store.saveImage(
         docName: 'old_doc.txt',
         fileName: 'photo.jpg',

@@ -22,10 +22,10 @@ class HomeSystemServiceImpl implements HomeSystemService {
     Connectivity? connectivity,
     NetworkInfo? networkInfo,
     AudioRouter? audioRouter,
-  })  : _battery = battery ?? Battery(),
-        _connectivity = connectivity ?? Connectivity(),
-        _networkInfo = networkInfo ?? NetworkInfo(),
-        _audioRouter = audioRouter ?? AudioRouter() {
+  }) : _battery = battery ?? Battery(),
+       _connectivity = connectivity ?? Connectivity(),
+       _networkInfo = networkInfo ?? NetworkInfo(),
+       _audioRouter = audioRouter ?? AudioRouter() {
     FlutterVolumeController.addListener(
       _handleVolumeChanged,
       stream: AudioStream.music,
@@ -100,9 +100,7 @@ class HomeSystemServiceImpl implements HomeSystemService {
   @override
   Future<double?> fetchVolume() async {
     try {
-      return await FlutterVolumeController.getVolume(
-        stream: AudioStream.music,
-      );
+      return await FlutterVolumeController.getVolume(stream: AudioStream.music);
     } catch (_) {
       return null;
     }
@@ -193,9 +191,7 @@ class HomeSystemServiceImpl implements HomeSystemService {
       return [];
     }
 
-    final canStart = await WiFiScan.instance.canStartScan(
-      askPermissions: true,
-    );
+    final canStart = await WiFiScan.instance.canStartScan(askPermissions: true);
     if (canStart == CanStartScan.yes) {
       await WiFiScan.instance.startScan();
     }
@@ -208,24 +204,27 @@ class HomeSystemServiceImpl implements HomeSystemService {
     }
 
     final results = await WiFiScan.instance.getScannedResults();
-    final networks = results
-        .where((ap) => ap.ssid.isNotEmpty)
-        .map((ap) => HomeWifiNetwork(
-              ssid: ap.ssid,
-              secured: _isSecured(ap.capabilities),
-              level: ap.level,
-              bandLabel: _bandLabel(ap.ssid),
-              securityLabel: _securityLabel(ap.capabilities),
-              capabilities: ap.capabilities,
-              isCurrent: current != null && ap.ssid == current,
-            ))
-        .toList()
-      ..sort((a, b) {
-        if (a.isCurrent != b.isCurrent) {
-          return a.isCurrent ? -1 : 1;
-        }
-        return b.level.compareTo(a.level);
-      });
+    final networks =
+        results
+            .where((ap) => ap.ssid.isNotEmpty)
+            .map(
+              (ap) => HomeWifiNetwork(
+                ssid: ap.ssid,
+                secured: _isSecured(ap.capabilities),
+                level: ap.level,
+                bandLabel: _bandLabel(ap.ssid),
+                securityLabel: _securityLabel(ap.capabilities),
+                capabilities: ap.capabilities,
+                isCurrent: current != null && ap.ssid == current,
+              ),
+            )
+            .toList()
+          ..sort((a, b) {
+            if (a.isCurrent != b.isCurrent) {
+              return a.isCurrent ? -1 : 1;
+            }
+            return b.level.compareTo(a.level);
+          });
 
     return networks;
   }
@@ -282,10 +281,7 @@ class HomeSystemServiceImpl implements HomeSystemService {
       AudioSourceType.airplay => HomeAudioRoute.other,
       AudioSourceType.unknown => HomeAudioRoute.other,
     };
-    return HomeAudioDevice(
-      route: route,
-      name: device.id,
-    );
+    return HomeAudioDevice(route: route, name: device.id);
   }
 
   @override
